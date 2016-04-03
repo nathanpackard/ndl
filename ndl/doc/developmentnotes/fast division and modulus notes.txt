@@ -1,0 +1,356 @@
+Given:
+1) num / div == (num * mul) >> shift;
+2) mul >> shift == mul / (2^shift)
+3) (2^shift) = (1<< shift)
+
+Calculate: mul and shift
+
+Derrivation:
+4) 1 / div == mul >> shift;     (from 1)
+5) 1 /div == mul / (2^shift)    (from 4,2)
+6) 1 /div == mul / (1<< shift)  (from 5,3)
+7) mul == (1<< shift) / div     (from 6)
+
+int fastdivide(int num,int div,int mul,int shift){
+    return (num * mul) >> shift;
+}
+
+int fastmod(int num,int div,int mul,int shift){
+    return num - ((num * mul) >> shift) * div;
+}
+
+void get_mul_shift(int num,int div,int& mul,int& shift){
+    for(int shift=0;shift<32;++shift){
+        mul == (1<< shift) / div + 1;
+        if (fastdivide(num,div,mul,shift) == num / div) return;
+    }
+}
+
+
+Now: 
+
+B*D = C
+B=C/D
+
+i = (a / B) % C
+
+(a / C/D) % C = (a / B) - (a / B)*C
+
+
+
+T % C = T - (T/C)*C
+
+  
+  
+  
+void unsigned_divide(unsigned int dividend,unsigned int divisor,unsigned int &quotient,unsigned int &remainder ){
+  unsigned int t, num_bits;
+  unsigned int q, bit, d;
+  int i;
+
+  remainder = 0;
+  quotient = 0;
+
+  if (divisor == 0)
+    return;
+
+  if (divisor > dividend) {
+    remainder = dividend;
+    return;
+  }
+
+  if (divisor == dividend) {
+    quotient = 1;
+    return;
+  }
+
+  num_bits = 32;
+
+  while (remainder < divisor) {
+    bit = (dividend & 0x80000000) >> 31;
+    remainder = (remainder << 1) | bit;
+    d = dividend;
+    dividend = dividend << 1;
+    num_bits--;
+  }
+
+  /* The loop, above, always goes one iteration too far.
+     To avoid inserting an "if" statement inside the loop
+     the last iteration is simply reversed. */
+  dividend = d;
+  remainder = remainder >> 1;
+  num_bits++;
+
+  for (i = 0; i < num_bits; i++) {
+    bit = (dividend & 0x80000000) >> 31;
+    remainder = (remainder << 1) | bit;
+    t = remainder - divisor;
+    q = !((t & 0x80000000) >> 31);
+    dividend = dividend << 1;
+    quotient = (quotient << 1) | q;
+    if (q) {
+       remainder = t;
+     }
+  }
+}  /* unsigned_divide */
+
+
+
+//~ unsigned int divide1(unsigned int dividend,unsigned int divisor){
+  //~ if (divisor > dividend) return 0;
+  //~ if (divisor == dividend) return 1;
+
+  //~ unsigned int num_bits = 32;
+  //~ unsigned int remainder = 0;
+  //~ unsigned int d;
+  //~ while (remainder < divisor) {
+    //~ unsigned int bit = (dividend & 0x80000000) >> 31;
+    //~ remainder = (remainder << 1) | bit;
+    //~ d = dividend;
+    //~ dividend = dividend << 1;
+    //~ num_bits--;
+  //~ }
+  //~ dividend = d;
+  //~ remainder = remainder >> 1;
+  //~ num_bits++;
+
+  //~ unsigned int quotient = 0;
+  //~ unsigned int t,q;
+  //~ for (int i = 0; i < num_bits; ++i) {
+    //~ remainder = (remainder << 1) | ((dividend & 0x80000000) >> 31);
+    //~ t = remainder - divisor;
+    //~ q = !((t & 0x80000000) >> 31);
+    //~ dividend = dividend << 1;
+    //~ quotient = (quotient << 1) | q;
+    //~ if (q) remainder = t;
+  //~ }
+  //~ return quotient;
+//~ }
+
+	//~ unsigned prev_power_of_2(unsigned x) {
+	   //~ x |= (x >> 1);
+	   //~ x |= (x >> 2);
+	   //~ x |= (x >> 4);
+	   //~ x |= (x >> 8);
+	   //~ x |= (x >>16);
+       //~ x++; 
+	   //~ return x >> 1;
+	//~ }
+
+	//~ unsigned next_power_of_2(unsigned x) {
+	   //~ --x;
+	   //~ x |= (x >> 1);
+	   //~ x |= (x >> 2);
+	   //~ x |= (x >> 4);
+	   //~ x |= (x >> 8);
+	   //~ x |= (x >>16);
+	   //~ return x + 1;
+	//~ }
+   
+//~ unsigned int intlog2(unsigned int v){
+    //~ register unsigned int r;
+    //~ register unsigned int shift;
+    //~ r = (v > 0xFFFF) << 4; 
+    //~ v >>= r;
+    
+    //~ shift = (v > 0xFF  ) << 3; 
+    //~ v >>= shift; 
+    //~ r |= shift;
+    
+    //~ shift = (v > 0xF   ) << 2; 
+    //~ v >>= shift; 
+    //~ r |= shift;
+    
+    //~ shift = (v > 0x3   ) << 1; 
+    //~ v >>= shift; 
+    //~ r |= shift;
+
+    //~ r |= (v >> 1);
+    //~ return r;
+//~ }
+
+//~ int divide1(int num, int denom){
+  //~ if (denom > num) return 0;
+  //~ int q = 0;
+  //~ while(num >= denom){
+      //~ num -= denom;
+      //~ q++;
+  //~ }
+  //~ return q;
+//~ }
+
+//~ int modulus1(int num, int denom){
+  //~ if (denom > num) return num;
+  //~ while(num >= denom) num -= denom;
+  //~ return num;
+//~ }
+
+//~ unsigned int dividethenmodulus(int num, int denom1, int denom2){
+  //~ if (denom1 > num) return 0; int q = 0;
+  //~ while(num >= denom1){ num -= denom1; q++; } //divide
+  //~ if (denom2 > q) return q;
+  //~ while(q >= denom2) q -= denom2; //modulus
+  //~ return q;
+//~ }
+
+//~ unsigned int divide1(unsigned int dividend,unsigned int divisor){
+  //~ if (divisor > dividend || divisor == 0) return 0;
+  //~ if (divisor == dividend) return 1;
+
+  //~ unsigned int num_bits = 32;
+  //~ unsigned int remainder = 0;
+  //~ unsigned int d;
+  //~ for(num_bits=32;remainder<divisor;--num_bits){
+    //~ remainder = (remainder << 1) | ((dividend & 0x80000000) >> 31);
+    //~ d = dividend;
+    //~ dividend = dividend << 1;
+  //~ }
+  //~ dividend = d;
+  //~ remainder = remainder >> 1;
+  //~ num_bits++;
+
+  //~ unsigned int quotient = 0;
+  //~ for (int i = 0; i < num_bits; ++i) {
+    //~ unsigned int bit = (dividend & 0x80000000) >> 31;
+    //~ remainder = (remainder << 1) | bit;
+    //~ unsigned int t = remainder - divisor;
+    //~ unsigned int q = !((t & 0x80000000) >> 31);
+    //~ dividend = dividend << 1;
+    //~ quotient = (quotient << 1) | q;
+    //~ if (q) remainder = t;
+  //~ }
+  //~ return quotient;
+//~ }
+
+
+//~ int divide2(int num, int denom){
+  //~ int a=0;
+  //~ int b=0;
+  //~ for(int i= 31;i>=0;--i){
+    //~ a = (a << 1) + ((num & (1 << i)) >> i);
+    //~ b<<=1;
+    //~ if (a >= denom){ a -= denom; b++; }
+  //~ }
+
+    //~ //unroll the loop
+    //~ int b=0;
+    //~ int a=0;
+    //~ a = (a << 1) + ((num & (1 << 31)) >> 31); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 30)) >> 30); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 29)) >> 29); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 28)) >> 28); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 27)) >> 27); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 26)) >> 26); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 25)) >> 25); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 24)) >> 24); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 23)) >> 23); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 22)) >> 22); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 21)) >> 21); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 20)) >> 20); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 19)) >> 19); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 18)) >> 18); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 17)) >> 17); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 16)) >> 16); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 15)) >> 15); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 14)) >> 14); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 13)) >> 13); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 12)) >> 12); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 11)) >> 11); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 10)) >> 10); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 9)) >> 9); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 8)) >> 8); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 7)) >> 7); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 6)) >> 6); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 5)) >> 5); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 4)) >> 4); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 3)) >> 3); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 2)) >> 2); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 1)) >> 1); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ a = (a << 1) + ((num & (1 << 0)) >> 0); b<<=1; if (a >= denom){ a -= denom; b++; }
+    //~ skip: ;
+    //~ return b;
+//~ }
+
+
+
+    //~ int maxnum = 234217728; //512^3
+    //~ int div = 50030030;
+    //~ int blah;
+    //~ clock_t start;
+
+    
+    //~ cout << "prev_power_of_2(15): " << prev_power_of_2(15) << endl;
+    //~ cout << "intlog2(15): " << intlog2(15) << endl;
+    
+    //~ printf("Regular Multiply\n");
+    //~ blah=1;
+    //~ start = clock();
+    //~ for(int a=0;a<maxnum;a++){
+        //~ blah += (a*div);
+    //~ }
+    //~ printf ("Ellapsed time: %lf sec, ", double(clock()-start)/double(CLOCKS_PER_SEC) );
+    //~ cout << blah << endl;
+    
+    //~ printf("Regular Divide\n");
+    //~ blah=1;
+    //~ start = clock();
+    //~ for(int a=0;a<maxnum;a++){
+        //~ blah += (a/div);
+    //~ }
+    //~ printf ("Ellapsed time: %lf sec, ", double(clock()-start)/double(CLOCKS_PER_SEC) );
+    //~ cout << blah << endl;
+
+    //~ printf("Divide1\n");
+    //~ blah=1;
+    //~ start = clock();
+    //~ for(int a=0;a<maxnum;a++){
+        //~ blah += divide1(a,div);
+    //~ }
+    //~ printf ("Ellapsed time: %lf sec, ", double(clock()-start)/double(CLOCKS_PER_SEC) );
+    //~ cout << blah << endl;
+
+    //~ printf("Regular Modulus\n");
+    //~ blah=1;
+    //~ start = clock();
+    //~ for(int a=0;a<maxnum;a++){
+        //~ blah += (a%div);
+    //~ }
+    //~ printf ("Ellapsed time: %lf sec, ", double(clock()-start)/double(CLOCKS_PER_SEC) );
+    //~ cout << blah << endl;
+
+    //~ printf("Modulus1\n");
+    //~ blah=1;
+    //~ start = clock();
+    //~ for(int a=0;a<maxnum;a++){
+        //~ blah += modulus1(a,div);
+    //~ }
+    //~ printf ("Ellapsed time: %lf sec, ", double(clock()-start)/double(CLOCKS_PER_SEC) );
+    //~ cout << blah << endl;
+    
+    //~ printf("Regular Divide then Modulus\n");
+    //~ blah=1;
+    //~ start = clock();
+    //~ for(int a=0;a<maxnum;a++){
+        //~ blah += ((a/maxnum)%div);
+    //~ }
+    //~ printf ("Ellapsed time: %lf sec, ", double(clock()-start)/double(CLOCKS_PER_SEC) );
+    //~ cout << blah << endl;
+
+    //~ printf("Divide then Modulus1\n");
+    //~ blah=1;
+    //~ start = clock();
+    //~ for(int a=0;a<maxnum;a++){
+        //~ blah += dividethenmodulus(a,maxnum,div);
+    //~ }
+    //~ printf ("Ellapsed time: %lf sec, ", double(clock()-start)/double(CLOCKS_PER_SEC) );
+    //~ cout << blah << endl;
+
+
+int i = dividethenmodulus(c,imdimprod[n],imdim[n]);
+int dividethenmodulus(int num, int denom1, int denom2){
+  if (denom1 > num) return 0; int q = 0;
+  while(num >= denom1){ num -= denom1; q++; } //divide
+  if (denom2 > q) return q;
+  while(q >= denom2) q -= denom2; //modulus
+  return q;
+}

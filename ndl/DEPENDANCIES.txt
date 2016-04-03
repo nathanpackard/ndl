@@ -1,0 +1,9 @@
+NDL has the following conditional dependancies:
+
+if NDL_USE_WXWIDGETS is defined, wxwidgets
+if NDL_USE_DCMTK is defined, dcmtk
+if NDL_USE_JPEG is defined, libjpeg
+if NDL_USE_BMP is defined, easybmp
+if NDL_USE_ANALYZELIB is defined, analyzelib
+if NDL_USE_BCTLIB is defined, bctlib
+if NDL_USE_OMP is defined, openmp

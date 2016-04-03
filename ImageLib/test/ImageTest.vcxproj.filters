@@ -1,0 +1,59 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="io">
+      <UniqueIdentifier>{0c8237ae-27f3-4158-bf34-d101529750f6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="image">
+      <UniqueIdentifier>{0b382a44-46eb-434f-8a75-ce0413045cd2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common">
+      <UniqueIdentifier>{dc79a493-c58f-4a5a-b2da-8f7875b2b9d1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="ImageTest.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\io\gif.h">
+      <Filter>io</Filter>
+    </ClInclude>
+    <ClInclude Include="..\io\imageIO.h">
+      <Filter>io</Filter>
+    </ClInclude>
+    <ClInclude Include="..\io\jpeg_decoder.h">
+      <Filter>io</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\timer.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\image\Filter.h">
+      <Filter>image</Filter>
+    </ClInclude>
+    <ClInclude Include="..\image\Image.h">
+      <Filter>image</Filter>
+    </ClInclude>
+    <ClInclude Include="..\io\bitmap.h">
+      <Filter>io</Filter>
+    </ClInclude>
+    <ClInclude Include="..\io\avi.h">
+      <Filter>io</Filter>
+    </ClInclude>
+    <ClInclude Include="..\io\dicom.h">
+      <Filter>io</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\endian.h">
+      <Filter>common</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

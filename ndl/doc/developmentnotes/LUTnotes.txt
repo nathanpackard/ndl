@@ -1,0 +1,30 @@
+NUMELEMENTS:
+char: 256
+
+Types of LUT
+linear: ax+b => direct
+LUT
+linear to LUT index: ax+b
+
+(cubic spline: sequence of points => LUT)
+
+single color => rgb
+two color => 
+
+min: -1000
+max: 2000
+
+ax+b = 0..T
+
+
+a*min + b = 0
+a*max + b = T
+
+a = -b/min
+
+(-b/min)*max + b = T
+
+-b*max/min + b = T
+
+b = T/(-max/min + 1)
+a = -T/(-max + min)
