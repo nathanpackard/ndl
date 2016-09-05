@@ -158,7 +158,7 @@
   <ItemGroup>
     <ClInclude Include="..\common\endian.h" />
     <ClInclude Include="..\common\timer.h" />
-    <ClInclude Include="..\image\Filter.h" />
+    <ClInclude Include="..\image\mathHelpers.h" />
     <ClInclude Include="..\image\Image.h" />
     <ClInclude Include="..\io\avi.h" />
     <ClInclude Include="..\io\bitmap.h" />

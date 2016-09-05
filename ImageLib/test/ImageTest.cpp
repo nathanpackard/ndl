@@ -6,23 +6,13 @@
 #include "../image/Image.h";
 #include "../io/imageIO.h";
 #include "../common/timer.h";
-#include "../eigen/Eigen/Dense"
+#include "../image/mathHelpers.h"
 #include <iostream>
 
 using namespace std;
 using namespace ImageLib;
 using namespace timeUtils;
-using namespace Eigen;
 
-void testEigen()
-{
-	MatrixXd m(2, 2);
-	m(0, 0) = 3;
-	m(1, 0) = 2.5;
-	m(0, 1) = -1;
-	m(1, 1) = m(1, 0) + m(0, 1);
-	std::cout << m << std::endl;
-}
 void testImageLibraryDimensions()
 {
 	int size = 4;
@@ -178,7 +168,7 @@ void testImageLibraryAccuracy()
 	cout << image << endl;
 
 	cout << endl;
-	Image<double> result(roi1, true);
+	Image<double> result(roi1);
 	double basetime = codeTimer("roi1 convolution", [&]() -> void
 	{
 		auto resultit = result.begin();
@@ -192,7 +182,7 @@ void testImageLibraryAccuracy()
 
 	cout << endl;
 	cout << "ROI2" << endl;
-	Image<double> result2(roi2, true);
+	Image<double> result2(roi2);
 
 	auto result2it = result2.begin();
 	for (auto roi2it = roi2.begin(); roi2it != roi2.end(); ++roi2it)
@@ -224,7 +214,7 @@ void ImageLibrarySpeedTest()
 
 	double basetime;
 	{
-		Image<double> result(roi1, true);
+		Image<double> result(roi1);
 		basetime = codeTimer("roi1 convolution", [&]() -> void
 		{
 			for (auto it = roi1.begin(), resultit = result.begin(); it != roi1.end(); ++it, ++resultit)
@@ -235,18 +225,18 @@ void ImageLibrarySpeedTest()
 	}
 
 	{
-		Image<double> result(roi1, true);
+		Image<double> result(roi1);
 		double noAnd = codeTimer("roi1 convolution no &", [&]() -> void
 		{
 			for (auto it = roi1.begin(), resultit = result.begin(); it != roi1.end(); ++it, ++resultit)
-				*resultit = (it(1, dx_clamp) + it(-1, dx_clamp) + it(1, dy_clamp) + it(-1, dy_clamp)) * 0.25;
+				*resultit = (it(1, x_clamp) + it(-1, x_clamp) + it(1, y_clamp) + it(-1, y_clamp)) * 0.25;
 		}, iterations);
 		cout << "noAnd is " << (100 * ((basetime / noAnd) - 1)) << "% faster" << endl << endl;
 		cout << Image<double>(result, 0, 0, 0, 4, 4, 1, 1, 1, 1) << endl;
 	}
 
 	{
-		Image<double> result(roi1, true);
+		Image<double> result(roi1);
 		double noAndPointer = codeTimer("roi1 convolution no & pointer", [&]() -> void
 		{
 			for (auto it = roi1.begin(), resultit = result.begin(); it != roi1.end(); ++it, ++resultit)
@@ -257,7 +247,7 @@ void ImageLibrarySpeedTest()
 	}
 
 	{
-		Image<double> result(roi1, true);
+		Image<double> result(roi1);
 		double handCoded1 = codeTimer("roi1 convolution handCoded1", [&]() -> void
 		{
 			for (int k = 0; k < result.Depth; k++)
@@ -282,7 +272,7 @@ void ImageLibrarySpeedTest()
 	}
 
 	{
-		Image<double> result(roi1, true);
+		Image<double> result(roi1);
 		double handCoded2 = codeTimer("roi1 convolution handCoded2", [&]() -> void
 		{
 			int resultDx = result.DX;
@@ -318,48 +308,80 @@ void testIntegralImage()
 	cout << image << endl;
 
 	cout << "Integral Image" << endl;
-	cout << Image<double>(image).ToIntegralImage() << endl;
+	cout << ToIntegralImage<long>(image) << endl;
 }
-void TestImages(string inputFile, string outputFile)
+void displayBorderTests(Image<unsigned short>& image3D) {
+	cout << "value: " << image3D(1, 1, 1) << endl;
+	cout << "-2 x clamp: " << image3D(-2, 0, 0, xyz_clamp) << endl;
+	cout << "-2 x wrap: " << image3D(-2, 0, 0, xyz_wrap) << endl;
+	cout << "-2 x reflect: " << image3D(-2, 0, 0, xyz_reflect) << endl;
+	cout << "-2 y clamp: " << image3D(0, -2, 0, xyz_clamp) << endl;
+	cout << "-2 y wrap: " << image3D(0, -2, 0, xyz_wrap) << endl;
+	cout << "-2 y reflect: " << image3D(0, -2, 0, xyz_reflect) << endl;
+	cout << "-2 z clamp: " << image3D(0, 0, -2, xyz_clamp) << endl;
+	cout << "-2 z wrap: " << image3D(0, 0, -2, xyz_wrap) << endl;
+	cout << "-2 z reflect: " << image3D(0, 0, -2, xyz_reflect) << endl;
+}
+void testImageLibraryBorders() {
+	int size = 4;
+	int i;
+
+	cout << endl << "3D Image" << endl;
+	Image<unsigned short> image3D(size, size, size);
+	i = 0;
+	for (auto it = image3D.begin(); it != image3D.end(); ++it) *it = ++i;
+	cout << image3D << endl;
+	displayBorderTests(image3D);
+
+	cout << endl << "MirrorX" << endl;
+	Image<unsigned short> MirrorX(image3D, 0, 0, 0, size, size, size, 1, 1, 1, true);
+	cout << MirrorX << endl;
+	displayBorderTests(MirrorX);
+
+	cout << endl << "MirrorY" << endl;
+	Image<unsigned short> MirrorY(image3D, 0, 0, 0, size, size, size, 1, 1, 1, false, true);
+	cout << MirrorY << endl;
+	displayBorderTests(MirrorY);
+
+	cout << endl << "MirrorZ" << endl;
+	Image<unsigned short> MirrorZ(image3D, 0, 0, 0, size, size, size, 1, 1, 1, false, false, true);
+	cout << MirrorZ << endl;
+	displayBorderTests(MirrorZ);
+}
+void TestImages(string inputFolder, string outputFolder)
 {
-	Image<uint8_t> image = ImageIO::LoadJpeg(inputFile.c_str());
+	Image<uint8_t> image = ImageIO::LoadJpeg(inputFolder + "\\ng_bwgirl_crop.jpg");
 	Image<uint8_t> red(image, 0, 0, image.Width, image.Height, 3, 1);
 	Image<uint8_t> green(image, 1, 0, image.Width, image.Height, 3, 1);
 	Image<uint8_t> blue(image, 2, 0, image.Width, image.Height, 3, 1);
-	ImageIO::SaveRaw(red, string("C:\\Users\\Nathan\\Desktop\\red_") + std::to_string(red.Width) + "x" + std::to_string(red.Height) + ".raw");
-	ImageIO::SaveRaw(green, string("C:\\Users\\Nathan\\Desktop\\green_") + std::to_string(green.Width) + "x" + std::to_string(green.Height) + ".raw");
-	ImageIO::SaveRaw(blue, string("C:\\Users\\Nathan\\Desktop\\blue_") + std::to_string(blue.Width) + "x" + std::to_string(blue.Height) + ".raw");
-	//ImageIO::Save(image, "C:\\Users\\Nathan\\Desktop\\ng_bwgirl_crop.jpg");
+	ImageIO::SaveRaw(red, outputFolder + string("\\red_") + std::to_string(red.Width) + "x" + std::to_string(red.Height) + ".raw");
+	ImageIO::SaveRaw(green, outputFolder + string("\\green_") + std::to_string(green.Width) + "x" + std::to_string(green.Height) + ".raw");
+	ImageIO::SaveRaw(blue, outputFolder + string("\\blue_") + std::to_string(blue.Width) + "x" + std::to_string(blue.Height) + ".raw");
+	//ImageIO::Save(image, outputFolder + "\\ng_bwgirl_crop.jpg");
 	Image<float> fimage(image);
 	//fimage.GaussianBlur2D(3);
-	ImageIO::SaveRaw(fimage, string("C:\\Users\\Nathan\\Desktop\\float_") + std::to_string(fimage.Width) + "x" + std::to_string(fimage.Height) + ".raw");
-	Image<uint8_t> bmpImage = ImageIO::LoadBmp("C:\\workspace\\njpcpp\\testData\\marbles.bmp");
+	ImageIO::SaveRaw(fimage, outputFolder + string("\\float_") + std::to_string(fimage.Width) + "x" + std::to_string(fimage.Height) + ".raw");
+	Image<uint8_t> bmpImage = ImageIO::LoadBmp(inputFolder + "\\marbles.bmp");
 	Image<uint8_t> red2(bmpImage, 0, 0, bmpImage.Width, bmpImage.Height, 3, 1);
 	Image<uint8_t> green2(bmpImage, 1, 0, bmpImage.Width, bmpImage.Height, 3, 1);
 	Image<uint8_t> blue2(bmpImage, 2, 0, bmpImage.Width, bmpImage.Height, 3, 1);
-	ImageIO::SaveRaw(red2, string("C:\\Users\\Nathan\\Desktop\\red2_") + std::to_string(red2.Width) + "x" + std::to_string(red2.Height) + ".raw");
-	ImageIO::SaveRaw(green2, string("C:\\Users\\Nathan\\Desktop\\green2_") + std::to_string(green2.Width) + "x" + std::to_string(green2.Height) + ".raw");
-	ImageIO::SaveRaw(blue2, string("C:\\Users\\Nathan\\Desktop\\blue2_") + std::to_string(blue2.Width) + "x" + std::to_string(blue2.Height) + ".raw");
+	ImageIO::SaveRaw(red2, outputFolder + string("\\red2_") + std::to_string(red2.Width) + "x" + std::to_string(red2.Height) + ".raw");
+	ImageIO::SaveRaw(green2, outputFolder + string("\\green2_") + std::to_string(green2.Width) + "x" + std::to_string(green2.Height) + ".raw");
+	ImageIO::SaveRaw(blue2, outputFolder + string("\\blue2_") + std::to_string(blue2.Width) + "x" + std::to_string(blue2.Height) + ".raw");
 
-	auto dcmImage = ImageIO::LoadDicom<uint16_t>("C:\\workspace\\njpcpp\\testData\\MPRAGE\\0100.dcm");
-	ImageIO::SaveRaw(dcmImage, string("C:\\Users\\Nathan\\Desktop\\mri_") + std::to_string(dcmImage.Width) + "x" + std::to_string(dcmImage.Height) + ".raw");
+	//auto dcmImage = ImageIO::LoadDicom<uint16_t>(inputFolder + "\\foot.dcm");
+	//ImageIO::SaveRaw(dcmImage, outputFolder + string("\\mri_") + std::to_string(dcmImage.Width) + "x" + std::to_string(dcmImage.Height) + ".raw");
 
-	auto dcmImage2 = ImageIO::LoadDicom<int16_t>("C:\\workspace\\njpcpp\\testData\\CT0296_05_0083.dcm");
-	ImageIO::SaveRaw(dcmImage2, string("C:\\Users\\Nathan\\Desktop\\CT_") + std::to_string(dcmImage2.Width) + "x" + std::to_string(dcmImage2.Height) + ".raw");
+	auto dcmImage2 = ImageIO::LoadDicom<int16_t>(inputFolder + "\\foot.dcm");
+	ImageIO::SaveRaw(dcmImage2, outputFolder + string("\\CT_") + std::to_string(dcmImage2.Width) + "x" + std::to_string(dcmImage2.Height) + ".raw");
 }
-void TestAll()
-{
-	//testImageLibraryDimensions();
-	//testImageLibraryAccuracy();
-	//ImageLibrarySpeedTest();
-	//testIntegralImage();
-	TestImages("C:\\workspace\\njpcpp\\testData\\ng_bwgirl_crop.jpg", "C:\\workspace\\njpcpp\\testData\\ng_bwgirl_crop_output");
-	//testCimg("C:\\workspace\\njpcpp\\testData\\ng_bwgirl_crop.jpg");
-	//testEigen();
-}
-
 int main()
 {
-	TestAll();
+	testImageLibraryDimensions();
+	testImageLibraryAccuracy();
+	ImageLibrarySpeedTest();
+	testIntegralImage();
+	testImageLibraryBorders();
+	TestImages("C:\\workspace\\ndl\\testData", "C:\\Users\\Nathan\\Desktop");
 	return 0;
 }

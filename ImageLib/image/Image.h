@@ -8,28 +8,43 @@
 
 namespace ImageLib
 {
-	enum _dx_reflect_t { _dx_reflect } dx_reflect;
-	enum _dy_reflect_t { _dy_reflect } dy_reflect;
-	enum _dz_reflect_t { _dz_reflect } dz_reflect;
-	enum _dxy_reflect_t { _dxy_reflect } dxy_reflect;
-	enum _dxz_reflect_t { _dxz_reflect } dxz_reflect;
-	enum _dyz_reflect_t { _dyz_reflect } dyz_reflect;
-	enum _dxyz_reflect_t { _dxyz_reflect } dxyz_reflect;
-	enum _dx_wrap_t { _dx_wrap } dx_wrap;
-	enum _dy_wrap_t { _dy_wrap } dy_wrap;
-	enum _dz_wrap_t { _dz_wrap } dz_wrap;
-	enum _dxy_wrap_t { _dxy_wrap } dxy_wrap;
-	enum _dxz_wrap_t { _dxz_wrap } dxz_wrap;
-	enum _dyz_wrap_t { _dyz_wrap } dyz_wrap;
-	enum _dxyz_wrap_t { _dxyz_wrap } dxyz_wrap;
-	enum _dx_clamp_t { _dx_clamp } dx_clamp;
-	enum _dy_clamp_t { _dy_clamp } dy_clamp;
-	enum _dz_clamp_t { _dz_clamp } dz_clamp;
-	enum _dxy_clamp_t { _dxy_clamp } dxy_clamp;
-	enum _dxz_clamp_t { _dxz_clamp } dxz_clamp;
-	enum _dyz_clamp_t { _dyz_clamp } dyz_clamp;
-	enum _dxyz_clamp_t { _dxyz_clamp } dxyz_clamp;
-	
+	enum _x_reflect_t { _x_reflect } x_reflect;
+	enum _y_reflect_t { _y_reflect } y_reflect;
+	enum _z_reflect_t { _z_reflect } z_reflect;
+	enum _xy_reflect_t { _xy_reflect } xy_reflect;
+	enum _xz_reflect_t { _xz_reflect } xz_reflect;
+	enum _yz_reflect_t { _yz_reflect } yz_reflect;
+	enum _xyz_reflect_t { _xyz_reflect } xyz_reflect;
+	enum _x_wrap_t { _x_wrap } x_wrap;
+	enum _y_wrap_t { _y_wrap } y_wrap;
+	enum _z_wrap_t { _z_wrap } z_wrap;
+	enum _xy_wrap_t { _xy_wrap } xy_wrap;
+	enum _xz_wrap_t { _xz_wrap } xz_wrap;
+	enum _yz_wrap_t { _yz_wrap } yz_wrap;
+	enum _xyz_wrap_t { _xyz_wrap } xyz_wrap;
+	enum _x_clamp_t { _x_clamp } x_clamp;
+	enum _y_clamp_t { _y_clamp } y_clamp;
+	enum _z_clamp_t { _z_clamp } z_clamp;
+	enum _xy_clamp_t { _xy_clamp } xy_clamp;
+	enum _xz_clamp_t { _xz_clamp } xz_clamp;
+	enum _yz_clamp_t { _yz_clamp } yz_clamp;
+	enum _xyz_clamp_t { _xyz_clamp } xyz_clamp;
+
+	static constexpr double _pow(double x, int y) { return y == 0 ? 1.0 : x * _pow(x, y - 1); }
+	static constexpr int _factorial(int x) { return x == 0 ? 1 : x * _factorial(x - 1); }
+	static constexpr double _exp(double x) { return 1.0 + x + _pow(x, 2) / _factorial(2) + _pow(x, 3) / _factorial(3) + _pow(x, 4) / _factorial(4) + _pow(x, 5) / _factorial(5) + _pow(x, 6) / _factorial(6) + _pow(x, 7) / _factorial(7) + _pow(x, 8) / _factorial(8) + _pow(x, 9) / _factorial(9); }
+	static constexpr float _gaussian(double sigma, int position) { return (float)_exp(-((float)(position * position) / (2 * sigma * sigma))); }
+	static constexpr int _ceil(float num) { return (static_cast<float>(static_cast<int>(num)) == num) ? static_cast<int>(num) : static_cast<int>(num) + ((num > 0) ? 1 : 0); }
+	static constexpr int _kernelSize(float sigma) { return (int)_ceil(3.0f * sigma); }
+	static constexpr int _kernelRadius(float sigma) { return _kernelSize(sigma) / 2; }
+	static constexpr int _swapx(int valuex, int valuey, int valuez, bool swapXY, bool swapYZ, bool swapZX) { return swapXY ? ((swapZX ? (valuez) : (valuey))) : (swapZX ? (valuez) : (valuex)); }
+	static constexpr int _swapy(int valuex, int valuey, int valuez, bool swapXY, bool swapYZ, bool swapZX) { return swapXY ? (swapYZ ? (valuez) : (valuex)) : (swapYZ ? (valuez) : (valuey)); }
+	static constexpr int _swapz(int valuex, int valuey, int valuez, bool swapXY, bool swapYZ, bool swapZX) { return swapYZ ? (swapZX ? (valuex) : (valuey)) : (swapZX ? (valuex) : (valuez)); }
+	static constexpr int _reflect(int M, int x) { return (x < 0) ? (-x - 1) : ((x >= M) ? (2 * M - x - 1) : x); }
+	static constexpr int _wrap(int M, int x) { return (x < 0) ? (x + M) : ((x >= M) ? (x - M) : x); }
+	static constexpr int _clamp(int M, int x) { return (x < 0) ? 0 : ((x >= M) ? (M - 1) : x); }
+	template<typename T> static constexpr auto _abs(const T & value) -> T { return (T{} < value) ? value : -value; }
+
 	template <class T>
 	class Image
 	{
@@ -40,10 +55,6 @@ namespace ImageLib
 		public:
 			typedef iterator self_type;
 			typedef T value_type;
-			typedef T& reference;
-			typedef T* pointer;
-			typedef std::forward_iterator_tag iterator_category;
-			typedef int difference_type;
 			iterator(Image& parent, int x, int y, int z, T** slice, T* row) : X(x), Y(y), Z(z), _Slice(slice), Data(row), _myImage(parent) {}
 			self_type operator++() {
 				self_type i = *this;
@@ -78,38 +89,38 @@ namespace ImageLib
 				}
 				return *this;
 			}
-			reference operator*() { return Data[X]; }
-			pointer operator->() { return Data + X; }
+			T& operator*() { return Data[X]; }
+			T* operator->() { return Data + X; }
 			T* Pointer() { return Data + X; }
 			T& operator[](int index) { return Data[X + index]; }
 			const T& operator[](int index) const { return Data[X + index]; }
 
 			//reflected accessors
-			T& operator()(int dx, const _dx_reflect_t dummy) { return Data[_reflectD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
-			T& operator()(int dy, const _dy_reflect_t dummy) { return _Slice[_reflect(_myImage.Height, Y + dy)][X]; }
-			T& operator()(int dz, const _dz_reflect_t dummy) { return _myImage.Data3D[_reflect(_myImage.Depth, Z + dz)][Y][X]; }
-			T& operator()(int dx, int dy, const _dxy_reflect_t dummy) { return _Slice[_reflect(_myImage.Height, Y + dy)][_reflectD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
-			T& operator()(int dx, int dz, const _dxz_reflect_t dummy) { return _myImage.Data3D[_reflect(_myImage.Depth, Z + dz)][Y][_reflectD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
-			T& operator()(int dy, int dz, const _dyz_reflect_t dummy) { return _myImage.Data3D[_reflect(_myImage.Depth, Z + dz)][_reflect(_myImage.Height, Y + dy)][X]; }
-			T& operator()(int dx, int dy, int dz, const _dxyz_reflect_t dummy) { return _myImage.Data3D[_reflect(_myImage.Depth, Z + dz)][_reflect(_myImage.Height, Y + dy)][_reflectD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
+			T& operator()(int dx, const _x_reflect_t dummy) { return Data[_reflect(_myImage.Width, X + dx) * _myImage.DX]; }
+			T& operator()(int dy, const _y_reflect_t dummy) { return _Slice[_reflect(_myImage.Height, Y + dy)][X]; }
+			T& operator()(int dz, const _z_reflect_t dummy) { return _myImage.Data3D[_reflect(_myImage.Depth, Z + dz)][Y][X]; }
+			T& operator()(int dx, int dy, const _xy_reflect_t dummy) { return _Slice[_reflect(_myImage.Height, Y + dy)][_reflect(_myImage.Width, X + dx) * _myImage.DX]; }
+			T& operator()(int dx, int dz, const _xz_reflect_t dummy) { return _myImage.Data3D[_reflect(_myImage.Depth, Z + dz)][Y][_reflect(_myImage.Width, X + dx) * _myImage.DX]; }
+			T& operator()(int dy, int dz, const _yz_reflect_t dummy) { return _myImage.Data3D[_reflect(_myImage.Depth, Z + dz)][_reflect(_myImage.Height, Y + dy)][X]; }
+			T& operator()(int dx, int dy, int dz, const _xyz_reflect_t dummy) { return _myImage.Data3D[_reflect(_myImage.Depth, Z + dz)][_reflect(_myImage.Height, Y + dy)][_reflect(_myImage.Width, X + dx) * _myImage.DX]; }
 
 			//circular reflected accessors
-			T& operator()(int dx, const _dx_wrap_t dummy) { return Data[_wrapD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
-			T& operator()(int dy, const _dy_wrap_t dummy) { return _Slice[_wrap(_myImage.Height, Y + dy)][X]; }
-			T& operator()(int dz, const _dz_wrap_t dummy) { return _myImage.Data3D[_wrap(_myImage.Depth, Z + dz)][Y][X]; }
-			T& operator()(int dx, int dy, const _dxy_wrap_t dummy) { return _Slice[_wrap(_myImage.Height, Y + dy)][_wrapD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
-			T& operator()(int dx, int dz, const _dxz_wrap_t dummy) { return _myImage.Data3D[_wrap(_myImage.Depth, Z + dz)][Y][_wrapD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
-			T& operator()(int dy, int dz, const _dyz_wrap_t dummy) { return _myImage.Data3D[_wrap(_myImage.Depth, Z + dz)][_wrap(_myImage.Height, Y + dy)][X]; }
-			T& operator()(int dx, int dy, int dz, const _dxyz_wrap_t dummy) { return _myImage.Data3D[_wrap(_myImage.Depth, Z + dz)][_wrap(_myImage.Height, Y + dy)][_wrapD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
+			T& operator()(int dx, const _x_wrap_t dummy) { return Data[_wrap(_myImage.Width, X + dx) * _myImage.DX]; }
+			T& operator()(int dy, const _y_wrap_t dummy) { return _Slice[_wrap(_myImage.Height, Y + dy)][X]; }
+			T& operator()(int dz, const _z_wrap_t dummy) { return _myImage.Data3D[_wrap(_myImage.Depth, Z + dz)][Y][X]; }
+			T& operator()(int dx, int dy, const _xy_wrap_t dummy) { return _Slice[_wrap(_myImage.Height, Y + dy)][_wrap(_myImage.Width, X + dx) * _myImage.DX]; }
+			T& operator()(int dx, int dz, const _xz_wrap_t dummy) { return _myImage.Data3D[_wrap(_myImage.Depth, Z + dz)][Y][_wrap(_myImage.Width, X + dx) * _myImage.DX]; }
+			T& operator()(int dy, int dz, const _yz_wrap_t dummy) { return _myImage.Data3D[_wrap(_myImage.Depth, Z + dz)][_wrap(_myImage.Height, Y + dy)][X]; }
+			T& operator()(int dx, int dy, int dz, const _xyz_wrap_t dummy) { return _myImage.Data3D[_wrap(_myImage.Depth, Z + dz)][_wrap(_myImage.Height, Y + dy)][_wrap(_myImage.Width, X + dx)  * _myImage.DX]; }
 
 			//clamped accessors
-			T& operator()(int dx, const _dx_clamp_t dummy) { return Data[_clampD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
-			T& operator()(int dy, const _dy_clamp_t dummy) { return _Slice[_clamp(_myImage.Height, Y + dy)][X]; }
-			T& operator()(int dz, const _dz_clamp_t dummy) { return _myImage.Data3D[_clamp(_myImage.Depth, Z + dz)][Y][X]; }
-			T& operator()(int dx, int dy, const _dxy_clamp_t dummy) { return _Slice[_clamp(_myImage.Height, Y + dy)][_clampD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
-			T& operator()(int dx, int dz, const _dxz_clamp_t dummy) { return _myImage.Data3D[_clamp(_myImage.Depth, Z + dz)][Y][_clampD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
-			T& operator()(int dy, int dz, const _dyz_clamp_t dummy) { return _myImage.Data3D[_clamp(_myImage.Depth, Z + dz)][_clamp(_myImage.Height, Y + dy)][X]; }
-			T& operator()(int dx, int dy, int dz, const _dxyz_clamp_t dummy) { return _myImage.Data3D[_clamp(_myImage.Depth, Z + dz)][_clamp(_myImage.Height, Y + dy)][_clampD(_myImage.EndX, X + dx * _myImage.DX, _myImage.DX)]; }
+			T& operator()(int dx, const _x_clamp_t dummy) { return Data[_clamp(_myImage.Width, X + dx) * _myImage.DX]; }
+			T& operator()(int dy, const _y_clamp_t dummy) { return _Slice[_clamp(_myImage.Height, Y + dy)][X]; }
+			T& operator()(int dz, const _z_clamp_t dummy) { return _myImage.Data3D[_clamp(_myImage.Depth, Z + dz)][Y][X]; }
+			T& operator()(int dx, int dy, const _xy_clamp_t dummy) { return _Slice[_clamp(_myImage.Height, Y + dy)][_clamp(_myImage.Width, X + dx) * _myImage.DX]; }
+			T& operator()(int dx, int dz, const _xz_clamp_t dummy) { return _myImage.Data3D[_clamp(_myImage.Depth, Z + dz)][Y][_clampD(_myImage.Width, X + dx) * _myImage.DX]; }
+			T& operator()(int dy, int dz, const _yz_clamp_t dummy) { return _myImage.Data3D[_clamp(_myImage.Depth, Z + dz)][_clamp(_myImage.Height, Y + dy)][X]; }
+			T& operator()(int dx, int dy, int dz, const _xyz_clamp_t dummy) { return _myImage.Data3D[_clamp(_myImage.Depth, Z + dz)][_clamp(_myImage.Height, Y + dy)][_clamp(_myImage.Width, X + dx) * _myImage.DX]; }
 
 			bool operator==(const self_type& rhs) { return Z == _myImage.Depth; }
 			bool operator!=(const self_type& rhs) { return Z != _myImage.Depth; }
@@ -120,16 +131,6 @@ namespace ImageLib
 		private:
 			T** _Slice;
 			Image& _myImage;
-			constexpr int _reflect(int M, int x) { return (x < 0) ? (-x - 1) : ((x >= M) ? (2 * M - x - 1) : x); }
-			constexpr int _wrap(int M, int x) { return (x < 0) ? (x + M) : ((x >= M) ? (x - M) : x); }
-			constexpr int _clamp(int M, int x) { return (x < 0) ? 0 : ((x >= M) ? (M - 1) : x); }
-
-			//THESE MAY NOT WORK FOR MIRRORED IMAGES!!!
-			constexpr int _reflectD(int M, int x, int d) { return (x < 0) ? (-x - d) : ((x >= M) ? (2 * M - x - d) : x); }
-			constexpr int _wrapD(int M, int x, int d) { return (x < 0) ? (x + M) : ((x >= M) ? (x - M) : x); }
-			constexpr int _clampD(int M, int x, int d) { return (x < 0) ? 0 : ((x >= M) ? (M - 1) : x); }
-
-			template<class T> constexpr auto _abs(const T & value) -> T { return (T{} < value) ? value : -value; }
 		};
 
 		//constructors
@@ -171,8 +172,6 @@ namespace ImageLib
 		}
 		Image(Image& source, int offsetX, int offsetY, int width, int height, int dx, int dy, bool mirrorX = false, bool mirrorY = false, bool swapXY = false) : Image(source, offsetX, offsetY, 0, width, height, 1, dx, dy, 1, mirrorX, mirrorY, false, swapXY) { }
 		Image(Image& source, int offsetX, int width, int dx, bool mirrorX = false) : Image(source, offsetX, 0, 0, width, 1, 1, dx, 1, 1, mirrorX) { }
-		Image(Image& source) : Image(source, 0, 0, 0, source.Width, source.Height, source.Depth, 1, 1, 1) { }
-		Image(Image& source, bool deepCopy) : Image(source.Width, source.Height, source.Depth) { if (deepCopy) InitDeepCopy(source); else throw "error deepCopy must be true"; }
 		template<class U> Image(Image<U>& source) : Image(source.Width, source.Height, source.Depth) { InitDeepCopy(source); }
 		Image(int width, int height, int depth) : 
 			DX(1), 
@@ -403,46 +402,6 @@ namespace ImageLib
 		template <class U> bool operator>  (const U& rhs) { return (rhs < *this); }
 		template <class U> bool operator>= (const Image<U>& rhs) { return !(*this < rhs); }
 		template <class U> bool operator>= (const U& rhs) { return !(*this < rhs); }
-
-		//misc methods
-		Image ToIntegralImage()
-		{
-			Image& result = *this;
-			T** prevSlice = NULL;
-			for (int k = 0; k < result.Depth; k++)
-			{
-				T** resultSlice = result.Data3D[k];
-				if (prevSlice == NULL)
-				{
-					T* prevRow = NULL;
-					for (int j = 0; j < result.Height; j++)
-					{
-						T* resultRow = resultSlice[j];
-						double rowSum = 0;
-						if (prevRow == NULL) for (int i = 0; i != result.EndX; i += result.DX) resultRow[i] = (T)(rowSum += resultRow[i]);
-						else for (int i = 0; i != result.EndX; i += result.DX) resultRow[i] = (T)(prevRow[i] + (rowSum += resultRow[i]));
-						prevRow = resultRow;
-					}
-				}
-				else
-				{
-					T* prevRow = NULL;
-					T* prevSlicePrevRow = NULL;
-					for (int j = 0; j < result.Height; j++)
-					{
-						T* prevSliceRow = prevSlice[j];
-						T* resultRow = resultSlice[j];
-						double rowSum = 0;
-						if (prevRow == NULL) for (int i = 0; i != result.EndX; i += result.DX) resultRow[i] = (T)(prevSliceRow[i] + (rowSum += resultRow[i]));
-						else for (int i = 0; i != result.EndX; i += result.DX) resultRow[i] = (T)(prevSliceRow[i] - prevSlicePrevRow[i] + prevRow[i] + (rowSum += resultRow[i]));
-						prevRow = resultRow;
-						prevSlicePrevRow = prevSliceRow;
-					}
-				}
-				prevSlice = resultSlice;
-			}
-			return result;
-		}
 		long size() { return Width * Height * Depth; }
 		std::string ToString()
 		{
@@ -493,6 +452,37 @@ namespace ImageLib
 		//iterator methods
 		iterator begin() { return iterator(*this, 0, 0, 0, Data3D[0], Data3D[0][0]); }
 		iterator end() { return iterator(*this, 0, 0, Depth, NULL, NULL); }
+
+		//basic accessors
+		T operator()(int x, int y, int z) { return Data3D[z][y][x*DX]; }
+		const T& operator()(int x, int y, int z) const { return Data3D[z][y][x*DX]; }
+
+		//reflected accessors
+		T& operator()(int x, const _x_reflect_t dummy) { return Data[_reflect(Width, x) * DX]; }
+		T& operator()(int y, const _y_reflect_t dummy) { return _Slice[_reflect(Height, y)][X]; }
+		T& operator()(int z, const _z_reflect_t dummy) { return Data3D[_reflect(Depth, z)][Y][X]; }
+		T& operator()(int x, int y, const _xy_reflect_t dummy) { return _Slice[_reflect(Height, y)][_reflect(Width, x) * DX]; }
+		T& operator()(int x, int z, const _xz_reflect_t dummy) { return Data3D[_reflect(Depth, z)][Y][_reflect(Width, x) * DX]; }
+		T& operator()(int y, int z, const _yz_reflect_t dummy) { return Data3D[_reflect(Depth, z)][_reflect(Height, y)][X]; }
+		T& operator()(int x, int y, int z, const _xyz_reflect_t dummy) { return Data3D[_reflect(Depth, z)][_reflect(Height, y)][_reflect(Width, x) * DX]; }
+
+		//circular reflected accessors
+		T& operator()(int x, const _x_wrap_t dummy) { return Data[_wrap(Width, x) * DX]; }
+		T& operator()(int y, const _y_wrap_t dummy) { return _Slice[_wrap(Height, y)][X]; }
+		T& operator()(int z, const _z_wrap_t dummy) { return Data3D[_wrap(Depth, z)][Y][X]; }
+		T& operator()(int x, int y, const _xy_wrap_t dummy) { return _Slice[_wrap(Height, y)][_wrap(Width, x) * DX]; }
+		T& operator()(int x, int z, const _xz_wrap_t dummy) { return Data3D[_wrap(Depth, z)][Y][_wrap(Width, x) * DX]; }
+		T& operator()(int y, int z, const _yz_wrap_t dummy) { return Data3D[_wrap(Depth, z)][_wrap(Height, y)][X]; }
+		T& operator()(int x, int y, int z, const _xyz_wrap_t dummy) { return Data3D[_wrap(Depth, z)][_wrap(Height, y)][_wrap(Width, x)  * DX]; }
+
+		//clamped accessors
+		T& operator()(int x, const _x_clamp_t dummy) { return Data[_clamp(Width, x) * DX]; }
+		T& operator()(int y, const _y_clamp_t dummy) { return _Slice[_clamp(Height, y)][X]; }
+		T& operator()(int z, const _z_clamp_t dummy) { return Data3D[_clamp(Depth, z)][Y][X]; }
+		T& operator()(int x, int y, const _xy_clamp_t dummy) { return _Slice[_clamp(Height, y)][_clamp(Width, x) * DX]; }
+		T& operator()(int x, int z, const _xz_clamp_t dummy) { return Data3D[_clamp(Depth, z)][Y][_clampD(Width, x) * DX]; }
+		T& operator()(int y, int z, const _yz_clamp_t dummy) { return Data3D[_clamp(Depth, z)][_clamp(Height, y)][X]; }
+		T& operator()(int x, int y, int z, const _xyz_clamp_t dummy) { return Data3D[_clamp(Depth, z)][_clamp(Height, y)][_clamp(Width, x) * DX]; }
 
 		//Destructors and destruction methods
 		~Image()
@@ -585,11 +575,7 @@ namespace ImageLib
 			}
 			return *this;
 		}
-		constexpr int _ceil(float num) { return (static_cast<float>(static_cast<int>(num)) == num) ? static_cast<int>(num) : static_cast<int>(num) + ((num > 0) ? 1 : 0); }
-		template<typename T> constexpr auto _abs(const T & value) -> T { return (T{} < value) ? value : -value; }
-		constexpr int _swapx(int valuex, int valuey, int valuez, bool swapXY, bool swapYZ, bool swapZX) { return swapXY ? ((swapZX ? (valuez) : (valuey))) : (swapZX ? (valuez) : (valuex)); }
-		constexpr int _swapy(int valuex, int valuey, int valuez, bool swapXY, bool swapYZ, bool swapZX) { return swapXY ? (swapYZ ? (valuez) : (valuex)) : (swapYZ ? (valuez) : (valuey)); }
-		constexpr int _swapz(int valuex, int valuey,  int valuez, bool swapXY,  bool swapYZ, bool swapZX) { return swapYZ ? (swapZX ? (valuex) : (valuey)) : (swapZX ? (valuex) : (valuez)); }
+
 	public:
 		__readonly T*** Data3D;
 		__readonly int Width;
@@ -631,5 +617,86 @@ namespace ImageLib
 			}
 		}
 		return true;
+	}
+
+	//extension functions
+	template<class T> Image<T> Reduce(Image<T>& image, bool w, bool h, bool d) {
+		Image<T> s(image, 0, 0, 0, image.Width, image.Height, image.Depth, w ? 2 : 1, h ? 2 : 1, d ? 2 : 1);
+		if (s.Width == image.Width) w = false;
+		if (s.Height == image.Height) h = false;
+		if (s.Depth == image.Depth) d = false;
+		if (!w && !h && !d) return Image<T>(image, true); //return a deep copy
+		Image<T> r(source.Width, source.Height, source.Depth);
+		if (w) {
+			if (h) {
+				if (d) { for (auto si = s.begin(), ri = result.begin(); si != s.end(); ++si, ++ri) { *ri = (*si + si[s.DX] + si[s.DY] + si[s.DX + s.DY] + si[s.DZ] + si[s.DZ + s.DX] + si[s.DZ + s.DY] + si[s.DZ + s.DX + s.DY]) / 8; } }
+				else { for (auto si = s.begin(), ri = result.begin(); si != s.end(); ++si, ++ri) { *ri = (*si + si[s.DX] + si[s.DY] + si[s.DX + s.DY]) / 4; } }
+			}
+			else {
+				if (d) { for (auto si = s.begin(), ri = result.begin(); si != s.end(); ++si, ++ri) { *ri = (*si + si[s.DX] + si[s.DZ] + si[s.DZ + s.DX]) / 4; } }
+				else { for (auto si = s.begin(), ri = result.begin(); si != s.end(); ++si, ++ri) { *ri = (*si + si[s.DX]) / 2; } }
+			}
+		}
+		else {
+			if (h) {
+				if (d) { for (auto si = s.begin(), ri = result.begin(); si != s.end(); ++si, ++ri) { *ri = (*si + si[s.DY] + si[s.DZ] + si[s.DZ + s.DY]) / 4; } }
+				else { for (auto si = s.begin(), ri = result.begin(); si != s.end(); ++si, ++ri) { *ri = (*si + si[s.DY]) / 2; } }
+			}
+			else {
+				if (d) { for (auto si = s.begin(), ri = result.begin(); si != s.end(); ++si, ++ri) { *ri = (*si + si[s.DZ]) / 2; } }
+				//skip last case because it was handled above
+			}
+		}
+		return r;
+	}
+	template<class T> Image<T> Gaussian3(Image<T>& image, const double sigma) {
+		Image<T> result(image);
+		for (auto i = image.begin(), r = result.begin(); i != image.end(); ++i, ++r) {
+			*r = *i * _gaussian(sigma, 0) + (i[roi1.DX] + i[-roi1.DX]) * _gaussian(sigma, 1);
+		}
+	}
+	template<class T> Image<T> Gaussian5(Image<T>& image, const double sigma) {
+		Image<T> result(image);
+		for (auto i = image.begin(), r = result.begin(); i != image.end(); ++i, ++r) {
+			*r = *i * _gaussian(sigma, 0) + (i[roi1.DX] + i[-roi1.DX]) * _gaussian(sigma, 1) + (i[roi1.DX * 2] + i[-roi1.DX * 2]) * _gaussian(sigma, 2);
+		}
+	}
+	template<class T, class T2> Image<T> ToIntegralImage(Image<T2>& image)
+	{
+		Image<T> result = image;
+		T** prevSlice = NULL;
+		for (int k = 0; k < result.Depth; k++)
+		{
+			T** resultSlice = result.Data3D[k];
+			if (prevSlice == NULL)
+			{
+				T* prevRow = NULL;
+				for (int j = 0; j < result.Height; j++)
+				{
+					T* resultRow = resultSlice[j];
+					double rowSum = 0;
+					if (prevRow == NULL) for (int i = 0; i != result.EndX; i += result.DX) resultRow[i] = (T)(rowSum += resultRow[i]);
+					else for (int i = 0; i != result.EndX; i += result.DX) resultRow[i] = (T)(prevRow[i] + (rowSum += resultRow[i]));
+					prevRow = resultRow;
+				}
+			}
+			else
+			{
+				T* prevRow = NULL;
+				T* prevSlicePrevRow = NULL;
+				for (int j = 0; j < result.Height; j++)
+				{
+					T* prevSliceRow = prevSlice[j];
+					T* resultRow = resultSlice[j];
+					double rowSum = 0;
+					if (prevRow == NULL) for (int i = 0; i != result.EndX; i += result.DX) resultRow[i] = (T)(prevSliceRow[i] + (rowSum += resultRow[i]));
+					else for (int i = 0; i != result.EndX; i += result.DX) resultRow[i] = (T)(prevSliceRow[i] - prevSlicePrevRow[i] + prevRow[i] + (rowSum += resultRow[i]));
+					prevRow = resultRow;
+					prevSlicePrevRow = prevSliceRow;
+				}
+			}
+			prevSlice = resultSlice;
+		}
+		return result;
 	}
 }

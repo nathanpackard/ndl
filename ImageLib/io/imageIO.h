@@ -36,7 +36,7 @@ namespace ImageLib
 			printf("size: %d\r\n", decoder.GetImageSize());
 
 			Image<uint8_t> im(decoder.GetImage(), decoder.GetWidth() * 3, decoder.GetHeight());
-			return Image<uint8_t>(im, true);
+			return Image<uint8_t>(im);
 		}
 		Image<uint16_t> LoadBmp(std::string filename) {
 			bitmap bmp(filename.c_str());

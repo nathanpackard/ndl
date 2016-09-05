@@ -37,9 +37,6 @@
     <ClInclude Include="..\common\timer.h">
       <Filter>common</Filter>
     </ClInclude>
-    <ClInclude Include="..\image\Filter.h">
-      <Filter>image</Filter>
-    </ClInclude>
     <ClInclude Include="..\image\Image.h">
       <Filter>image</Filter>
     </ClInclude>
@@ -54,6 +51,9 @@
     </ClInclude>
     <ClInclude Include="..\common\endian.h">
       <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\image\mathHelpers.h">
+      <Filter>image</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
