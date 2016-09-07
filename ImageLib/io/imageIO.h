@@ -117,7 +117,7 @@ namespace ImageLib
 			//if (geo[2] <= 1 && geo[0] && geo[1]) geo[2] = image.image_size / geo[0] / geo[1] / (image.get_bit_count() / 8);
 			//ROWS * COLUMNS * NUMBER_OF_FRAMES *	SAMPLES_PER_PIXEL * (BITS_ALLOCATED / 8)
 			Image<T> result(geo[0], geo[1], geo[2]);
-			T* ptr = &result.Data3D[0][0][0];
+			T* ptr = result.Data();
 			long pixel_count = result.size();
 			if (sizeof(T) == image.get_bit_count() / 8) image.input_io->read((char*)ptr, pixel_count*sizeof(T));
 			else

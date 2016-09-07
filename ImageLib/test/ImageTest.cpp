@@ -245,58 +245,6 @@ void ImageLibrarySpeedTest()
 		cout << "noAndPointer is " << (100 * (basetime / noAndPointer) - 1) << "% faster" << endl << endl;
 		cout << Image<double>(result, 0, 0, 0, 4, 4, 1, 1, 1, 1) << endl;
 	}
-
-	{
-		Image<double> result(roi1);
-		double handCoded1 = codeTimer("roi1 convolution handCoded1", [&]() -> void
-		{
-			for (int k = 0; k < result.Depth; k++)
-			{
-				auto resultSlice = result.Data3D[k];
-				auto roiSlice = roi1.Data3D[k];
-				for (int j = 0; j < result.Height; j++)
-				{
-					auto resultRow = resultSlice[j];
-					auto roiRow = roiSlice[j];
-					int t = 0;
-					for (int i = 0; i != result.EndX; i += result.DX)
-					{
-						resultRow[i] = (roiRow[t + roi1.DX] + roiRow[t - roi1.DX] + roiRow[t + roi1.DY] + roiRow[t - roi1.DY]) * 0.25;
-						t += roi1.DX;
-					}
-				}
-			}
-		}, iterations);
-		cout << "handCoded1 is " << (100 * (basetime / handCoded1) - 1) << "% faster" << endl << endl;
-		cout << Image<double>(result, 0, 0, 0, 4, 4, 1, 1, 1, 1) << endl;
-	}
-
-	{
-		Image<double> result(roi1);
-		double handCoded2 = codeTimer("roi1 convolution handCoded2", [&]() -> void
-		{
-			int resultDx = result.DX;
-			int roi1Dx = roi1.DX;
-			for (int k = 0; k < result.Depth; k++)
-			{
-				auto resultSlice = result.Data3D[k];
-				auto roiSlice = roi1.Data3D[k];
-				for (int j = 0; j < result.Height; j++)
-				{
-					auto resultRow = resultSlice[j];
-					auto roiRow = roiSlice[j];
-					int t = 0;
-					for (int i = 0; i < result.EndX; i += result.DX)
-					{
-						resultRow[i] = (roiRow[t + roi1.DX] + roiRow[t - roi1.DX] + roiRow[t + roi1.DY] + roiRow[t - roi1.DY]) * 0.25;
-						t += roi1Dx;
-					}
-				}
-			}
-		}, iterations);
-		cout << "handCoded2 is " << (100 * (basetime / handCoded2) - 1) << "% faster" << endl << endl;
-		cout << Image<double>(result, 0, 0, 0, 4, 4, 1, 1, 1, 1) << endl;
-	}
 }
 void testIntegralImage()
 {
@@ -312,15 +260,15 @@ void testIntegralImage()
 }
 void displayBorderTests(Image<unsigned short>& image3D) {
 	cout << "value: " << image3D(1, 1, 1) << endl;
-	cout << "-2 x clamp: " << image3D(-2, 0, 0, xyz_clamp) << endl;
-	cout << "-2 x wrap: " << image3D(-2, 0, 0, xyz_wrap) << endl;
-	cout << "-2 x reflect: " << image3D(-2, 0, 0, xyz_reflect) << endl;
-	cout << "-2 y clamp: " << image3D(0, -2, 0, xyz_clamp) << endl;
-	cout << "-2 y wrap: " << image3D(0, -2, 0, xyz_wrap) << endl;
-	cout << "-2 y reflect: " << image3D(0, -2, 0, xyz_reflect) << endl;
-	cout << "-2 z clamp: " << image3D(0, 0, -2, xyz_clamp) << endl;
-	cout << "-2 z wrap: " << image3D(0, 0, -2, xyz_wrap) << endl;
-	cout << "-2 z reflect: " << image3D(0, 0, -2, xyz_reflect) << endl;
+	cout << "-2 x clamp: " << image3D.begin()(-2, x_clamp) << endl;
+	cout << "-2 x wrap: " << image3D.begin()(-2, x_wrap) << endl;
+	cout << "-2 x reflect: " << image3D.begin()(-2, x_reflect) << endl;
+	cout << "-2 y clamp: " << image3D.begin()(-2, y_clamp) << endl;
+	cout << "-2 y wrap: " << image3D.begin()(-2, y_wrap) << endl;
+	cout << "-2 y reflect: " << image3D.begin()(-2, y_reflect) << endl;
+	cout << "-2 z clamp: " << image3D.begin()(-2, z_clamp) << endl;
+	cout << "-2 z wrap: " << image3D.begin()(-2, z_wrap) << endl;
+	cout << "-2 z reflect: " << image3D.begin()(-2, z_reflect) << endl;
 }
 void testImageLibraryBorders() {
 	int size = 4;
