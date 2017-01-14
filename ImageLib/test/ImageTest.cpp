@@ -7,9 +7,7 @@
 #include "../io/imageIO.h";
 #include "../common/timer.h";
 #include "../image/mathHelpers.h"
-#include <iostream>
 
-using namespace std;
 using namespace ImageLib;
 using namespace timeUtils;
 
@@ -17,311 +15,311 @@ void testImageLibraryDimensions()
 {
 	int size = 4;
 	int i;
-	cout << endl << "1D Image" << endl;
-	Image<unsigned short> image1D(size);
+	std::cout << std::endl << "1D Image" << std::endl;
+	Image<unsigned short, 1> image1D(std::array<int, 1>{ size });
 	i = 0;
 	for (auto it = image1D.begin(); it != image1D.end(); ++it) *it = ++i;
-	cout << image1D << endl;
+	std::cout << image1D << std::endl;
 
-	cout << endl << "2D Image" << endl;
-	Image<unsigned short> image2D(size, size);
+	std::cout << std::endl << "2D Image" << std::endl;
+	Image<unsigned short, 3> image2D(std::array<int, 3>{ size, size, 1 });
 	i = 0;
 	for (auto it = image2D.begin(); it != image2D.end(); ++it) *it = ++i;
-	cout << image2D << endl;
+	std::cout << image2D << std::endl;
 
-	cout << endl << "3D Image" << endl;
-	Image<unsigned short> image3D(size, size, size);
+	std::cout << std::endl << "3D Image" << std::endl;
+	Image<unsigned short, 3> image3D(std::array<int, 3>{ size, size, size });
 	i = 0;
 	for (auto it = image3D.begin(); it != image3D.end(); ++it) *it = ++i;
-	cout << image3D << endl << image3D.CurrentState() << endl;
+	std::cout << image3D << std::endl << image3D.CurrentState() << std::endl;
 
-	cout << endl << "MirrorX" << endl;
-	Image<unsigned short> image3DmirrorX(image3D, 0, 0, 0, size, size, size, 1, 1, 1, true);
-	cout << image3DmirrorX << endl;
-	cout << image3DmirrorX.CurrentState() << endl;
+	std::cout << std::endl << "MirrorX" << std::endl;
+	Image<unsigned short, 3> image3DmirrorX(image3D, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ true, false, false });
+	std::cout << image3DmirrorX << std::endl;
+	std::cout << image3DmirrorX.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "MirrorX" << endl;
-	Image<unsigned short> image3DmirrorX2(image3DmirrorX, 0, 0, 0, size, size, size, 1, 1, 1, true);
-	cout << image3DmirrorX2 << endl;
-	cout << image3DmirrorX2.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "MirrorX" << std::endl;
+	Image<unsigned short, 3> image3DmirrorX2(image3DmirrorX, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ true, false, false });
+	std::cout << image3DmirrorX2 << std::endl;
+	std::cout << image3DmirrorX2.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "MirrorXRoi" << endl;
-	Image<unsigned short> image3DmirrorX3(image3DmirrorX2, 1, 1, 1, size - 2, size - 2, size - 2, 1, 1, 1, true);
-	cout << image3DmirrorX3 << endl;
-	cout << image3DmirrorX3.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "MirrorXRoi" << std::endl;
+	Image<unsigned short, 3> image3DmirrorX3(image3DmirrorX2, std::array<int, 3>{ 1, 1, 1 }, std::array<int, 3>{ size - 2, size - 2, size - 2 }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ true, false, false });
+	std::cout << image3DmirrorX3 << std::endl;
+	std::cout << image3DmirrorX3.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "MirrorY" << endl;
-	Image<unsigned short> image3DmirrorY(image3D, 0, 0, 0, size, size, size, 1, 1, 1, false, true);
-	cout << image3DmirrorY << endl;
-	cout << image3DmirrorY.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "MirrorY" << std::endl;
+	Image<unsigned short, 3> image3DmirrorY(image3D, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, true, false });
+	std::cout << image3DmirrorY << std::endl;
+	std::cout << image3DmirrorY.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "MirrorY" << endl;
-	Image<unsigned short> image3DmirrorY2(image3DmirrorY, 0, 0, 0, size, size, size, 1, 1, 1, false, true);
-	cout << image3DmirrorY2 << endl;
-	cout << image3DmirrorY2.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "MirrorY" << std::endl;
+	Image<unsigned short, 3> image3DmirrorY2(image3DmirrorY, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, true, false });
+	std::cout << image3DmirrorY2 << std::endl;
+	std::cout << image3DmirrorY2.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "MirrorYRoi" << endl;
-	Image<unsigned short> image3DmirrorY3(image3DmirrorY2, 1, 1, 1, size - 2, size - 2, size - 2, 1, 1, 1, false, true);
-	cout << image3DmirrorY3 << endl;
-	cout << image3DmirrorY3.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "MirrorYRoi" << std::endl;
+	Image<unsigned short, 3> image3DmirrorY3(image3DmirrorY2, std::array<int, 3>{ 1, 1, 1 }, std::array<int, 3>{ size - 2, size - 2, size - 2 }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, true, false });
+	std::cout << image3DmirrorY3 << std::endl;
+	std::cout << image3DmirrorY3.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "MirrorZ" << endl;
-	Image<unsigned short> image3DmirrorZ(image3D, 0, 0, 0, size, size, size, 1, 1, 1, false, false, true);
-	cout << image3DmirrorZ << endl;
-	cout << image3DmirrorZ.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "MirrorZ" << std::endl;
+	Image<unsigned short, 3> image3DmirrorZ(image3D, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, true });
+	std::cout << image3DmirrorZ << std::endl;
+	std::cout << image3DmirrorZ.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "MirrorZ" << endl;
-	Image<unsigned short> image3DmirrorZ2(image3DmirrorZ, 0, 0, 0, size, size, size, 1, 1, 1, false, false, true);
-	cout << image3DmirrorZ2 << endl;
-	cout << image3DmirrorZ2.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "MirrorZ" << std::endl;
+	Image<unsigned short, 3> image3DmirrorZ2(image3DmirrorZ, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, true });
+	std::cout << image3DmirrorZ2 << std::endl;
+	std::cout << image3DmirrorZ2.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "MirrorZRoi" << endl;
-	Image<unsigned short> image3DmirrorZ3(image3DmirrorZ2, 1, 1, 1, size - 2, size - 2, size - 2, 1, 1, 1, false, false, true);
-	cout << image3DmirrorZ3 << endl;
-	cout << image3DmirrorZ3.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "MirrorZRoi" << std::endl;
+	Image<unsigned short, 3> image3DmirrorZ3(image3DmirrorZ2, std::array<int, 3>{ 1, 1, 1 }, std::array<int, 3>{ size - 2, size - 2, size - 2 }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, true });
+	std::cout << image3DmirrorZ3 << std::endl;
+	std::cout << image3DmirrorZ3.CurrentState() << std::endl;
 
-	 cout << endl;
-	cout << "MirrorXYZ" << endl;
-	Image<unsigned short> image3DmirrorXYZ(image3D, 0, 0, 0, size, size, size, 1, 1, 1, true, true, true);
-	cout << image3DmirrorXYZ << endl;
-	cout << image3DmirrorXYZ.CurrentState() << endl;
+	 std::cout << std::endl;
+	std::cout << "MirrorXYZ" << std::endl;
+	Image<unsigned short, 3> image3DmirrorXYZ(image3D, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ true, true, true });
+	std::cout << image3DmirrorXYZ << std::endl;
+	std::cout << image3DmirrorXYZ.CurrentState() << std::endl;
 
-	 cout << endl;
-	cout << "SwapXY" << endl;
-	Image<unsigned short> image3DswapXY(image3D, 0, 0, 0, size, size, size, 1, 1, 1, false, false, false, true);
-	cout << image3DswapXY << endl;
-	cout << image3DswapXY.CurrentState() << endl;
+	 std::cout << std::endl;
+	std::cout << "SwapXY" << std::endl;
+	Image<unsigned short, 3> image3DswapXY(image3D, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, false }, 0, 1);
+	std::cout << image3DswapXY << std::endl;
+	std::cout << image3DswapXY.CurrentState() << std::endl;
 
-	 cout << endl;
-	cout << "SwapXY" << endl;
-	Image<unsigned short> image3DswapXY2(image3DswapXY, 0, 0, 0, size, size, size, 1, 1, 1, false, false, false, true);
-	cout << image3DswapXY2 << endl;
-	cout << image3DswapXY2.CurrentState() << endl;
+	 std::cout << std::endl;
+	std::cout << "SwapXY" << std::endl;
+	Image<unsigned short, 3> image3DswapXY2(image3DswapXY, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, false }, 0, 1);
+	std::cout << image3DswapXY2 << std::endl;
+	std::cout << image3DswapXY2.CurrentState() << std::endl;
 
-	 cout << endl;
-	cout << "SwapYZ" << endl;
-	Image<unsigned short> image3DswapYZ(image3D, 0, 0, 0, size, size, size, 1, 1, 1, false, false, false, false, true);
-	cout << image3DswapYZ << endl;
-	cout << image3DswapYZ.CurrentState() << endl;
+	 std::cout << std::endl;
+	std::cout << "SwapYZ" << std::endl;
+	Image<unsigned short, 3> image3DswapYZ(image3D, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, false }, 1, 2);
+	std::cout << image3DswapYZ << std::endl;
+	std::cout << image3DswapYZ.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "SwapYZ" << endl;
-	Image<unsigned short> image3DswapYZ2(image3DswapYZ, 0, 0, 0, size, size, size, 1, 1, 1, false, false, false, false, true);
-	cout << image3DswapYZ2 << endl;
-	cout << image3DswapYZ2.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "SwapYZ" << std::endl;
+	Image<unsigned short, 3> image3DswapYZ2(image3DswapYZ, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, false }, 1, 2);
+	std::cout << image3DswapYZ2 << std::endl;
+	std::cout << image3DswapYZ2.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "SwapZX" << endl;
-	Image<unsigned short> image3DswapZX(image3D, 0, 0, 0, size, size, size, 1, 1, 1, false, false, false, false, false, true);
-	cout << image3DswapZX << endl;
-	cout << image3DswapZX.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "SwapZX" << std::endl;
+	Image<unsigned short, 3> image3DswapZX(image3D, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, false }, 0, 2);
+	std::cout << image3DswapZX << std::endl;
+	std::cout << image3DswapZX.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "SwapZX" << endl;
-	Image<unsigned short> image3DswapZX2(image3DswapZX, 0, 0, 0, size, size, size, 1, 1, 1, false, false, false, false, false, true);
-	cout << image3DswapZX2 << endl;
-	cout << image3DswapZX2.CurrentState() << endl;
+	std::cout << std::endl;
+	std::cout << "SwapZX" << std::endl;
+	Image<unsigned short, 3> image3DswapZX2(image3DswapZX, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, false }, 0, 2);
+	std::cout << image3DswapZX2 << std::endl;
+	std::cout << image3DswapZX2.CurrentState() << std::endl;
 
-	Image<unsigned short> image(8, 8);
+	Image<unsigned short, 3> image(std::array<int, 3>{ 8, 8, 1 });
 
-	cout << endl;
-	cout << "roi1" << endl;
-	Image<unsigned short> roi1(image, 2, 2, image.Width - 4, image.Height - 4, 2, 2);
+	std::cout << std::endl;
+	std::cout << "roi1" << std::endl;
+	Image<unsigned short, 3> roi1(image, std::array<int, 3>{ 2, 2, 0 }, std::array<int, 3>{ image.Extent[0] - 4, image.Extent[1] - 4, 1 }, std::array<int, 3>{ 2, 2, 1 }, std::array<bool, 3>{ false, false, false });
 
-	for (auto it = roi1.begin(); it != roi1.end(); ++it) *it = (unsigned short)(10 * it.X / 2 + 1 + (it.Y + 1));
-	cout << roi1 << endl;
-	cout << roi1.CurrentState() << endl;
+	for (auto it = roi1.begin(); it != roi1.end(); ++it) *it = (unsigned short)(10 * it.I[0] / 2 + 1 + (it.I[1] + 1));
+	std::cout << roi1 << std::endl;
+	std::cout << roi1.CurrentState() << std::endl;
 
-	cout << endl;
-	cout << "image" << endl;
-	cout << image << endl;
+	std::cout << std::endl;
+	std::cout << "image" << std::endl;
+	std::cout << image << std::endl;
 }
 void testImageLibraryAccuracy()
 {
-	cout << endl;
-	cout << "image" << endl;
-	Image<double> image(12, 12, 2);
-	cout << image << endl;
+	std::cout << std::endl;
+	std::cout << "image" << std::endl;
+	Image<double, 3> image(std::array<int, 3>{ 12, 12, 2 });
+	std::cout << image << std::endl;
 
-	cout << endl;
-	cout << "roi1" << endl;
-	Image<double> roi1(image, 2, 2, image.Width - 4, image.Height - 4, 2, 2);
-	for (auto it = roi1.begin(); it != roi1.end(); ++it) *it = it.X / 2 + 1 + (it.Y + 1) / 10.0;
-	cout << roi1 << endl;
+	std::cout << std::endl;
+	std::cout << "roi1" << std::endl;
+	Image<double, 3> roi1(image, std::array<int, 3>{ 2, 2, 0 }, std::array<int, 3>{ image.Extent[0] - 4, image.Extent[1] - 4, 1 }, std::array<int, 3>{ 2, 2, 1 }, std::array<bool, 3>{ false,false,false });
+	for (auto it = roi1.begin(); it != roi1.end(); ++it) *it = it.I[0] / 2 + 1 + (it.I[1] + 1) / 10.0;
+	std::cout << roi1 << std::endl;
 
-	cout << endl;
-	cout << "roi2" << endl;
-	Image<double> roi2(image, 3, 1, image.Width - 4, image.Height - 2, 2, 1);
+	std::cout << std::endl;
+	std::cout << "roi2" << std::endl;
+	Image<double, 3> roi2(image, std::array<int, 3>{ 3, 1, 0 }, std::array<int, 3>{ image.Extent[0] - 4, image.Extent[1] - 2, 1 }, std::array<int, 3>{ 2, 1, 1 }, std::array<bool, 3>{ false, false, false });
 	for (auto it = roi2.begin(); it != roi2.end(); ++it) *it = 1;
-	cout << roi2 << endl;
+	std::cout << roi2 << std::endl;
 
-	cout << endl;
-	cout << "image after roi updates" << endl;
-	cout << image << endl;
+	std::cout << std::endl;
+	std::cout << "image after roi updates" << std::endl;
+	std::cout << image << std::endl;
 
-	cout << endl;
-	Image<double> result(roi1);
+	std::cout << std::endl;
+	Image<double, 3> result(roi1);
 	double basetime = codeTimer("roi1 convolution", [&]() -> void
 	{
 		auto resultit = result.begin();
 		for (auto it = roi1.begin(); it != roi1.end(); ++it)
 		{
-			*resultit = (it[roi1.DX] + it[-roi1.DX] + it[roi1.DY] + it[-roi1.DY]) * 0.25;
+			*resultit = (it[roi1.StepSize[0]] + it[-roi1.StepSize[0]] + it[roi1.StepSize[1]] + it[-roi1.StepSize[1]]) * 0.25;
 			++resultit;
 		}
 	});
-	cout << result << endl;
+	std::cout << result << std::endl;
 
-	cout << endl;
-	cout << "ROI2" << endl;
-	Image<double> result2(roi2);
+	std::cout << std::endl;
+	std::cout << "ROI2" << std::endl;
+	Image<double, 3> result2(roi2);
 
 	auto result2it = result2.begin();
 	for (auto roi2it = roi2.begin(); roi2it != roi2.end(); ++roi2it)
 	{
-		*result2it = (roi2it[roi2.DX] + roi2it[-roi2.DX] + roi2it[roi2.DY] + roi2it[-roi2.DY]) / 4;
+		*result2it = (roi2it[roi2.StepSize[0]] + roi2it[-roi2.StepSize[0]] + roi2it[roi2.StepSize[1]] + roi2it[-roi2.StepSize[1]]) / 4;
 		++result2it;
 	}
-	cout << result2 << endl;
+	std::cout << result2 << std::endl;
 
-	cout << endl;
+	std::cout << std::endl;
 	int zeros = 0;
 	for (const auto& value : roi1)  if (value == 0) zeros++;
-	cout << "roi1 has " << zeros << " zeros" << endl;
+	std::cout << "roi1 has " << zeros << " zeros" << std::endl;
 	zeros = 0;
 	for (const auto& value : image) if (value == 0) zeros++;
-	cout << "image has " << zeros << " zeros" << endl;
-	cout << endl;
+	std::cout << "image has " << zeros << " zeros" << std::endl;
+	std::cout << std::endl;
 }
 void ImageLibrarySpeedTest()
 {
 	int iterations = 100;
-	Image<double> image(1000, 1000, 2);
+	Image<double, 3> image(std::array<int, 3>{ 1000, 1000, 2 });
 
-	Image<double> roi1(image, 2, 2, image.Width - 4, image.Height - 4, 2, 2);
-	for (auto it = roi1.begin(); it != roi1.end(); ++it) *it = it.X / 2 + 1 + (it.Y + 1) / 10.0;
+	Image<double, 3> roi1(image, std::array<int, 3>{ 2, 2, 1 }, std::array<int, 3>{ image.Extent[0] - 4, image.Extent[1] - 4, 1 }, std::array<int, 3>{ 2, 2, 1 }, std::array<bool, 3>{ false, false, false });
+	for (auto it = roi1.begin(); it != roi1.end(); ++it) *it = it.I[0] / 2 + 1 + (it.I[1] + 1) / 10.0;
 
-	Image<double> roi2(image, 3, 1, image.Width - 4, image.Height - 2, 2, 1);
+	Image<double, 3> roi2(image, std::array<int, 3>{ 3, 1, 1 }, std::array<int, 3>{ image.Extent[0] - 4, image.Extent[1] - 2, 1 }, std::array<int, 3>{ 2, 1, 1 }, std::array<bool, 3>{ false, false, false });
 	for (auto it = roi2.begin(); it != roi2.end(); ++it) *it = 1;
 
 	double basetime;
 	{
-		Image<double> result(roi1);
-		basetime = codeTimer("roi1 convolution", [&]() -> void
+		Image<double, 3> result(roi1);
+		basetime = codeTimer("roi1 convolution index", [&]() -> void
 		{
 			for (auto it = roi1.begin(), resultit = result.begin(); it != roi1.end(); ++it, ++resultit)
-				*resultit = (it[roi1.DX] + it[-roi1.DX] + it[roi1.DY] + it[-roi1.DY]) * 0.25;
+				*resultit = (it[roi1.StepSize[0]] + it[-roi1.StepSize[0]] + it[roi1.StepSize[1]] + it[-roi1.StepSize[1]]) * 0.25;
 		}, iterations);
-		cout << endl;
-		cout << Image<double>(result, 0, 0, 0, 4, 4, 1, 1, 1, 1) << endl;
+		std::cout << std::endl;
+		std::cout << Image<double, 3>(result, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ 4, 4, 1 }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, false }) << std::endl;
 	}
 
 	{
-		Image<double> result(roi1);
-		double noAnd = codeTimer("roi1 convolution no &", [&]() -> void
+		Image<double, 3> result(roi1);
+		double noAnd = codeTimer("roi1 convolution clamp", [&]() -> void
 		{
 			for (auto it = roi1.begin(), resultit = result.begin(); it != roi1.end(); ++it, ++resultit)
 				*resultit = (it(1, x_clamp) + it(-1, x_clamp) + it(1, y_clamp) + it(-1, y_clamp)) * 0.25;
 		}, iterations);
-		cout << "noAnd is " << (100 * ((basetime / noAnd) - 1)) << "% faster" << endl << endl;
-		cout << Image<double>(result, 0, 0, 0, 4, 4, 1, 1, 1, 1) << endl;
+		std::cout << "noAnd is " << (100 * ((basetime / noAnd) - 1)) << "% faster" << std::endl << std::endl;
+		std::cout << Image<double, 3>(result, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ 4, 4, 1 }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, false }) << std::endl;
 	}
 
 	{
-		Image<double> result(roi1);
-		double noAndPointer = codeTimer("roi1 convolution no & pointer", [&]() -> void
+		Image<double, 3> result(roi1);
+		double noAnd = codeTimer("roi1 convolution wrap", [&]() -> void
 		{
 			for (auto it = roi1.begin(), resultit = result.begin(); it != roi1.end(); ++it, ++resultit)
-				*resultit = (it[roi1.DX] + it[-roi1.DX] + it[roi1.DY] + it[-roi1.DY]) * 0.25;
+				*resultit = (it(1, x_wrap) + it(-1, x_wrap) + it(1, y_wrap) + it(-1, y_wrap)) * 0.25;
 		}, iterations);
-		cout << "noAndPointer is " << (100 * (basetime / noAndPointer) - 1) << "% faster" << endl << endl;
-		cout << Image<double>(result, 0, 0, 0, 4, 4, 1, 1, 1, 1) << endl;
+		std::cout << "noAnd is " << (100 * ((basetime / noAnd) - 1)) << "% faster" << std::endl << std::endl;
+		std::cout << Image<double, 3>(result, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ 4, 4, 1 }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, false }) << std::endl;
 	}
 }
 void testIntegralImage()
 {
 	int size = 3;
-	cout << endl << "Original Image" << endl;
-	Image<unsigned short> image(size, size, size);
+	std::cout << std::endl << "Original Image" << std::endl;
+	Image<unsigned short, 3> image(std::array<int, 3>{ size, size, size });
 	int i = 0;
 	for (auto it = image.begin(); it != image.end(); ++it) *it = ++i;
-	cout << image << endl;
+	std::cout << image << std::endl;
 
-	cout << "Integral Image" << endl;
-	cout << ToIntegralImage<long>(image) << endl;
+	std::cout << "Integral Image" << std::endl;
+	std::cout << ToIntegralImage<long>(image) << std::endl;
 }
-void displayBorderTests(Image<unsigned short>& image3D) {
-	cout << "value: " << image3D(1, 1, 1) << endl;
-	cout << "-2 x clamp: " << image3D.begin()(-2, x_clamp) << endl;
-	cout << "-2 x wrap: " << image3D.begin()(-2, x_wrap) << endl;
-	cout << "-2 x reflect: " << image3D.begin()(-2, x_reflect) << endl;
-	cout << "-2 y clamp: " << image3D.begin()(-2, y_clamp) << endl;
-	cout << "-2 y wrap: " << image3D.begin()(-2, y_wrap) << endl;
-	cout << "-2 y reflect: " << image3D.begin()(-2, y_reflect) << endl;
-	cout << "-2 z clamp: " << image3D.begin()(-2, z_clamp) << endl;
-	cout << "-2 z wrap: " << image3D.begin()(-2, z_wrap) << endl;
-	cout << "-2 z reflect: " << image3D.begin()(-2, z_reflect) << endl;
+void displayBorderTests(Image<unsigned short, 3>& image3D) {
+	std::cout << "value: " << image3D(std::array<int, 3>{ 1, 1, 1 }) << std::endl;
+	std::cout << "-2 x clamp: " << image3D.begin()(-2, x_clamp) << std::endl;
+	std::cout << "-2 x wrap: " << image3D.begin()(-2, x_wrap) << std::endl;
+	std::cout << "-2 x reflect: " << image3D.begin()(-2, x_reflect) << std::endl;
+	std::cout << "-2 y clamp: " << image3D.begin()(-2, y_clamp) << std::endl;
+	std::cout << "-2 y wrap: " << image3D.begin()(-2, y_wrap) << std::endl;
+	std::cout << "-2 y reflect: " << image3D.begin()(-2, y_reflect) << std::endl;
+	std::cout << "-2 z clamp: " << image3D.begin()(-2, z_clamp) << std::endl;
+	std::cout << "-2 z wrap: " << image3D.begin()(-2, z_wrap) << std::endl;
+	std::cout << "-2 z reflect: " << image3D.begin()(-2, z_reflect) << std::endl;
 }
 void testImageLibraryBorders() {
 	int size = 4;
 	int i;
 
-	cout << endl << "3D Image" << endl;
-	Image<unsigned short> image3D(size, size, size);
+	std::cout << std::endl << "3D Image" << std::endl;
+	Image<unsigned short, 3> image3D(std::array<int, 3>{ size, size, size });
 	i = 0;
 	for (auto it = image3D.begin(); it != image3D.end(); ++it) *it = ++i;
-	cout << image3D << endl;
+	std::cout << image3D << std::endl;
 	displayBorderTests(image3D);
 
-	cout << endl << "MirrorX" << endl;
-	Image<unsigned short> MirrorX(image3D, 0, 0, 0, size, size, size, 1, 1, 1, true);
-	cout << MirrorX << endl;
+	std::cout << std::endl << "MirrorX" << std::endl;
+	Image<unsigned short, 3> MirrorX(image3D, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ true, false, false });
+	std::cout << MirrorX << std::endl;
 	displayBorderTests(MirrorX);
 
-	cout << endl << "MirrorY" << endl;
-	Image<unsigned short> MirrorY(image3D, 0, 0, 0, size, size, size, 1, 1, 1, false, true);
-	cout << MirrorY << endl;
+	std::cout << std::endl << "MirrorY" << std::endl;
+	Image<unsigned short, 3> MirrorY(image3D, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, true, false });
+	std::cout << MirrorY << std::endl;
 	displayBorderTests(MirrorY);
 
-	cout << endl << "MirrorZ" << endl;
-	Image<unsigned short> MirrorZ(image3D, 0, 0, 0, size, size, size, 1, 1, 1, false, false, true);
-	cout << MirrorZ << endl;
+	std::cout << std::endl << "MirrorZ" << std::endl;
+	Image<unsigned short, 3> MirrorZ(image3D, std::array<int, 3>{ 0, 0, 0 }, std::array<int, 3>{ size, size, size }, std::array<int, 3>{ 1, 1, 1 }, std::array<bool, 3>{ false, false, true });
+	std::cout << MirrorZ << std::endl;
 	displayBorderTests(MirrorZ);
 }
-void TestImages(string inputFolder, string outputFolder)
+void TestImages(std::string inputFolder, std::string outputFolder)
 {
-	Image<uint8_t> image = ImageIO::LoadJpeg(inputFolder + "\\ng_bwgirl_crop.jpg");
-	Image<uint8_t> red(image, 0, 0, image.Width, image.Height, 3, 1);
-	Image<uint8_t> green(image, 1, 0, image.Width, image.Height, 3, 1);
-	Image<uint8_t> blue(image, 2, 0, image.Width, image.Height, 3, 1);
-	ImageIO::SaveRaw(red, outputFolder + string("\\red_") + std::to_string(red.Width) + "x" + std::to_string(red.Height) + ".raw");
-	ImageIO::SaveRaw(green, outputFolder + string("\\green_") + std::to_string(green.Width) + "x" + std::to_string(green.Height) + ".raw");
-	ImageIO::SaveRaw(blue, outputFolder + string("\\blue_") + std::to_string(blue.Width) + "x" + std::to_string(blue.Height) + ".raw");
+	Image<uint8_t, 2> image = ImageIO::LoadJpeg(inputFolder + "\\ng_bwgirl_crop.jpg");
+	Image<uint8_t, 2> red(image, std::array<int, 2>{ 0, 0 }, std::array<int, 2>{ image.Extent[0], image.Extent[1] }, std::array<int, 2>{ 3, 1 }, std::array<bool, 2>{ false, false });
+	Image<uint8_t, 2> green(image, std::array<int, 2>{ 1, 0 }, std::array<int, 2>{ image.Extent[0], image.Extent[1] }, std::array<int, 2>{ 3, 1 }, std::array<bool, 2>{ false, false });
+	Image<uint8_t, 2> blue(image, std::array<int, 2>{ 2, 0 }, std::array<int, 2>{ image.Extent[0], image.Extent[1] }, std::array<int, 2>{ 3, 1 }, std::array<bool, 2>{ false, false });
+	ImageIO::SaveRaw(red, outputFolder + std::string("\\red_") + std::to_string(red.Extent[0]) + "x" + std::to_string(red.Extent[1]) + ".raw");
+	ImageIO::SaveRaw(green, outputFolder + std::string("\\green_") + std::to_string(green.Extent[0]) + "x" + std::to_string(green.Extent[1]) + ".raw");
+	ImageIO::SaveRaw(blue, outputFolder + std::string("\\blue_") + std::to_string(blue.Extent[0]) + "x" + std::to_string(blue.Extent[1]) + ".raw");
 	//ImageIO::Save(image, outputFolder + "\\ng_bwgirl_crop.jpg");
-	Image<float> fimage(image);
+	Image<float, 2> fimage(image);
 	//fimage.GaussianBlur2D(3);
-	ImageIO::SaveRaw(fimage, outputFolder + string("\\float_") + std::to_string(fimage.Width) + "x" + std::to_string(fimage.Height) + ".raw");
-	Image<uint8_t> bmpImage = ImageIO::LoadBmp(inputFolder + "\\marbles.bmp");
-	Image<uint8_t> red2(bmpImage, 0, 0, bmpImage.Width, bmpImage.Height, 3, 1);
-	Image<uint8_t> green2(bmpImage, 1, 0, bmpImage.Width, bmpImage.Height, 3, 1);
-	Image<uint8_t> blue2(bmpImage, 2, 0, bmpImage.Width, bmpImage.Height, 3, 1);
-	ImageIO::SaveRaw(red2, outputFolder + string("\\red2_") + std::to_string(red2.Width) + "x" + std::to_string(red2.Height) + ".raw");
-	ImageIO::SaveRaw(green2, outputFolder + string("\\green2_") + std::to_string(green2.Width) + "x" + std::to_string(green2.Height) + ".raw");
-	ImageIO::SaveRaw(blue2, outputFolder + string("\\blue2_") + std::to_string(blue2.Width) + "x" + std::to_string(blue2.Height) + ".raw");
+	ImageIO::SaveRaw(fimage, outputFolder + std::string("\\float_") + std::to_string(fimage.Extent[0]) + "x" + std::to_string(fimage.Extent[1]) + ".raw");
+	Image<uint8_t, 2> bmpImage = ImageIO::LoadBmp(inputFolder + "\\marbles.bmp");
+	Image<uint8_t, 2> red2(bmpImage, std::array<int, 2>{ 0, 0 }, std::array<int, 2>{ bmpImage.Extent[0], bmpImage.Extent[1] }, std::array<int, 2>{ 3, 1 }, std::array<bool, 2>{ false, false });
+	Image<uint8_t, 2> green2(bmpImage, std::array<int, 2>{ 1, 0 }, std::array<int, 2>{ bmpImage.Extent[0], bmpImage.Extent[1] }, std::array<int, 2>{ 3, 1 }, std::array<bool, 2>{ false, false });
+	Image<uint8_t, 2> blue2(bmpImage, std::array<int, 2>{ 2, 0 }, std::array<int, 2>{ bmpImage.Extent[0], bmpImage.Extent[1] }, std::array<int, 2>{ 3, 1 }, std::array<bool, 2>{ false, false });
+	ImageIO::SaveRaw(red2, outputFolder + std::string("\\red2_") + std::to_string(red2.Extent[0]) + "x" + std::to_string(red2.Extent[1]) + ".raw");
+	ImageIO::SaveRaw(green2, outputFolder + std::string("\\green2_") + std::to_string(green2.Extent[0]) + "x" + std::to_string(green2.Extent[1]) + ".raw");
+	ImageIO::SaveRaw(blue2, outputFolder + std::string("\\blue2_") + std::to_string(blue2.Extent[0]) + "x" + std::to_string(blue2.Extent[1]) + ".raw");
 
 	//auto dcmImage = ImageIO::LoadDicom<uint16_t>(inputFolder + "\\foot.dcm");
-	//ImageIO::SaveRaw(dcmImage, outputFolder + string("\\mri_") + std::to_string(dcmImage.Width) + "x" + std::to_string(dcmImage.Height) + ".raw");
+	//ImageIO::SaveRaw(dcmImage, outputFolder + string("\\mri_") + std::to_string(dcmImage.Extent[0]) + "x" + std::to_string(dcmImage.Extent[1]) + ".raw");
 
 	auto dcmImage2 = ImageIO::LoadDicom<int16_t>(inputFolder + "\\foot.dcm");
-	ImageIO::SaveRaw(dcmImage2, outputFolder + string("\\CT_") + std::to_string(dcmImage2.Width) + "x" + std::to_string(dcmImage2.Height) + ".raw");
+	ImageIO::SaveRaw(dcmImage2, outputFolder + std::string("\\CT_") + std::to_string(dcmImage2.Extent[0]) + "x" + std::to_string(dcmImage2.Extent[1]) + ".raw");
 }
 int main()
 {
@@ -330,6 +328,6 @@ int main()
 	ImageLibrarySpeedTest();
 	testIntegralImage();
 	testImageLibraryBorders();
-	TestImages("C:\\workspace\\ndl\\testData", "C:\\Users\\Nathan\\Desktop");
+	TestImages("C:\\Users\\natha\\Documents\\ndl\\testData", "C:\\Users\\natha\\Desktop");
 	return 0;
 }
