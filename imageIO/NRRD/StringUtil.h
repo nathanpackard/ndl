@@ -90,11 +90,11 @@ template <typename T> inline std::vector<T> stringToVector(const std::string& in
 	template <> inline std::string toString<>(const std::vector<TYPE>& in) {return vectorToString(in,";");} \
 	template <> inline std::vector<TYPE> stringTo<>(const std::string& in) {return stringToVector<TYPE>(in,';');}
 _DEFINE_TYPE(std::string)
-#include "BaseTypes.hxx"
+#include "BaseTypes.h"
 
 // Specializations
 #define _DEFINE_TYPE(X)  template<> inline void reset<X>(X& v) {v=0;}
-#include "BaseTypes.hxx"
+#include "BaseTypes.h"
 
 /// Right trim
 inline void rtrim(std::string &str , const std::string& t = " \t")

@@ -42,7 +42,7 @@ namespace ndl
 		public:
 			typedef iterator self_type;
 			typedef T value_type;
-			iterator(Image& parent, int last) : I{}, _Ptr(parent.Data()), _myImage(parent) { I.back() = last; }
+			iterator(Image& parent, int last) : I{}, _Ptr(parent.data()), _myImage(parent) { I.back() = last; }
 			self_type operator++() {
 				self_type i = *this;
 				if ((I[0] += _myImage.StepSize[0]) != _myImage.End[0]) return i;
@@ -105,18 +105,18 @@ namespace ndl
 			const T& operator[](int index) const { return _Ptr[I[0] + index]; }
 
 			//relative reflection accessors
-			T& reflectElement(int delta, const int dimensionIndex)
+			T& reflect(int delta, const int dimensionIndex)
 			{
 				return _Ptr[I[0] + (_reflect(_myImage.Extent[dimensionIndex], I[dimensionIndex] + delta) - I[dimensionIndex]) * _myImage.StepSize[dimensionIndex]];
 			}
-			T& reflectElement(std::array<int, DIM> delta)
+			T& reflect(std::array<int, DIM> delta)
 			{
 				int index = 0;
 				for (int i = 0; i < DIM; i++) index += _Ptr[I[0] + (_reflect(_myImage.Extent[i], I[i] + delta[i]) - I[i]) * _myImage.StepSize[i]];
 				return _Ptr[index];
 			}
 			template<int D>
-			T& reflectElement(std::array<int, D>& delta, const std::array<int, D>& dimensionIndices)
+			T& reflect(std::array<int, D>& delta, const std::array<int, D>& dimensionIndices)
 			{
 				int index = 0;
 				for (int i = 0; i < D; i++) {
@@ -127,18 +127,18 @@ namespace ndl
 			}
 
 			//relative clamping accessors
-			T& clampElement(int delta, const int dimensionIndex)
+			T& clamp(int delta, const int dimensionIndex)
 			{
 				return _Ptr[I[0] + (_clamp(_myImage.Extent[dimensionIndex], I[dimensionIndex] + delta) - I[dimensionIndex]) * _myImage.StepSize[dimensionIndex]];
 			}
-			T& clampElement(std::array<int, DIM> delta)
+			T& clamp(std::array<int, DIM> delta)
 			{
 				int index = 0;
 				for (int i = 0; i < DIM; i++) index += _Ptr[I[0] + (_clamp(_myImage.Extent[i], I[i] + delta[i]) - I[i]) * _myImage.StepSize[i]];
 				return _Ptr[index];
 			}
 			template<int D>
-			T& clampElement(std::array<int, D>& delta, const std::array<int, D>& dimensionIndices)
+			T& clamp(std::array<int, D>& delta, const std::array<int, D>& dimensionIndices)
 			{
 				int index = 0;
 				for (int i = 0; i < D; i++) {
@@ -149,18 +149,18 @@ namespace ndl
 			}
 
 			//relative wrapping accessors
-			T& wrapElement(int delta, const int dimensionIndex)
+			T& wrap(int delta, const int dimensionIndex)
 			{
 				return _Ptr[I[0] + (_wrap(_myImage.Extent[dimensionIndex], I[dimensionIndex] + delta) - I[dimensionIndex]) * _myImage.StepSize[dimensionIndex]];
 			}
-			T& wrapElement(std::array<int, DIM> delta)
+			T& wrap(std::array<int, DIM> delta)
 			{
 				int index = 0;
 				for (int i = 0; i < DIM; i++) index += _Ptr[I[0] + (_wrap(_myImage.Extent[i], I[i] + delta[i]) - I[i]) * _myImage.StepSize[i]];
 				return _Ptr[index];
 			}
 			template<int D>
-			T& wrapElement(std::array<int, D>& delta, const std::array<int, D>& dimensionIndices)
+			T& wrap(std::array<int, D>& delta, const std::array<int, D>& dimensionIndices)
 			{
 				int index = 0;
 				for (int i = 0; i < D; i++) {
@@ -201,6 +201,8 @@ namespace ndl
 			referenceCount[0] = 1;
 		}
 
+		Image() : Image(makeDummyExtent())  { }
+
 		// construct from external data
 		Image(void* sourceData, std::array<int, DIM> extent) :
 			StepSize{ makeStepSize(extent)},
@@ -230,17 +232,40 @@ namespace ndl
 			referenceCount[0]++;
 		}
 
-		// construct from image, reducing dimension
-		Image(Image<T, DIM + 1>& source, int sliceDimension, int sliceIndex) : Image<T, DIM>(source, makeSliceOffset(sliceDimension, sliceIndex), makeSliceExtent(source, sliceDimension), std::array<int, DIM>{1}, std::array<bool, DIM>{}) { }
+		// construct from image, shares same memory, reduces dimension
+		Image(Image<T, DIM + 1>& source, int sliceDimension, int sliceIndex) :
+			StepSize{ makeStepSizeSlice(source.StepSize, sliceDimension) },
+			Extent{ makeExtentSlice(source.Extent, sliceDimension) },
+			Offset{ makeOffsetSlice(source.Offset, sliceDimension) },
+			Start{ makeStart(StepSize, Extent, 0, 0) },
+			End{ makeEnd(Extent, StepSize) }
+		{
+			RootDataArray = source.RootDataArray;
+			DataArray = RootDataArray;
+			int t = 0;
+			for (int i = 0; i < DIM + 1; i++)
+			{
+				if (i == sliceDimension) 
+					DataArray += sliceIndex * _abs(source.StepSize[i]);
+				else
+				{
+					DataArray += Start[t] * _abs(StepSize[t]) + Offset[t] * _abs(source.StepSize[i]);
+					t++;
+				}
+			}
+			referenceCount = source.referenceCount;
+			referenceCount[0]++;
+		}
 
-		template<class U> Image& operator=(const Image<U,DIM> &rhs) {
+		template<class U> Image& operator=(Image<U,DIM> &rhs) {
 			assert(rhs.Extent == Extent);
 			auto rhsit = rhs.begin();
 			for (auto it = begin(); it != end(); ++it, ++rhsit) *it = *rhsit;
 			return *this;
 		}
-		template<class U> Image& operator=(const U rhs) {
-			for (auto it = begin(); it != end(); ++it) *it = rhs;
+		template<class U> Image& operator=(U rhs) {
+			for (auto it = begin(); it != end(); ++it)
+				*it = rhs;
 			return *this;
 		}
 		template <class U> bool operator== (const Image<U, DIM>& rhs) {
@@ -310,7 +335,7 @@ namespace ndl
 		template <class U> bool operator>= (const Image<U, DIM>& rhs) { return !(*this < rhs); }
 		template <class U> bool operator>= (const U& rhs) { return !(*this < rhs); }
 		long size() { return std::accumulate(Extent.begin(), Extent.end(), 1, std::multiplies<int>()); }
-		std::string CurrentState()
+		std::string state()
 		{
 			std::ostringstream sb;
 			sb << "DataArray : " << ((long)DataArray - (long)RootDataArray) << std::endl;
@@ -364,6 +389,10 @@ namespace ndl
 			}
 			return Image<T, DIM>(*this, newOffset, newExtent, newStepSize, newMirror);
 		}
+		Image<T, DIM - 1> slice(int sliceDimension, int sliceIndex) 
+		{
+			return Image<T, DIM - 1>(*this, sliceDimension, sliceIndex);
+		}
 
 		//Destructors and destruction methods
 		~Image()
@@ -375,7 +404,7 @@ namespace ndl
 			}
 		}
 
-		T* Data() { return DataArray; }
+		T* data() { return DataArray; }
 
 	protected:
 		//helper methods
@@ -384,6 +413,25 @@ namespace ndl
 			std::array<int, DIM> result{};
 			for (int i = 0; i < DIM; i++) result[i] = sourceStepSize[i] * (mirror[i] ? stepSize[i] * -1 : stepSize[i]);
 			std::swap(result[swapDim1], result[swapDim2]);
+			return result;
+		}
+		std::array<int, DIM> makeStepSizeSlice(const std::array<int, DIM + 1>& sourceStepSize, int sliceDimension)
+		{
+			std::array<int, DIM> result{};
+			int t = 0;
+			for (int i = 0; i < DIM + 1; i++)
+			{
+				if (i == sliceDimension) continue;
+				result[t] = sourceStepSize[i];
+				t++;
+			}
+			return result;
+		}
+		std::array<int, DIM> makeDummyExtent()
+		{
+			std::array<int, DIM> result{};
+			for (int i = 0; i < DIM; i++)
+				result[i] = 1;
 			return result;
 		}
 		std::array<int, DIM> makeStepSize(const std::array<int, DIM>& extent)
@@ -401,12 +449,36 @@ namespace ndl
 			std::swap(result[swapDim1], result[swapDim2]);
 			return result;
 		}
+		std::array<int, DIM> makeExtentSlice(const std::array<int, DIM + 1>& sourceExtent, int sliceDimension)
+		{
+			std::array<int, DIM> result{};
+			int t = 0;
+			for (int i = 0; i < DIM + 1; i++)
+			{
+				if (i == sliceDimension) continue;
+				result[t] = sourceExtent[i];
+				t++;
+			}
+			return result;
+		}
 		std::array<int, DIM> makeOffset(const std::array<int, DIM>& sourceOffset, const std::array<int, DIM>& offset, int swapDim1, int swapDim2)
 		{
 			std::array<int, DIM> result{};
 			for (int i = 0; i < DIM; i++)
 				result[i] = sourceOffset[i] + offset[i];
 			std::swap(result[swapDim1], result[swapDim2]);
+			return result;
+		}
+		std::array<int, DIM> makeOffsetSlice(const std::array<int, DIM + 1>& sourceOffset, int sliceDimension)
+		{
+			std::array<int, DIM> result{};
+			int t = 0;
+			for (int i = 0; i < DIM + 1; i++)
+			{
+				if (i == sliceDimension) continue;
+				result[t] = sourceOffset[i];
+				t++;
+			}
 			return result;
 		}
 		std::array<int, DIM> makeStart(const std::array<int, DIM>& newStepSize, const std::array<int, DIM>& newExtent, int swapDim1, int swapDim2)
@@ -417,25 +489,23 @@ namespace ndl
 			std::swap(result[swapDim1], result[swapDim2]);
 			return result;
 		}
+		std::array<int, DIM> makeStartSlice(const std::array<int, DIM + 1>& newStepSize, const std::array<int, DIM>& newExtent, int sliceDimensions)
+		{
+			std::array<int, DIM> result{};
+			int t = 0;
+			for (int i = 0; i < DIM; i++)
+			{
+				if (i == sliceDimension) continue;
+				result[t] = (newStepSize[i] < 0 ? newExtent[i] - 1 : 0);
+				t++;
+			}
+			return result;
+		}
 		std::array<int, DIM> makeEnd(const std::array<int, DIM>& newExtent, const std::array<int, DIM>& newStepSize)
 		{
 			std::array<int, DIM> result{};
 			for (int i = 0; i < DIM; i++)
 				result[i] = newExtent[i] * newStepSize[i];
-			return result;
-		}
-		std::array<int, DIM> makeSliceOffset(int sliceDimension, int sliceIndex)
-		{
-			std::array<int, DIM> result{};
-			result[sliceDimension] = sliceIndex;
-			return result;
-		}
-		std::array<int, DIM> makeSliceExtent(Image<T, DIM + 1>& source, int sliceDimension)
-		{
-			std::array<int, DIM> result{};
-			int t = 0;
-			for (int i = 0; i < DIM + 1; i++)
-				if (i != sliceDimension) result[t++] = source.Extent[i];
 			return result;
 		}
 		template<class Op, class U> Image& MutableBinaryImageOp(const Image<U, DIM>& rhs) {
@@ -461,7 +531,7 @@ namespace ndl
 		const std::array<int, DIM> StepSize;
 		const std::array<int, DIM> End;
 
-	protected:
+//	protected:
 		int* referenceCount;
 		T* DataArray;
 		T* RootDataArray;
