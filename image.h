@@ -15,34 +15,39 @@ namespace ndl
 	{
 		indexer(std::initializer_list<int> list) 
 		{
+			data[0] = 0;
+			data[1] = -1;
+			data[2] = 1;
 			std::vector<int> v = list;
 			int num = std::min(data.size(), v.size());
 			for(int i=0;i<num;i++)
 				data[i] = v[i];
-			for (int i = num; i < data.size(); i++)
-				data[i] = 0;
 		}
 		indexer(int _first)
 		{
 			data[0] = _first;
-			for (int i = 1; i<data.size(); i++)
-				data[i] = 0;
+			data[1] = -1;
+			data[2] = 1;
 		}
 		std::array<int,3> data;
 		operator int() const { return data[0]; }
 	};
+	int _ = -1;
 
 	template <class T, int DIM>
 	class Image
 	{
 	public:
+		friend class Image<T, DIM + 1>;
+		friend class Image<T, DIM - 1>;
+
 		typedef T value_type;
 		class iterator
 		{
 		public:
 			typedef iterator self_type;
 			typedef T value_type;
-			iterator(Image& parent, int last) : I{}, _Ptr(parent.data()), _myImage(parent) { I.back() = last; }
+			iterator(Image& parent, int last) : I{}, _Ptr(parent.DataArray), _myImage(parent) { I.back() = last; }
 			self_type operator++() {
 				self_type i = *this;
 				if ((I[0] += _myImage.StepSize[0]) != _myImage.End[0]) return i;
@@ -179,32 +184,15 @@ namespace ndl
 		};
 
 		// copy constructor (deep copy)
-		template<class U> Image(Image<U,DIM>& source) : Image(source.Extent) 
+		template<class U> 
+		Image(T* sourceData, Image<U,DIM>& source) : Image(sourceData, source.Extent)
 		{
 			auto sourceit = source.begin();
 			for (auto it = begin(); it != end(); ++it, ++sourceit) *it = *sourceit;
 		}
 
-		// construct an image of the specified size
-		Image(std::array<int, DIM> extent) :
-			StepSize{ makeStepSize(extent)},
-			Extent(extent),
-			Offset{ },
-			Start{ },
-			End{ makeEnd(Extent, StepSize) }
-		{
-			int totalSize = 1;
-			for(int i=0;i<DIM;i++) totalSize *= extent[i];
-			RootDataArray = new T[totalSize * sizeof(T)]();
-			DataArray = RootDataArray;
-			referenceCount = new int[1];
-			referenceCount[0] = 1;
-		}
-
-		Image() : Image(makeDummyExtent())  { }
-
-		// construct from external data
-		Image(void* sourceData, std::array<int, DIM> extent) :
+		// construct from external memory, be sure you have enough space!!
+		Image(T* sourceData, std::array<int, DIM> extent) :
 			StepSize{ makeStepSize(extent)},
 			Extent(extent),
 			Offset{ },
@@ -213,48 +201,6 @@ namespace ndl
 		{
 			DataArray = (T*)sourceData;
 			RootDataArray = DataArray;
-			referenceCount = new int[1];
-			referenceCount[0] = 2;
-		}
-
-		// construct from image, shares same memory
-		Image(Image<T, DIM>& source, std::array<int, DIM> offset, std::array<int, DIM> extent, std::array<int, DIM> stepSize, std::array<bool, DIM> mirror, int swapDim1 = 0, int swapDim2 = 0) :
-			StepSize{ makeStepSize(source.StepSize, mirror, stepSize, swapDim1, swapDim2) },
-			Extent{ makeExtent(extent, stepSize, swapDim1, swapDim2) },
-			Offset{ makeOffset(source.Offset, offset, swapDim1, swapDim2) },
-			Start{ makeStart(StepSize, Extent, swapDim1, swapDim2) },
-			End{ makeEnd(Extent, StepSize) }
-		{
-			RootDataArray = source.RootDataArray;
-			DataArray = RootDataArray;
-			for (int i = 0; i < DIM; i++) DataArray += Start[i] * _abs(StepSize[i]) + Offset[i] * _abs(source.StepSize[i]);
-			referenceCount = source.referenceCount;
-			referenceCount[0]++;
-		}
-
-		// construct from image, shares same memory, reduces dimension
-		Image(Image<T, DIM + 1>& source, int sliceDimension, int sliceIndex) :
-			StepSize{ makeStepSizeSlice(source.StepSize, sliceDimension) },
-			Extent{ makeExtentSlice(source.Extent, sliceDimension) },
-			Offset{ makeOffsetSlice(source.Offset, sliceDimension) },
-			Start{ makeStart(StepSize, Extent, 0, 0) },
-			End{ makeEnd(Extent, StepSize) }
-		{
-			RootDataArray = source.RootDataArray;
-			DataArray = RootDataArray;
-			int t = 0;
-			for (int i = 0; i < DIM + 1; i++)
-			{
-				if (i == sliceDimension) 
-					DataArray += sliceIndex * _abs(source.StepSize[i]);
-				else
-				{
-					DataArray += Start[t] * _abs(StepSize[t]) + Offset[t] * _abs(source.StepSize[i]);
-					t++;
-				}
-			}
-			referenceCount = source.referenceCount;
-			referenceCount[0]++;
 		}
 
 		template<class U> Image& operator=(Image<U,DIM> &rhs) {
@@ -288,44 +234,24 @@ namespace ndl
 			for (auto it = begin(); it != end(); ++it) if (*it >= rhs) return false;
 			return true;
 		}
-		Image operator-() { Image result(*this, true); result.MutableUnaryOp<std::negate<T>>(); return result; }
+		void negate() { MutableUnaryOp<std::negate<T>>(); }
 		template<class U> Image& operator+=(const Image<U, DIM>& rhs) { return MutableBinaryImageOp<std::plus<T>>(rhs); }
 		template<class U> Image& operator+=(const U rhs) { return MutableBinaryScalarOp<std::plus<T>>(rhs); }
-		template<class U> Image operator+(const Image<U, DIM>& rhs) { Image result(*this, true); result += rhs; return result; }
-		template<class U> Image operator+(const U rhs) { Image result(*this, true); result += rhs; return result; }
 		template<class U> Image& operator-=(const Image<U, DIM>& rhs) { return MutableBinaryImageOp<std::minus<T>>(rhs); }
 		template<class U> Image& operator-=(const U rhs) { return MutableBinaryScalarOp<std::minus<T>>(rhs); }
-		template<class U> Image operator-(const Image<U, DIM>& rhs) { Image result(*this, true); result -= rhs; return result; }
-		template<class U> Image operator-(const U rhs) { Image result(*this, true); result -= rhs; return result; }
 		template<class U> Image& operator*=(const Image<U, DIM>& rhs) { return MutableBinaryImageOp<std::multiplies<T>>(rhs); }
 		template<class U> Image& operator*=(const U rhs) { return MutableBinaryScalarOp<std::multiplies<T>>(rhs); }
-		template<class U> Image operator*(const Image<U, DIM>& rhs) { Image result(*this, true); result *= rhs; return result; }
-		template<class U> Image operator*(const U rhs) { Image result(*this, true); result *= rhs; return result; }
 		template<class U> Image& operator/=(const Image<U, DIM>& rhs) { return MutableBinaryImageOp<std::divides<T>>(rhs); }
 		template<class U> Image& operator/=(const U rhs) { return MutableBinaryScalarOp<std::divides<T>>(rhs); }
-		template<class U> Image operator/(const Image<U, DIM>& rhs) { Image result(*this, true); result /= rhs; return result; }
-		template<class U> Image operator/(const U rhs) { Image result(*this, true); result /= rhs; return result; }
 		template<class U> Image& operator%=(const Image<U, DIM>& rhs) { return MutableBinaryImageOp<std::modulus<T>>(rhs); }
 		template<class U> Image& operator%=(const U rhs) { return MutableBinaryScalarOp<std::modulus<T>>(rhs); }
-		template<class U> Image operator%(const Image<U, DIM>& rhs) { Image result(*this, true); result %= rhs; return result; }
-		template<class U> Image operator%(const U rhs) { Image result(*this, true); result %= rhs; return result; }
 		template<class U> Image& operator|=(const Image<U, DIM>& rhs) { return MutableBinaryImageOp<std::bit_or<T>>(rhs); }
 		template<class U> Image& operator|=(const U rhs) { return MutableBinaryScalarOp<std::bit_or<T>>(rhs); }
-		template<class U> Image operator|(const Image<U, DIM>& rhs) { Image result(*this, true); result |= rhs; return result; }
-		template<class U> Image operator|(const U rhs) { Image result(*this, true); result |= rhs; return result; }
 		template<class U> Image& operator&=(const Image<U, DIM>& rhs) { return MutableBinaryImageOp<std::bit_and<T>>(rhs); }
 		template<class U> Image& operator&=(const U rhs) { return MutableBinaryScalarOp<std::bit_and<T>>(rhs); }
-		template<class U> Image operator&(const Image<U, DIM>& rhs) { Image result(*this, true); result &= rhs; return result; }
-		template<class U> Image operator&(const U rhs) { Image result(*this, true); result &= rhs; return result; }
 		template<class U> Image& operator^=(const Image<U, DIM>& rhs) { return MutableBinaryImageOp<std::bit_xor<T>>(rhs); }
 		template<class U> Image& operator^=(const U rhs) { return MutableBinaryScalarOp<std::bit_xor<T>>(rhs); }
-		template<class U> Image operator^(const Image<U, DIM>& rhs) { Image result(*this, true); result ^= rhs; return result; }
-		template<class U> Image operator^(const U rhs) { Image result(*this, true); result ^= rhs; return result; }
-		template<class U> Image operator||(const Image<U, DIM>& rhs) { Image result(*this, true); result.MutableBinaryImageOp<std::logical_or<T>>(rhs); return result; }
-		template<class U> Image operator||(const U rhs) { Image result(*this, true); result.MutableBinaryScalarOp<std::logical_or<T>>(rhs); return result; }
-		template<class U> Image operator&&(const Image<U, DIM>& rhs) { Image result(*this, true); result.MutableBinaryImageOp<std::logical_and<T>>(rhs); return result; }
-		template<class U> Image operator&&(const U rhs) { Image result(*this, true); result.MutableBinaryScalarOp<std::logical_and<T>>(rhs); return result; }
-		Image operator!() { Image result(*this, true); result.MutableUnaryOp<std::logical_not<T>>(); return result; }
+		void not() { MutableUnaryOp<std::logical_not<T>>(); }
 		template <class U> bool operator!= (const Image<U, DIM>& rhs) { return !(*this == rhs); }
 		template <class U> bool operator!= (const U& rhs) { return !(*this == rhs); }
 		template <class U> bool operator<= (const Image<U, DIM>& rhs) { return !(rhs < *this); }
@@ -353,7 +279,7 @@ namespace ndl
 
 		//basic accessors
 		T& at(std::array<int, DIM> index) { return DataArray[std::inner_product(index.begin(), index.end(), StepSize.begin(), 0)]; }
-		T& at(int index) { return DataArray[index]; }
+		//T& at(int index) { return DataArray[index]; }
 		Image<T, DIM> operator()(std::initializer_list<indexer> list)
 		{
 			std::vector<indexer> index = list;
@@ -364,28 +290,18 @@ namespace ndl
 			for (int i = 0; i < DIM; i++)
 			{
 				newMirror[i] = false;
-				int first = index[i].data[0];
-				int second = index[i].data[1];
-				int third = index[i].data[2];
-				if (first < 0 && second == 0 && third == 0)
-				{
-					newOffset[i] = 0;
-					newExtent[i] = Extent[i];
-					newStepSize[i] = 1;
-				}
-				else if (second >= first && third == 0) 
-				{
-					newOffset[i] = first;
-					newExtent[i] = 1 + second - first;
-					newStepSize[i] = 1;
-				}
-				else
-				{
-					newOffset[i] = first;
-					newExtent[i] = 1 + third - first;
-					newStepSize[i] = abs(second);
-					if (second < 0) newMirror[i] = true;
-				}
+				int start = index[i].data[0];
+				int end = index[i].data[1];
+				int step = index[i].data[2];
+
+				if (start < 0)
+					start = 0;
+				while (end < start) 
+					end += Extent[i];
+				newOffset[i] = start;
+				newExtent[i] = 1 + end - start;
+				newStepSize[i] = abs(step);
+				if (step < 0) newMirror[i] = true;
 			}
 			return Image<T, DIM>(*this, newOffset, newExtent, newStepSize, newMirror);
 		}
@@ -393,21 +309,65 @@ namespace ndl
 		{
 			return Image<T, DIM - 1>(*this, sliceDimension, sliceIndex);
 		}
-
-		//Destructors and destruction methods
-		~Image()
+		Image<T, DIM> swap(int dimension1, int dimension2)
 		{
-			referenceCount[0]--;
-			if (referenceCount[0] == 0) {
-				delete[] RootDataArray;
-				delete[] referenceCount;
+			std::array<int, DIM> newExtent;
+			std::array<int, DIM> newOffset;
+			std::array<int, DIM> newStepSize;
+			std::array<bool, DIM> newMirror;
+			for (int i = 0; i < DIM; i++)
+			{
+				newMirror[i] = false;
+				newOffset[i] = 0;
+				newExtent[i] = Extent[i];
+				newStepSize[i] = 1;
+			}
+			return Image<T, DIM>(*this, newOffset, newExtent, newStepSize, newMirror, dimension1, dimension2);
+		}
+
+		// public members
+		const std::array<int, DIM> Extent;
+		const std::array<int, DIM> StepSize;
+		const std::array<int, DIM> End;
+
+	protected:
+		// protected helper constructor. Construct from image, shares same memory
+		Image(Image<T, DIM>& source, std::array<int, DIM> offset, std::array<int, DIM> extent, std::array<int, DIM> stepSize, std::array<bool, DIM> mirror, int swapDim1 = 0, int swapDim2 = 0) :
+			StepSize{ makeStepSize(source.StepSize, mirror, stepSize, swapDim1, swapDim2) },
+			Extent{ makeExtent(extent, stepSize, swapDim1, swapDim2) },
+			Offset{ makeOffset(source.Offset, offset, swapDim1, swapDim2) },
+			Start{ makeStart(StepSize, Extent, swapDim1, swapDim2) },
+			End{ makeEnd(Extent, StepSize) }
+		{
+			RootDataArray = source.RootDataArray;
+			DataArray = RootDataArray;
+			for (int i = 0; i < DIM; i++) DataArray += Start[i] * _abs(StepSize[i]) + Offset[i] * _abs(source.StepSize[i]);
+		}
+
+		// protected helper constructor. Construct from image, shares same memory, reduces dimension
+		Image(Image<T, DIM + 1>& source, int sliceDimension, int sliceIndex) :
+			StepSize{ makeStepSizeSlice(source.StepSize, sliceDimension) },
+			Extent{ makeExtentSlice(source.Extent, sliceDimension) },
+			Offset{ makeOffsetSlice(source.Offset, sliceDimension) },
+			Start{ makeStart(StepSize, Extent, 0, 0) },
+			End{ makeEnd(Extent, StepSize) }
+		{
+			RootDataArray = source.RootDataArray;
+			DataArray = RootDataArray;
+			int t = 0;
+			for (int i = 0; i < DIM + 1; i++)
+			{
+				if (i == sliceDimension)
+					DataArray += sliceIndex * _abs(source.StepSize[i]);
+				else
+				{
+					DataArray += Start[t] * _abs(StepSize[t]) + Offset[t] * _abs(source.StepSize[i]);
+					t++;
+				}
 			}
 		}
 
-		T* data() { return DataArray; }
-
-	protected:
-		//helper methods
+		// protected helper methods
 		std::array<int, DIM> makeStepSize(const std::array<int, DIM>& sourceStepSize, const std::array<bool, DIM>& mirror, const std::array<int, DIM>& stepSize, int swapDim1, int swapDim2)
 		{
 			std::array<int, DIM> result{};
@@ -425,13 +385,6 @@ namespace ndl
 				result[t] = sourceStepSize[i];
 				t++;
 			}
-			return result;
-		}
-		std::array<int, DIM> makeDummyExtent()
-		{
-			std::array<int, DIM> result{};
-			for (int i = 0; i < DIM; i++)
-				result[i] = 1;
 			return result;
 		}
 		std::array<int, DIM> makeStepSize(const std::array<int, DIM>& extent)
@@ -526,13 +479,7 @@ namespace ndl
 			return *this;
 		}
 
-	public:
-		const std::array<int, DIM> Extent;
-		const std::array<int, DIM> StepSize;
-		const std::array<int, DIM> End;
-
-//	protected:
-		int* referenceCount;
+		// protected internal variables
 		T* DataArray;
 		T* RootDataArray;
 		const std::array<int, DIM> Offset;

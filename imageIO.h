@@ -10,8 +10,9 @@ namespace ndl
 {
 	namespace ImageIO
 	{
-		Image<uint8_t, 3> Load(std::string fileName)
+		std::vector<uint8_t> Load(std::string fileName, std::array<int, 3>& extent)
 		{
+			extent = { 0, 0, 0 };
 			std::string extension = "";
 			size_t pos = fileName.find_last_of(".");
 			if (pos != std::string::npos) extension = fileName.substr(pos + 1);
@@ -32,7 +33,7 @@ namespace ndl
 				f = fopen(fileName.c_str(), "rb");
 				if (!f) {
 					printf("Error opening the input file.\n");
-					return Image<uint8_t, 3>({ 3, 1, 1 });
+					return std::vector<uint8_t>();
 				}
 				fseek(f, 0, SEEK_END);
 				size = ftell(f);
@@ -44,15 +45,16 @@ namespace ndl
 				if (decoder.GetResult() != Decoder::OK)
 				{
 					printf("Error decoding the input file\n");
-					return Image<uint8_t, 3>({ 3, 1, 1 });
+					return std::vector<uint8_t>();
 				}
 				printf("width: %d\r\n", decoder.GetWidth());
 				printf("height: %d\r\n", decoder.GetHeight());
 				printf("width * height: %d\r\n", decoder.GetWidth() * decoder.GetHeight());
 				printf("size: %d\r\n", decoder.GetImageSize());
 
-				Image<uint8_t, 3> im(decoder.GetImage(), { 3, decoder.GetWidth(), decoder.GetHeight() });
-				return Image<uint8_t, 3>(im);
+				extent = { 3, decoder.GetWidth(), decoder.GetHeight() };
+				unsigned char* data = (unsigned char*)decoder.GetImage();
+				return std::vector<uint8_t>(data, data + std::accumulate(extent.begin(), extent.end(), 1, std::multiplies<int>()));
 			}
 			if (extension == "bmp")
 			{
@@ -62,10 +64,12 @@ namespace ndl
 				int width = bmp.bmih.biWidth;
 				int height = bmp.bmih.biHeight;
 				int padding = (4 - ((width * nColors) % 4)) % 4;
-				Image<uint16_t, 3> result({ nColors, width, height });
+				std::vector<uint8_t> resultData(nColors * width * height);
+				extent = { nColors, width, height };
+				Image<uint8_t, 3> result(resultData.data(), extent);
 				int x = 0;
 				auto i = bmp.data.begin();
-				Image<uint16_t, 3> flipped = result({ -1,-1,{ 0,-1,height - 1 } });
+				Image<uint8_t, 3> flipped = result({ _,_,{ 0,-1,-1 } });
 				for (auto r = flipped.begin(); r != flipped.end(); ++r)
 				{
 					*r = *i;
@@ -78,7 +82,7 @@ namespace ndl
 						continue;
 					}
 				}
-				return result;
+				return resultData;
 			}
 		}
 
@@ -104,8 +108,8 @@ namespace ndl
 			ofile.close();
 		}
 
-		template<class T> Image<T, 3>
-		LoadDicom(std::string filename, bool openAllInFolder = false) 
+		template<class T> 
+		std::vector<T> LoadDicom(std::string filename, std::array<int, 3>& extent, bool openAllInFolder = false)
 		{
 			dicom image;
 			std::replace(filename.begin(), filename.end(), '/', '\\'); // replace all 'x' to 'y'
@@ -126,11 +130,8 @@ namespace ndl
 			std::cout << "file: " << file << std::endl;
 
 			//get image dimensions
-			std::array<int, 3> geo;
-			geo[0] = image.width();
-			geo[1] = image.height();
-			geo[2] = image.number_of_frames();
-			if (geo[2] == 0) geo[2] = 1;
+			extent = std::array<int, 3>{ (int)image.width(), (int)image.height(), (int)image.number_of_frames() };
+			if (extent[2] == 0) extent[2] = 1;
 			std::cout << "width: " << image.width() << std::endl;
 			std::cout << "height: " << image.height() << std::endl;
 			std::cout << "number_of_frames: " << image.number_of_frames() << std::endl;
@@ -141,9 +142,9 @@ namespace ndl
 			std::cout << "rescale_intercept: " << image.rescale_intercept() << std::endl;
 			std::cout << "rescale_slope: " << image.rescale_slope() << std::endl;
 
-			//if (geo[2] <= 1 && geo[0] && geo[1]) geo[2] = image.image_size / geo[0] / geo[1] / (image.get_bit_count() / 8);
+			//if (extent[2] <= 1 && extent[0] && extent[1]) extent[2] = image.image_size / extent[0] / extent[1] / (image.get_bit_count() / 8);
 			//ROWS * COLUMNS * NUMBER_OF_FRAMES *	SAMPLES_PER_PIXEL * (BITS_ALLOCATED / 8)
-			Image<T, 3> result(geo);
+			std::vector<T> result(std::accumulate(extent.begin(), extent.end(), 1, std::multiplies<int>()));
 			T* ptr = result.data();
 			long pixel_count = result.size();
 			if (sizeof(T) == image.get_bit_count() / 8) image.input_io->read((char*)ptr, pixel_count * sizeof(T));
@@ -186,12 +187,13 @@ namespace ndl
 
 			//make a local copy because the pointer needs to be contiguous and it may not be
 			//contiguous within the provided image
-			Image<T, DIM> temp(image);
+			std::vector<T> data(image.size());
+			Image<T, DIM> temp(data.data(), image);
 
 			//handle each filetype
 			if (extension == "nrrd")
 			{
-				NRRD::save(fileName, temp.data(), DIM, image.Extent.data());
+				NRRD::save(fileName, data.data(), DIM, image.Extent.data());
 			} 
 			else if (extension == "bmp")
 			{
@@ -204,7 +206,7 @@ namespace ndl
 					else if (image.Extent[0] == 4) bmp.bmih.biBitCount = 32;
 					else if (image.Extent[0] == 1) bmp.bmih.biBitCount = 8;
 					else throw std::runtime_error("the first dimensions for 3D represents color, an unsupported number of colors was selected");
-					auto flipped = image({ -1,-1,{ 0,-1,(int)bmp.bmih.biHeight - 1 } });
+					auto flipped = image({ _,_,{ 0,-1,-1 } });
 					int padding = (4 - ((bmp.bmih.biWidth * image.Extent[0]) % 4)) % 4;
 					int x = 0;
 					bmp.data = std::vector<unsigned char>((bmp.bmih.biWidth + padding) * bmp.bmih.biHeight * (image.Extent[0]));
@@ -227,7 +229,7 @@ namespace ndl
 					bmp.bmih.biWidth = image.Extent[0];
 					bmp.bmih.biHeight = image.Extent[1];
 					bmp.bmih.biBitCount = 8;
-					auto flipped = image({ -1,{ 0,-1,(int)bmp.bmih.biHeight - 1 } });
+					auto flipped = image({ _,{ 0,-1,-1 } });
 					int padding = (4 - (bmp.bmih.biWidth % 4)) % 4;
 					int x = 0;
 					bmp.data = std::vector<unsigned char>((bmp.bmih.biWidth + padding) * bmp.bmih.biHeight * (bmp.bmih.biBitCount / 8));
