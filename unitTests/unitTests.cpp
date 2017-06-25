@@ -5,13 +5,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <cstdint>
+#include <complex>
 #include "../image.h"
 #include "../imageIO.h"
 #include "../utility.h"
 #include "../mathHelpers.h"
 #include "../graph.h"
+#include "../fft.h"
 
 using namespace ndl;
+using namespace ndl::fft;
 
 void testImageLibraryDimensions()
 {
@@ -239,10 +242,10 @@ void testImageLibraryAccuracy()
 
 	std::cout << std::endl;
 	int zeros = 0;
-	for (const auto& value : roi1)  if (value == 0) zeros++;
+	for (auto value : roi1)  if (value == 0) zeros++;
 	std::cout << "roi1 has " << zeros << " zeros" << std::endl;
 	zeros = 0;
-	for (const auto& value : image) if (value == 0) zeros++;
+	for (auto value : image) if (value == 0) zeros++;
 	std::cout << "image has " << zeros << " zeros" << std::endl;
 	std::cout << std::endl;
 }
@@ -308,7 +311,10 @@ void testIntegralImage()
 	std::cout << image << std::endl;
 
 	std::cout << "Integral Image" << std::endl;
-	//std::cout << ToIntegralImage<long>(image) << std::endl;
+
+	std::vector<long> integralImagedata(size*size*size);
+	Image<long, 3> integralImage(integralImagedata.data(), { size, size, size });
+	std::cout << ToIntegralImage(image, integralImage) << std::endl;
 }
 void displayBorderTests(Image<unsigned short, 3>& image3D) {
 	std::cout << "value: " << std::endl;
@@ -361,10 +367,15 @@ void TestImages(std::string inputFolder, std::string outputFolder)
 	ImageIO::SaveRaw(red, outputFolder + std::string("\\red_") + std::to_string(red.Extent[0]) + "x" + std::to_string(red.Extent[1]) + ".raw");
 	ImageIO::SaveRaw(green, outputFolder + std::string("\\green_") + std::to_string(green.Extent[0]) + "x" + std::to_string(green.Extent[1]) + ".raw");
 	ImageIO::SaveRaw(blue, outputFolder + std::string("\\blue_") + std::to_string(blue.Extent[0]) + "x" + std::to_string(blue.Extent[1]) + ".raw");
-	//ImageIO::Save(image, outputFolder + "\\ng_bwgirl_crop.jpg");
 	ImageIO::Save(image, outputFolder + "\\ng_bwgirl_crop.nrrd");
 	ImageIO::Save(image, outputFolder + "\\ng_bwgirl_crop.bmp");
 	ImageIO::Save(red, outputFolder + "\\ng_bwgirl_crop_red.nrrd");
+
+	std::array<int, 3> extentNrrd;
+	std::vector<uint8_t> reloadVector = ImageIO::LoadNrrd<uint8_t, 3>(extentNrrd, outputFolder + "\\ng_bwgirl_crop.nrrd");
+	Image<uint8_t, 3> reload(reloadVector.data(), extentNrrd);
+	ImageIO::Save(reload, outputFolder + "\\ng_bwgirl_crop_RESAVE.bmp");
+
 	std::vector<float> fimagedata(image.size());
 	Image<float, 3> fimage(fimagedata.data(), image);
 	ImageIO::SaveRaw(fimage, outputFolder + std::string("\\float_") + std::to_string(fimage.Extent[0]) + "x" + std::to_string(fimage.Extent[1]) + "x" + std::to_string(fimage.Extent[2]) + ".raw");
@@ -387,6 +398,67 @@ void TestImages(std::string inputFolder, std::string outputFolder)
 	Image<int16_t, 3> dcmImage2(dcmImage2data.data(), dcmImage2Extent);
 	ImageIO::SaveRaw(dcmImage2, outputFolder + std::string("\\CT_") + std::to_string(dcmImage2Extent[0]) + "x" + std::to_string(dcmImage2Extent[1]) + ".raw");
 }
+void testcomplex(int length = 32) {
+	//setup a complex input vector
+	std::cout << "\nTESTCOMPLEX";
+	std::vector<std::complex<float>> time(length);
+	for (int i = 0; i<length; i++)
+		time[i] = std::min(i + 1, 10);
+	std::cout << "\n========================\nORIGINAL\n========================\n";
+	for (int i = 0; i<length; i++)
+		std::cout << time[i] << "\n";
+
+	//setup an FFT object
+	std::vector<std::complex<float>> freq(length);
+	std::vector<float> scratch(length * 4);
+	FFT<float> fft(length, scratch.data());
+
+	//run the fft a bunch of times
+	clock_t start = clock();
+	for (int i = 0; i<768; i++) {
+		fft.fft(length, time.data(), freq.data());
+	}
+	double ellapsed = double(clock() - start) / double(CLOCKS_PER_SEC);
+	std::cout << "==========================\n Ellapsed time: " << ellapsed << " sec\n";
+
+	//display frequency data
+	std::cout << "\n========================\nFREQ\n========================\n";
+	for (int i = 0; i<length; i++) 
+		std::cout << freq[i] << "\n";
+
+	//display the time data again
+	fft.ifft(length, freq.data(), time.data());
+	std::cout << "\n========================\nAND BACK\n========================\n";
+	for (int i = 0; i<length; i++) 
+		std::cout << time[i] << "\n";
+	std::cout << "==========================\n Ellapsed time: " << ellapsed << " sec\n";
+}
+void testreal(int length = 32) {
+	std::cout << "\nTESTREAL";
+	std::vector<float> input(length);
+	std::vector<std::complex<float>> output(length);
+	std::vector<float> scratch(length * 5);
+	FFTReal<float> fft(length, scratch.data());
+	for (int i = 0; i < length; i++)
+		input[i] = std::min(i + 1, 10);
+
+	std::cout << "\n========================\nORIGINAL\n========================\n";
+	for (int i = 0; i<length; i++) std::cout << input[i] << "\n";
+
+	std::cout << "\n========================\nFREQ\n========================\n";
+	clock_t start = clock();
+	for (int i = 0; i<768; i++)
+		fft.fft(length, input.data(), output.data());
+	double ellapsed = double(clock() - start) / double(CLOCKS_PER_SEC);
+	for (int i = 0; i<length; i++)
+		std::cout << output[i] << "\n";
+
+	std::cout << "\n========================\nAND BACK\n========================\n";
+	fft.ifft(length, output.data(), input.data());
+	for (int i = 0; i<length; i++)
+		std::cout << input[i] << "\n";
+	std::cout << "==========================\n Ellapsed time: " << ellapsed << " sec\n";
+}
 void TestGraph() {
 	////graph library tests
 	//Mesh<float, 3> mesh;
@@ -402,6 +474,8 @@ int main()
 	testIntegralImage();
 	testImageLibraryBorders();
 	TestImages("C:\\Users\\natha\\Documents\\ndl\\unitTests\\data", "C:\\Users\\natha\\Desktop");
+	testcomplex();
+	testreal();
 	TestGraph();
 	return 0;
 }

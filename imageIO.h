@@ -87,14 +87,14 @@ namespace ndl
 		}
 
 		template<class T, int DIM>
-		Image<T, DIM> LoadRaw(std::string rawFileName, std::array<int, DIM> extent, int offsetBytes)
+		std::vector<T> LoadRaw(std::string rawFileName, std::array<int, DIM> extent, int offsetBytes)
 		{
-			Image result(extent);
+			std::vector<T> result(std::accumulate(extent.begin(), extent.end(), 1, std::multiplies<int>()));
 			std::ifstream is;
 			is.open(rawFileName, std::ios::binary);
 			is.seekg(offsetBytes, std::ios::beg);
 			int size = width * height * depth;
-			is.read((char*)result.DataArray, size * sizeof(T));
+			is.read((char*)result.data(), size * sizeof(T));
 			is.close();
 			return result;
 		}
@@ -257,9 +257,13 @@ namespace ndl
 		}
 
 		template<class T, int DIM>
-		void Load(Image<T, DIM>& image, std::string fileName)
+		std::vector<T> LoadNrrd(std::array<int, DIM>& extent, std::string fileName)
 		{
-			NRRD::load(fileName, image.data(), DIM, &image.Extent.data());
+			T* data;
+			std::vector<int> extentVector(DIM);
+			NRRD::load(fileName, &data, &extentVector);
+			std::copy(extentVector.begin(), extentVector.end(), extent.begin());
+			return std::vector<T>(data, data + std::accumulate(extent.begin(), extent.end(), 1, std::multiplies<int>()));
 		}
 	}
 }

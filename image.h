@@ -197,11 +197,10 @@ namespace ndl
 			Extent(extent),
 			Offset{ },
 			Start{ },
-			End{ makeEnd(Extent, StepSize) }
-		{
-			DataArray = (T*)sourceData;
-			RootDataArray = DataArray;
-		}
+			End{ makeEnd(Extent, StepSize) },
+			RootDataArray{ sourceData },
+			DataArray{ sourceData }
+		{ }
 
 		template<class U> Image& operator=(Image<U,DIM> &rhs) {
 			assert(rhs.Extent == Extent);
@@ -278,9 +277,8 @@ namespace ndl
 		iterator end() { return iterator(*this, Extent.back()); }
 
 		//basic accessors
-		T& at(std::array<int, DIM> index) { return DataArray[std::inner_product(index.begin(), index.end(), StepSize.begin(), 0)]; }
-		//T& at(int index) { return DataArray[index]; }
-		Image<T, DIM> operator()(std::initializer_list<indexer> list)
+		T& at(const std::array<int, DIM>& index) { return DataArray[std::inner_product(index.begin(), index.end(), StepSize.begin(), 0)]; }
+		Image<T, DIM> operator()(const std::initializer_list<indexer>& list)
 		{
 			std::vector<indexer> index = list;
 			std::array<int, DIM> newExtent;
@@ -332,42 +330,56 @@ namespace ndl
 
 	protected:
 		// protected helper constructor. Construct from image, shares same memory
-		Image(Image<T, DIM>& source, std::array<int, DIM> offset, std::array<int, DIM> extent, std::array<int, DIM> stepSize, std::array<bool, DIM> mirror, int swapDim1 = 0, int swapDim2 = 0) :
+		Image(const Image<T, DIM>& source, 
+			  const std::array<int, DIM>& offset, 
+			  const std::array<int, DIM>& extent, 
+			  const std::array<int, DIM>& stepSize, 
+			  const std::array<bool, DIM>& mirror, 
+			  int swapDim1 = 0, 
+			  int swapDim2 = 0) :
 			StepSize{ makeStepSize(source.StepSize, mirror, stepSize, swapDim1, swapDim2) },
 			Extent{ makeExtent(extent, stepSize, swapDim1, swapDim2) },
 			Offset{ makeOffset(source.Offset, offset, swapDim1, swapDim2) },
 			Start{ makeStart(StepSize, Extent, swapDim1, swapDim2) },
-			End{ makeEnd(Extent, StepSize) }
-		{
-			RootDataArray = source.RootDataArray;
-			DataArray = RootDataArray;
-			for (int i = 0; i < DIM; i++) DataArray += Start[i] * _abs(StepSize[i]) + Offset[i] * _abs(source.StepSize[i]);
-		}
+			End{ makeEnd(Extent, StepSize) },
+			RootDataArray{ source.RootDataArray },
+			DataArray{ computeDataArrayPtr(source.RootDataArray, source.StepSize ) }
+		{ }
 
 		// protected helper constructor. Construct from image, shares same memory, reduces dimension
-		Image(Image<T, DIM + 1>& source, int sliceDimension, int sliceIndex) :
+		Image(const Image<T, DIM + 1>& source, int sliceDimension, int sliceIndex) :
 			StepSize{ makeStepSizeSlice(source.StepSize, sliceDimension) },
 			Extent{ makeExtentSlice(source.Extent, sliceDimension) },
 			Offset{ makeOffsetSlice(source.Offset, sliceDimension) },
 			Start{ makeStart(StepSize, Extent, 0, 0) },
-			End{ makeEnd(Extent, StepSize) }
+			End{ makeEnd(Extent, StepSize) },
+			RootDataArray { source.RootDataArray },
+			DataArray { computeDataArraySlicePtr(sliceDimension, sliceIndex, source.StepSize) }
+		{ }
+
+		// protected helper methods
+		T* computeDataArrayPtr(T* sourceRootArray, const std::array<int,DIM>& sourceStepSize)
 		{
-			RootDataArray = source.RootDataArray;
-			DataArray = RootDataArray;
+			T* value = sourceRootArray;
+			for (int i = 0; i < DIM; i++) value += Start[i] * _abs(StepSize[i]) + Offset[i] * _abs(sourceStepSize[i]);
+			return value;
+		}
+		T* computeDataArraySlicePtr(int sliceDimension, int sliceIndex, const std::array<int, DIM + 1>& sourceStepSize)
+		{
+			T* result = RootDataArray;
 			int t = 0;
 			for (int i = 0; i < DIM + 1; i++)
 			{
 				if (i == sliceDimension)
-					DataArray += sliceIndex * _abs(source.StepSize[i]);
+					result += sliceIndex * _abs(sourceStepSize[i]);
 				else
 				{
-					DataArray += Start[t] * _abs(StepSize[t]) + Offset[t] * _abs(source.StepSize[i]);
+					result += Start[t] * _abs(StepSize[t]) + Offset[t] * _abs(sourceStepSize[i]);
 					t++;
 				}
 			}
+			return result;
 		}
-
-		// protected helper methods
 		std::array<int, DIM> makeStepSize(const std::array<int, DIM>& sourceStepSize, const std::array<bool, DIM>& mirror, const std::array<int, DIM>& stepSize, int swapDim1, int swapDim2)
 		{
 			std::array<int, DIM> result{};
@@ -480,10 +492,10 @@ namespace ndl
 		}
 
 		// protected internal variables
-		T* DataArray;
-		T* RootDataArray;
 		const std::array<int, DIM> Offset;
 		const std::array<int, DIM> Start;
+		T* RootDataArray;
+		T* DataArray;
 	};
 
 	//operator overloads
@@ -548,11 +560,10 @@ namespace ndl
 			*r = *i * _gaussian(sigma, 0) + (i[roi1.StepSize[0]] + i[-roi1.StepSize[0]]) * _gaussian(sigma, 1) + (i[roi1.StepSize[0] * 2] + i[-roi1.StepSize[0] * 2]) * _gaussian(sigma, 2);
 		}
 	}
-	template<class T, class T2> Image<T,3> ToIntegralImage(Image<T2,3>& image)
+	template<class T, class T2> Image<T, 3>& ToIntegralImage(Image<T2,3>& image, Image<T, 3>& result)
 	{
-		Image<T,3> result = image;
-		auto i = image.begin();
-		for (auto r = result.begin(); r != result.end(); ++r, ++i) {
+		result = image;
+		for (auto r = result.begin(); r != result.end(); ++r) {
 			if (r.I[0] > 0 && r.I[1] > 0 && r.I[2] > 0) *r += r[-result.StepSize[0] - result.StepSize[1] - result.StepSize[2]];
 			if (r.I[2] > 0) *r += r[-result.StepSize[2]];
 			if (r.I[1] > 0) *r += r[-result.StepSize[1]];
@@ -563,7 +574,8 @@ namespace ndl
 		}
 		return result;
 	}
-	template<class T> T SampleIntegralImage(Image<T,3>& image) {
+	template<class T> T SampleIntegralImage(Image<T,3>& image) 
+	{
 		////Now for every query(x1, y1, z1) to(x2, y2, z2), 
 		//first convert the coordinates so that x1, y1, z1 is the corner of the cuboid closest to origin 
 		//and x2, y2, z2 is the corner that is farthest from origin.
