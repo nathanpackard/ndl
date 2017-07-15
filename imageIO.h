@@ -84,6 +84,7 @@ namespace ndl
 				}
 				return resultData;
 			}
+			throw std::exception("unknown data type!!");
 		}
 
 		template<class T, int DIM>

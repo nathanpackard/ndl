@@ -398,20 +398,22 @@ void TestImages(std::string inputFolder, std::string outputFolder)
 	Image<int16_t, 3> dcmImage2(dcmImage2data.data(), dcmImage2Extent);
 	ImageIO::SaveRaw(dcmImage2, outputFolder + std::string("\\CT_") + std::to_string(dcmImage2Extent[0]) + "x" + std::to_string(dcmImage2Extent[1]) + ".raw");
 }
-void testcomplex(int length = 32) {
+void testcomplex() {
+	const int length = 1024;
+	const int maxprint = 16;
 	//setup a complex input vector
 	std::cout << "\nTESTCOMPLEX";
-	std::vector<std::complex<float>> time(length);
+	std::vector<std::complex<double>> time(length);
 	for (int i = 0; i<length; i++)
 		time[i] = std::min(i + 1, 10);
 	std::cout << "\n========================\nORIGINAL\n========================\n";
-	for (int i = 0; i<length; i++)
+	for (int i = 0; i<maxprint; i++)
 		std::cout << time[i] << "\n";
 
 	//setup an FFT object
-	std::vector<std::complex<float>> freq(length);
-	std::vector<float> scratch(length * 4);
-	FFT<float> fft(length, scratch.data());
+	std::vector<std::complex<double>> freq(length);
+	std::vector<double> scratch(length * 4);
+	FFT<double, length> fft(scratch.data());
 
 	//run the fft a bunch of times
 	clock_t start = clock();
@@ -423,41 +425,43 @@ void testcomplex(int length = 32) {
 
 	//display frequency data
 	std::cout << "\n========================\nFREQ\n========================\n";
-	for (int i = 0; i<length; i++) 
+	for (int i = 0; i<maxprint; i++)
 		std::cout << freq[i] << "\n";
 
 	//display the time data again
 	fft.ifft(length, freq.data(), time.data());
 	std::cout << "\n========================\nAND BACK\n========================\n";
-	for (int i = 0; i<length; i++) 
+	for (int i = 0; i<maxprint; i++)
 		std::cout << time[i] << "\n";
-	std::cout << "==========================\n Ellapsed time: " << ellapsed << " sec\n";
+	std::cout << "==========================\n Ellapsed time: " << std::scientific << ellapsed << " sec\n";
 }
-void testreal(int length = 32) {
+void testreal() {
+	const int length = 1024;
+	const int maxprint = 16;
 	std::cout << "\nTESTREAL";
-	std::vector<float> input(length);
-	std::vector<std::complex<float>> output(length);
-	std::vector<float> scratch(length * 5);
-	FFTReal<float> fft(length, scratch.data());
+	std::vector<double> input(length);
+	std::vector<std::complex<double>> output(length);
+	std::vector<double> scratch(length * 5);
+	FFTReal<double, length> fft(scratch.data());
 	for (int i = 0; i < length; i++)
 		input[i] = std::min(i + 1, 10);
 
 	std::cout << "\n========================\nORIGINAL\n========================\n";
-	for (int i = 0; i<length; i++) std::cout << input[i] << "\n";
+	for (int i = 0; i<maxprint; i++) std::cout << input[i] << "\n";
 
 	std::cout << "\n========================\nFREQ\n========================\n";
 	clock_t start = clock();
 	for (int i = 0; i<768; i++)
 		fft.fft(length, input.data(), output.data());
 	double ellapsed = double(clock() - start) / double(CLOCKS_PER_SEC);
-	for (int i = 0; i<length; i++)
+	for (int i = 0; i<maxprint; i++)
 		std::cout << output[i] << "\n";
 
 	std::cout << "\n========================\nAND BACK\n========================\n";
 	fft.ifft(length, output.data(), input.data());
-	for (int i = 0; i<length; i++)
+	for (int i = 0; i<maxprint; i++)
 		std::cout << input[i] << "\n";
-	std::cout << "==========================\n Ellapsed time: " << ellapsed << " sec\n";
+	std::cout << "==========================\n Ellapsed time: " << std::scientific  << ellapsed << " sec\n";
 }
 void TestGraph() {
 	////graph library tests
@@ -467,15 +471,14 @@ void TestGraph() {
 }
 int main()
 {
-	//image library tests
 	testImageLibraryDimensions();
 	testImageLibraryAccuracy();
 	ImageLibrarySpeedTest();
 	testIntegralImage();
 	testImageLibraryBorders();
 	TestImages("C:\\Users\\natha\\Documents\\ndl\\unitTests\\data", "C:\\Users\\natha\\Desktop");
-	testcomplex();
 	testreal();
-	TestGraph();
+	testcomplex();
+	//TestGraph();
 	return 0;
 }

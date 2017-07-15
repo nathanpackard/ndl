@@ -67,6 +67,8 @@ dlldata.c
 *.tex
 *.db
 *.opendb
+*.VC.db
+*.VC.opendb
 
 # Chutzpah Test files
 _Chutzpah*
