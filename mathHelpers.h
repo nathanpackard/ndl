@@ -68,9 +68,4 @@ namespace ndl
 	static constexpr int _wrap(int M, int x) { return (x < 0) ? (x + M) : ((x >= M) ? (x - M) : x); }
 	static constexpr int _clamp(int M, int x) { return (x < 0) ? 0 : ((x >= M) ? (M - 1) : x); }
 	template <class T> static constexpr auto _abs(const T & value) -> T { return (T{} < value) ? value : -value; }
-
-	template <class T, int DIM> std::array<T, DIM> operator+(const std::array<T, DIM>& a1, const std::array<T, DIM>& a2) { std::array<T, DIM> a; for (typename std::array<T, DIM>::size_type i = 0; i < a1.size(); i++) a[i] = a1[i] + a2[i]; return a; }
-	template <class T, int DIM> std::array<T, DIM> operator-(const std::array<T, DIM>& a1, const std::array<T, DIM>& a2) { std::array<T, DIM> a; for (typename std::array<T, DIM>::size_type i = 0; i < a1.size(); i++) a[i] = a1[i] - a2[i]; return a; }
-	template <class T, int DIM> std::array<T, DIM> operator*(const std::array<T, DIM>& a1, const std::array<T, DIM>& a2) { std::array<T, DIM> a; for (typename std::array<T, DIM>::size_type i = 0; i < a1.size(); i++) a[i] = a1[i] * a2[i]; return a; }
-	template <class T, int DIM> std::array<T, DIM> operator/(const std::array<T, DIM>& a1, const std::array<T, DIM>& a2) { std::array<T, DIM> a; for (typename std::array<T, DIM>::size_type i = 0; i < a1.size(); i++) a[i] = a1[i] / a2[i]; return a; }
 }

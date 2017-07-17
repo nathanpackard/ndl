@@ -64,7 +64,7 @@ public:
     bitmap(const char_type* file_name)
     {
         if (!load_from_file(file_name))
-            throw std::runtime_error("failed to open bitmap file");
+            throw std::runtime_error(std::string("failed to open bitmap file: ") + file_name);
     }
     template<typename char_type>
     bool save_to_file(const char_type* file_name)

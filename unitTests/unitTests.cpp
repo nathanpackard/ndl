@@ -359,44 +359,44 @@ void testImageLibraryBorders() {
 void TestImages(std::string inputFolder, std::string outputFolder)
 {
 	std::array<int, 3> imageExtent;
-	std::vector<uint8_t> imageData = ImageIO::Load(inputFolder + "\\ng_bwgirl_crop.jpg", imageExtent);
+	std::vector<uint8_t> imageData = ImageIO::Load(inputFolder + "/ng_bwgirl_crop.jpg", imageExtent);
 	Image<uint8_t, 3> image(imageData.data(), imageExtent);
 	Image<uint8_t, 2> red = image.slice(0, 0);
 	Image<uint8_t, 2> green = image.slice(0, 1);
 	Image<uint8_t, 2> blue = image.slice(0, 2);
-	ImageIO::SaveRaw(red, outputFolder + std::string("\\red_") + std::to_string(red.Extent[0]) + "x" + std::to_string(red.Extent[1]) + ".raw");
-	ImageIO::SaveRaw(green, outputFolder + std::string("\\green_") + std::to_string(green.Extent[0]) + "x" + std::to_string(green.Extent[1]) + ".raw");
-	ImageIO::SaveRaw(blue, outputFolder + std::string("\\blue_") + std::to_string(blue.Extent[0]) + "x" + std::to_string(blue.Extent[1]) + ".raw");
-	ImageIO::Save(image, outputFolder + "\\ng_bwgirl_crop.nrrd");
-	ImageIO::Save(image, outputFolder + "\\ng_bwgirl_crop.bmp");
-	ImageIO::Save(red, outputFolder + "\\ng_bwgirl_crop_red.nrrd");
+	ImageIO::SaveRaw(red, outputFolder + std::string("/red_") + std::to_string(red.Extent[0]) + "x" + std::to_string(red.Extent[1]) + ".raw");
+	ImageIO::SaveRaw(green, outputFolder + std::string("/green_") + std::to_string(green.Extent[0]) + "x" + std::to_string(green.Extent[1]) + ".raw");
+	ImageIO::SaveRaw(blue, outputFolder + std::string("/blue_") + std::to_string(blue.Extent[0]) + "x" + std::to_string(blue.Extent[1]) + ".raw");
+	ImageIO::Save(image, outputFolder + "/ng_bwgirl_crop.nrrd");
+	ImageIO::Save(image, outputFolder + "/ng_bwgirl_crop.bmp");
+	ImageIO::Save(red, outputFolder + "/ng_bwgirl_crop_red.nrrd");
 
 	std::array<int, 3> extentNrrd;
-	std::vector<uint8_t> reloadVector = ImageIO::LoadNrrd<uint8_t, 3>(extentNrrd, outputFolder + "\\ng_bwgirl_crop.nrrd");
+	std::vector<uint8_t> reloadVector = ImageIO::LoadNrrd<uint8_t, 3>(extentNrrd, outputFolder + "/ng_bwgirl_crop.nrrd");
 	Image<uint8_t, 3> reload(reloadVector.data(), extentNrrd);
-	ImageIO::Save(reload, outputFolder + "\\ng_bwgirl_crop_RESAVE.bmp");
+	ImageIO::Save(reload, outputFolder + "/ng_bwgirl_crop_RESAVE.bmp");
 
 	std::vector<float> fimagedata(image.size());
 	Image<float, 3> fimage(fimagedata.data(), image);
-	ImageIO::SaveRaw(fimage, outputFolder + std::string("\\float_") + std::to_string(fimage.Extent[0]) + "x" + std::to_string(fimage.Extent[1]) + "x" + std::to_string(fimage.Extent[2]) + ".raw");
+	ImageIO::SaveRaw(fimage, outputFolder + std::string("/float_") + std::to_string(fimage.Extent[0]) + "x" + std::to_string(fimage.Extent[1]) + "x" + std::to_string(fimage.Extent[2]) + ".raw");
 
 	std::array<int, 3> bmpImageExtent;
-	std::vector<uint8_t> bmpImageData = ImageIO::Load(inputFolder + "\\marbles.bmp", bmpImageExtent);
+	std::vector<uint8_t> bmpImageData = ImageIO::Load(inputFolder + "/marbles.bmp", bmpImageExtent);
 	Image<uint8_t, 3> bmpImage(bmpImageData.data(), bmpImageExtent);
-	ImageIO::Save(bmpImage, outputFolder + "\\marbles_output.bmp");
+	ImageIO::Save(bmpImage, outputFolder + "/marbles_output.bmp");
 	Image<uint8_t, 2> red2 = bmpImage.slice(0, 0);
-	ImageIO::Save(red2, outputFolder + "\\marbles_red2_output.bmp");
+	ImageIO::Save(red2, outputFolder + "/marbles_red2_output.bmp");
 	Image<uint8_t, 2> green2 = bmpImage.slice(0, 1);
-	ImageIO::Save(green2, outputFolder + "\\marbles_green2_output.bmp");
+	ImageIO::Save(green2, outputFolder + "/marbles_green2_output.bmp");
 	Image<uint8_t, 2> blue2 = bmpImage.slice(0, 2);
-	ImageIO::Save(blue2, outputFolder + "\\marbles_blue2_output.bmp");
-	ImageIO::SaveRaw(red2, outputFolder + std::string("\\red2_") + std::to_string(red2.Extent[0]) + "x" + std::to_string(red2.Extent[1]) + ".raw");
-	ImageIO::SaveRaw(green2, outputFolder + std::string("\\green2_") + std::to_string(green2.Extent[0]) + "x" + std::to_string(green2.Extent[1]) + ".raw");
-	ImageIO::SaveRaw(blue2, outputFolder + std::string("\\blue2_") + std::to_string(blue2.Extent[0]) + "x" + std::to_string(blue2.Extent[1]) + ".raw");
+	ImageIO::Save(blue2, outputFolder + "/marbles_blue2_output.bmp");
+	ImageIO::SaveRaw(red2, outputFolder + std::string("/red2_") + std::to_string(red2.Extent[0]) + "x" + std::to_string(red2.Extent[1]) + ".raw");
+	ImageIO::SaveRaw(green2, outputFolder + std::string("/green2_") + std::to_string(green2.Extent[0]) + "x" + std::to_string(green2.Extent[1]) + ".raw");
+	ImageIO::SaveRaw(blue2, outputFolder + std::string("/blue2_") + std::to_string(blue2.Extent[0]) + "x" + std::to_string(blue2.Extent[1]) + ".raw");
 	std::array<int, 3> dcmImage2Extent;
-	std::vector<int16_t> dcmImage2data = ImageIO::LoadDicom<int16_t>(inputFolder + "\\foot.dcm", dcmImage2Extent);
+	std::vector<int16_t> dcmImage2data = ImageIO::LoadDicom<int16_t>(inputFolder + "/foot.dcm", dcmImage2Extent);
 	Image<int16_t, 3> dcmImage2(dcmImage2data.data(), dcmImage2Extent);
-	ImageIO::SaveRaw(dcmImage2, outputFolder + std::string("\\CT_") + std::to_string(dcmImage2Extent[0]) + "x" + std::to_string(dcmImage2Extent[1]) + ".raw");
+	ImageIO::SaveRaw(dcmImage2, outputFolder + std::string("/CT_") + std::to_string(dcmImage2Extent[0]) + "x" + std::to_string(dcmImage2Extent[1]) + ".raw");
 }
 void testcomplex() {
 	const int length = 1024;
@@ -417,7 +417,7 @@ void testcomplex() {
 
 	//run the fft a bunch of times
 	clock_t start = clock();
-	for (int i = 0; i<768; i++) {
+	for (int i = 0; i<128; i++) {
 		fft.fft(length, time.data(), freq.data());
 	}
 	double ellapsed = double(clock() - start) / double(CLOCKS_PER_SEC);
@@ -464,10 +464,11 @@ void testreal() {
 	std::cout << "==========================\n Ellapsed time: " << std::scientific  << ellapsed << " sec\n";
 }
 void TestGraph() {
-	////graph library tests
-	//Mesh<float, 3> mesh;
-	//Simplex<float, 3> simplex;
-	//mesh.print();
+	//graph library tests
+// 	Shape<float, 3> shape;
+// 	Mesh<float, 3> mesh;
+//	Simplex<float, 3> simplex;
+// 	mesh.print();
 }
 int main()
 {
@@ -476,7 +477,8 @@ int main()
 	ImageLibrarySpeedTest();
 	testIntegralImage();
 	testImageLibraryBorders();
-	TestImages("C:\\Users\\natha\\Documents\\ndl\\unitTests\\data", "C:\\Users\\natha\\Desktop");
+	//TestImages("C:/Users/natha/Documents/ndl/unitTests/data", "C:/Users/natha/Desktop"); // for windows
+	TestImages("/mnt/win/Users/natha/Documents/ndl/unitTests/data", "/tmp"); // for linux
 	testreal();
 	testcomplex();
 	//TestGraph();

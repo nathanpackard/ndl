@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <numeric>
 #include <vector>
+#include <array>
 #include "mathHelpers.h"
 
 namespace ndl
@@ -77,13 +78,13 @@ namespace ndl
 			}
 			self_type operator++(int junk) {
 				if ((I[0] += _myImage.StepSize[0]) != _myImage.End[0]) return *this;
-				if (DIM > 1 ++I[1] < _myImage.Extent[1])
+				if (DIM > 1 && ++I[1] < _myImage.Extent[1])
 				{
 					I[0] = _myImage.Start[0];
 					_Ptr += StepSize[1];
 					return *this;
 				}
-				if (DIM > 2 ++I[2] < _myImage.Extent[2])
+				if (DIM > 2 && ++I[2] < _myImage.Extent[2])
 				{
 					I[0] = _myImage.Start[0];
 					I[1] = _myImage.Start[1];
@@ -250,7 +251,7 @@ namespace ndl
 		template<class U> Image& operator&=(const U rhs) { return MutableBinaryScalarOp<std::bit_and<T>>(rhs); }
 		template<class U> Image& operator^=(const Image<U, DIM>& rhs) { return MutableBinaryImageOp<std::bit_xor<T>>(rhs); }
 		template<class U> Image& operator^=(const U rhs) { return MutableBinaryScalarOp<std::bit_xor<T>>(rhs); }
-		void not() { MutableUnaryOp<std::logical_not<T>>(); }
+		void logical_not() { MutableUnaryOp<std::logical_not<T>>(); }
 		template <class U> bool operator!= (const Image<U, DIM>& rhs) { return !(*this == rhs); }
 		template <class U> bool operator!= (const U& rhs) { return !(*this == rhs); }
 		template <class U> bool operator<= (const Image<U, DIM>& rhs) { return !(rhs < *this); }
@@ -278,6 +279,7 @@ namespace ndl
 
 		//basic accessors
 		T& at(const std::array<int, DIM>& index) { return DataArray[std::inner_product(index.begin(), index.end(), StepSize.begin(), 0)]; }
+		T& at(const std::array<int, DIM>& index) const { return DataArray[std::inner_product(index.begin(), index.end(), StepSize.begin(), 0)]; }
 		Image<T, DIM> operator()(const std::initializer_list<indexer>& list)
 		{
 			std::vector<indexer> index = list;
@@ -454,7 +456,7 @@ namespace ndl
 			std::swap(result[swapDim1], result[swapDim2]);
 			return result;
 		}
-		std::array<int, DIM> makeStartSlice(const std::array<int, DIM + 1>& newStepSize, const std::array<int, DIM>& newExtent, int sliceDimensions)
+		std::array<int, DIM> makeStartSlice(const std::array<int, DIM + 1>& newStepSize, const std::array<int, DIM>& newExtent, int sliceDimension)
 		{
 			std::array<int, DIM> result{};
 			int t = 0;
@@ -499,7 +501,7 @@ namespace ndl
 	};
 
 	//operator overloads
-	template<class T> std::ostream& operator<<(std::ostream& sb, Image<T, 1>& r)
+	template<class T> std::ostream& operator<<(std::ostream& sb, const Image<T, 1>& r)
 	{
 		sb << std::fixed << std::setprecision(2);
 		for (int i = 0; i < r.Extent[0]; i++)
@@ -509,7 +511,7 @@ namespace ndl
 		}
 		return sb;
 	}
-	template<class T> std::ostream& operator<<(std::ostream& sb, Image<T, 2>& r)
+	template<class T> std::ostream& operator<<(std::ostream& sb, const Image<T, 2>& r)
 	{
 		sb << std::fixed << std::setprecision(2);
 		for (int j = 0; j < r.Extent[1]; j++)
@@ -523,7 +525,7 @@ namespace ndl
 		}
 		return sb;
 	}
-	template<class T> std::ostream& operator<<(std::ostream& sb, Image<T, 3>& r)
+	template<class T> std::ostream& operator<<(std::ostream& sb, const Image<T, 3>& r)
 	{
 		sb << std::fixed << std::setprecision(2);
 		for (int j = 0; j < r.Extent[1]; j++)
@@ -551,13 +553,13 @@ namespace ndl
 	template<class T, int DIM> Image<T, DIM> Gaussian3(Image<T, DIM>& image, const double sigma) {
 		Image<T, DIM> result(image);
 		for (auto i = image.begin(), r = result.begin(); i != image.end(); ++i, ++r) {
-			*r = *i * _gaussian(sigma, 0) + (i[roi1.StepSize[0]] + i[-roi1.StepSize[0]]) * _gaussian(sigma, 1);
+			*r = *i * _gaussian(sigma, 0) + (i[image.StepSize[0]] + i[-image.StepSize[0]]) * _gaussian(sigma, 1);
 		}
 	}
 	template<class T, int DIM> Image<T, DIM> Gaussian5(Image<T, DIM>& image, const double sigma) {
 		Image<T, DIM> result(image);
 		for (auto i = image.begin(), r = result.begin(); i != image.end(); ++i, ++r) {
-			*r = *i * _gaussian(sigma, 0) + (i[roi1.StepSize[0]] + i[-roi1.StepSize[0]]) * _gaussian(sigma, 1) + (i[roi1.StepSize[0] * 2] + i[-roi1.StepSize[0] * 2]) * _gaussian(sigma, 2);
+			*r = *i * _gaussian(sigma, 0) + (i[image.StepSize[0]] + i[-image.StepSize[0]]) * _gaussian(sigma, 1) + (i[image.StepSize[0] * 2] + i[-image.StepSize[0] * 2]) * _gaussian(sigma, 2);
 		}
 	}
 	template<class T, class T2> Image<T, 3>& ToIntegralImage(Image<T2,3>& image, Image<T, 3>& result)

@@ -1,10 +1,12 @@
 #pragma once
-#include "./ImageIO/bitmap.h";
-#include "./ImageIO/jpeg_decoder.h";
-#include "./ImageIO/avi.h";
-#include "./ImageIO/dicom.h";
-#include "./imageIO/NRRD/nrrd.h"
+#include "imageIO/bitmap.h";
+#include "imageIO/jpeg_decoder.h";
+#include "imageIO/avi.h";
+#include "imageIO/dicom.h";
+#include "imageIO/NRRD/nrrd.h"
 #include <algorithm>
+#include <array>
+#include <exception>
 
 namespace ndl
 {
@@ -84,7 +86,7 @@ namespace ndl
 				}
 				return resultData;
 			}
-			throw std::exception("unknown data type!!");
+			throw std::runtime_error("unknown data type!!");
 		}
 
 		template<class T, int DIM>
@@ -94,7 +96,7 @@ namespace ndl
 			std::ifstream is;
 			is.open(rawFileName, std::ios::binary);
 			is.seekg(offsetBytes, std::ios::beg);
-			int size = width * height * depth;
+			int size = std::accumulate(extent.begin(), extent.end(), 1, std::multiplies<int>());
 			is.read((char*)result.data(), size * sizeof(T));
 			is.close();
 			return result;
@@ -113,7 +115,7 @@ namespace ndl
 		std::vector<T> LoadDicom(std::string filename, std::array<int, 3>& extent, bool openAllInFolder = false)
 		{
 			dicom image;
-			std::replace(filename.begin(), filename.end(), '/', '\\'); // replace all 'x' to 'y'
+			std::replace(filename.begin(), filename.end(), '\\', '/'); // replace all 'x' to 'y'
 			image.load_from_file(filename);
 
 			//parse path

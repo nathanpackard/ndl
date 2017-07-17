@@ -1,3 +1,4 @@
+#pragma once
 // Copyright (C) 2009   Nathan Packard   <nathanpackard@gmail.com>
 //
 // This program is free software; you can redistribute it and/or modify
@@ -14,14 +15,14 @@
 // License along with this program; if not, see 
 // <http://www.gnu.org/licenses/>.
 
-#ifndef MATRIX_
-#define MATRIX_
-
 #include <stdio.h>
 #include <math.h>
 #include <cmath>
 #include <memory.h>
 #include <algorithm>
+
+template <class Real,int N>
+class SVD;
 
 /*! 
 //This class handles NxN matricies where N is specified at compile time,
@@ -29,9 +30,7 @@
 */
 template<class Real, int N> 
 class Matrix {
-    public:
-        typedef Real Real;
-    
+    public:    
         //Constructors
         Matrix(){ SetIdentity(); };
         Matrix(Real *values){ memcpy(m_data, values, N*N*sizeof(Real)); };
@@ -1807,9 +1806,3 @@ class SVD {
       //~ }
    //~ }
 //~ };
-
-    
-    
-    
-    
-#endif

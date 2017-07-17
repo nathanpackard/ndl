@@ -66,7 +66,7 @@ template <> inline bool stringTo<>(const std::string& in)
 template <typename T> inline std::string vectorToString(const std::vector<T>& in, const std::string& delim=" ")
 {
 	if (in.empty()) return std::string();
-	std::vector<T>::const_iterator it=in.begin();
+	auto it=in.begin();
 	std::string ret=toString(*it);
 	for (++it;it!=in.end();++it)
 		ret+=delim+toString(*it);

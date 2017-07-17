@@ -149,10 +149,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\graph.h" />
     <ClInclude Include="..\image.h" />
     <ClInclude Include="..\imageIO.h" />
     <ClInclude Include="..\mathHelpers.h" />
     <ClInclude Include="..\utility.h" />
+    <ClInclude Include="..\matrix.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="unitTests.cpp" />
