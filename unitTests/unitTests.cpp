@@ -10,7 +10,6 @@
 #include "../imageIO.h"
 #include "../utility.h"
 #include "../mathHelpers.h"
-#include "../graph.h"
 #include "../fft.h"
 
 using namespace ndl;
@@ -463,13 +462,6 @@ void testreal() {
 		std::cout << input[i] << "\n";
 	std::cout << "==========================\n Ellapsed time: " << std::scientific  << ellapsed << " sec\n";
 }
-void TestGraph() {
-	//graph library tests
-// 	Shape<float, 3> shape;
-// 	Mesh<float, 3> mesh;
-//	Simplex<float, 3> simplex;
-// 	mesh.print();
-}
 int main()
 {
 	testImageLibraryDimensions();
@@ -477,10 +469,9 @@ int main()
 	ImageLibrarySpeedTest();
 	testIntegralImage();
 	testImageLibraryBorders();
-	//TestImages("C:/Users/natha/Documents/ndl/unitTests/data", "C:/Users/natha/Desktop"); // for windows
-	TestImages("/mnt/win/Users/natha/Documents/ndl/unitTests/data", "/tmp"); // for linux
+	TestImages("C:/Users/natha/Documents/ndl/unitTests/data", "C:/Users/natha/Desktop"); // for windows
+	//TestImages("/mnt/win/Users/natha/Documents/ndl/unitTests/data", "/tmp"); // for linux
 	testreal();
 	testcomplex();
-	//TestGraph();
 	return 0;
 }

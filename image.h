@@ -12,29 +12,6 @@
 
 namespace ndl
 {
-	union indexer 
-	{
-		indexer(std::initializer_list<int> list) 
-		{
-			data[0] = 0;
-			data[1] = -1;
-			data[2] = 1;
-			std::vector<int> v = list;
-			int num = std::min(data.size(), v.size());
-			for(int i=0;i<num;i++)
-				data[i] = v[i];
-		}
-		indexer(int _first)
-		{
-			data[0] = _first;
-			data[1] = -1;
-			data[2] = 1;
-		}
-		std::array<int,3> data;
-		operator int() const { return data[0]; }
-	};
-	int _ = -1;
-
 	template <class T, int DIM>
 	class Image
 	{
