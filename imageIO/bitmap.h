@@ -76,11 +76,11 @@ public:
         out.write((const char*)&*data.begin(),data.size());
         return true;
     }
-    template<typename char_type>
-    bool load_from_file(const char_type* file_name)
+
+    bool load_from_file(const std::string &file_name)
     {
         std::ifstream in(file_name,std::ios::binary);
-		if (!in || !bmfh.read(in)) return false;
+		if (in.fail() || !bmfh.read(in)) return false;
         in.read((char*)&bmih,sizeof(bitmap_info_header));
         if (!in || bmih.biWidth <= 0 || bmih.biHeight <= 0 || bmih.biCompression != 0) return false;
         try

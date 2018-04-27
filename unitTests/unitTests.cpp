@@ -469,8 +469,7 @@ int main()
 	ImageLibrarySpeedTest();
 	testIntegralImage();
 	testImageLibraryBorders();
-	TestImages("C:/Users/natha/Documents/ndl/unitTests/data", "C:/Users/natha/Desktop"); // for windows
-	//TestImages("/mnt/win/Users/natha/Documents/ndl/unitTests/data", "/tmp"); // for linux
+	TestImages("/home/nathan/dev/ndl/unitTests/data", "/tmp");
 	testreal();
 	testcomplex();
 	return 0;
