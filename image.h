@@ -163,21 +163,21 @@ namespace ndl
 
 		// copy constructor (deep copy)
 		template<class U> 
-		Image(T* sourceData, Image<U,DIM>& source) : Image(sourceData, source.Extent)
+		Image(T* buffer, Image<U,DIM>& source) : Image(buffer, source.Extent)
 		{
 			auto sourceit = source.begin();
 			for (auto it = begin(); it != end(); ++it, ++sourceit) *it = *sourceit;
 		}
 
 		// construct from external memory, be sure you have enough space!!
-		Image(T* sourceData, std::array<int, DIM> extent) :
+		Image(T* buffer, std::array<int, DIM> extent) :
 			StepSize{ makeStepSize(extent)},
 			Extent(extent),
 			Offset{ },
 			Start{ },
 			End{ makeEnd(Extent, StepSize) },
-			RootDataArray{ sourceData },
-			DataArray{ sourceData }
+			RootDataArray{ buffer },
+			DataArray{ buffer }
 		{ }
 
 		template<class U> Image& operator=(Image<U,DIM> &rhs) {
@@ -271,8 +271,8 @@ namespace ndl
 				int end = index[i].data[1];
 				int step = index[i].data[2];
 
-				if (start < 0)
-					start = 0;
+				std::assert(start < 0);
+				std::assert(end < Extent[i]);
 				while (end < start) 
 					end += Extent[i];
 				newOffset[i] = start;
@@ -526,19 +526,6 @@ namespace ndl
 		return true;
 	}
 
-	//extension functions
-	template<class T, int DIM> Image<T, DIM> Gaussian3(Image<T, DIM>& image, const double sigma) {
-		Image<T, DIM> result(image);
-		for (auto i = image.begin(), r = result.begin(); i != image.end(); ++i, ++r) {
-			*r = *i * _gaussian(sigma, 0) + (i[image.StepSize[0]] + i[-image.StepSize[0]]) * _gaussian(sigma, 1);
-		}
-	}
-	template<class T, int DIM> Image<T, DIM> Gaussian5(Image<T, DIM>& image, const double sigma) {
-		Image<T, DIM> result(image);
-		for (auto i = image.begin(), r = result.begin(); i != image.end(); ++i, ++r) {
-			*r = *i * _gaussian(sigma, 0) + (i[image.StepSize[0]] + i[-image.StepSize[0]]) * _gaussian(sigma, 1) + (i[image.StepSize[0] * 2] + i[-image.StepSize[0] * 2]) * _gaussian(sigma, 2);
-		}
-	}
 	template<class T, class T2> Image<T, 3>& ToIntegralImage(Image<T2,3>& image, Image<T, 3>& result)
 	{
 		result = image;

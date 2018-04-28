@@ -6,11 +6,11 @@
 #include <string.h>
 #include <cstdint>
 #include <complex>
-#include "../image.h"
-#include "../imageIO.h"
-#include "../utility.h"
-#include "../mathHelpers.h"
-#include "../fft.h"
+#include <ndl/image.h>
+#include <ndl/imageIO.h>
+#include <ndl/utility.h>
+#include <ndl/mathHelpers.h>
+#include <ndl/fft.h>
 
 using namespace ndl;
 using namespace ndl::fft;
