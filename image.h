@@ -44,11 +44,10 @@ namespace ndl
 				}
 				for (int p = 3; p < DIM; p++)
 				{
-					if (DIM > p && ++I[p] < _myImage.Extent[p])
+					if (++I[p] < _myImage.Extent[p])
 					{
 						for (int q = 0; q < p; q++) I[q] = _myImage.Start[q];
-						_Ptr += _myImage.StepSize[p];
-						for (int q = 1; q < p; q++) _Ptr -= _myImage.StepSize[p-q] * (_myImage.Extent[p - q] - 1);
+						_Ptr += _myImage.StepSize[p] - _myImage.StepSize[p-1] * (_myImage.Extent[p - 1] - 1);
 						return i;
 					}
 				}
@@ -71,11 +70,10 @@ namespace ndl
 				}
 				for (int p = 3; p < DIM; p++)
 				{
-					if (DIM > p && ++I[p] < _myImage.Extent[p])
+					if (++I[p] < _myImage.Extent[p])
 					{
 						for (int q = 0; q < p; q++) I[q] = _myImage.Start[q];
-						_Ptr += _myImage.StepSize[p];
-						for (int q = 1; q < p; q++) _Ptr -= _myImage.StepSize[p-q] * (_myImage.Extent[p-q] - 1);
+						_Ptr += _myImage.StepSize[p] - _myImage.StepSize[p - 1] * (_myImage.Extent[p - 1] - 1);
 						return *this;
 					}
 				}
@@ -204,7 +202,7 @@ namespace ndl
 			return true;
 		}
 		template <class U> bool operator<  (const Image<U, DIM>& rhs) {
-			//assert(rhs.Extent == Extent);
+			assert(rhs.Extent == Extent);
 			auto rhsit = rhs.begin();
 			for (auto it = begin(); it != end(); ++it, ++rhsit) if (*it >= *rhsit) return false;
 			return true;
@@ -273,8 +271,8 @@ namespace ndl
 				int end = index[i].data[1];
 				int step = index[i].data[2];
 
-				std::assert(start < 0);
-				std::assert(end < Extent[i]);
+				if (start < 0)
+					start = 0;
 				while (end < start) 
 					end += Extent[i];
 				newOffset[i] = start;
@@ -455,7 +453,7 @@ namespace ndl
 			return result;
 		}
 		template<class Op, class U> Image& MutableBinaryImageOp(const Image<U, DIM>& rhs) {
-			//assert(rhs.Extent == Extent);
+			assert(rhs.Extent == Extent);
 			Op o;
 			auto rhsit = rhs.begin();
 			for (auto it = begin(); it != end(); ++it, ++rhsit) *it = (T)o(*it, *rhsit);
@@ -504,17 +502,21 @@ namespace ndl
 		}
 		return sb;
 	}
-	template<class T, int DIM> std::ostream& operator<<(std::ostream& sb, const Image<T, DIM>& r)
+	template<class T> std::ostream& operator<<(std::ostream& sb, const Image<T, 3>& r)
 	{
 		sb << std::fixed << std::setprecision(2);
-		auto im = r.swap(1,2);
-		for (auto it = im.begin(); it != im.end(); ++it)
+		for (int j = 0; j < r.Extent[1]; j++)
 		{
-			sb << (double)*it;
-			if (it.I[0] != im.Extent[0] - 1) sb << ", ";
-			else if (it.I[1] != im.Extent[1] - 1) sb << " | ";
-			else if (it.I[2] != im.Extent[2] - 1) sb << std::endl;
-			else sb << std::endl << std::endl;
+			for (int k = 0; k < r.Extent[2]; k++)
+			{
+				for (int i = 0; i < r.Extent[0]; i++)
+				{
+					if (i != 0) sb << ", ";
+					sb << (double)r.at(std::array<int, 3>{ i, j, k });
+				}
+				if (k != r.Extent[2] - 1) sb << "  |  ";
+			}
+			sb << std::endl;
 		}
 		return sb;
 	}
