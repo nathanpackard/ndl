@@ -284,7 +284,7 @@ namespace ndl
 			}
 			return Image<T, DIM>(*this, newOffset, newExtent, newStepSize, newMirror);
 		}
-		Image<T, DIM - 1> slice(int sliceDimension, int sliceIndex) 
+		Image<T, DIM - 1> slice(int sliceDimension, int sliceIndex) const
 		{
 			return Image<T, DIM - 1>(*this, sliceDimension, sliceIndex);
 		}
@@ -522,20 +522,17 @@ namespace ndl
 		}
 		return sb;
 	}
-	// template<class T, int DIM> std::ostream& operator<<(std::ostream& sb, const Image<T, DIM>& r)
-	// {
-	// 	sb << std::fixed << std::setprecision(2);
-	// 	auto im = r.swap(1,2);
-	// 	for (auto it = im.begin(); it != im.end(); ++it)
-	// 	{
-	// 		sb << (double)*it;
-	// 		if (it.I[0] != im.Extent[0] - 1) sb << ", ";
-	// 		else if (it.I[1] != im.Extent[1] - 1) sb << " | ";
-	// 		else if (it.I[2] != im.Extent[2] - 1) sb << std::endl;
-	// 		else sb << std::endl << std::endl;
-	// 	}
-	// 	return sb;
-	// }
+	template<class T, int DIM> std::ostream& operator<<(std::ostream& sb, const Image<T, DIM>& r)
+	{
+		sb << std::fixed << std::setprecision(2);
+		auto im = r;
+		for (int i=0;i<r.Extent[DIM - 1];i++)
+		{
+			sb << r.slice(DIM - 1,i);
+			sb << std::endl;
+		}
+		return sb;
+	}
 	template <class T, class U, int DIM> bool operator<(const T& lhs, const Image<U, DIM>& rhs) {
 		auto rhsit = rhs.begin();
 		for (auto rhsit = rhs.begin(); rhsit != rhs.end(); ++rhsit) if (lhs >= *rhsit) return false;
