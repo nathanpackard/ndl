@@ -44,10 +44,11 @@ namespace ndl
 				}
 				for (int p = 3; p < DIM; p++)
 				{
-					if (++I[p] < _myImage.Extent[p])
+					if (DIM > p && ++I[p] < _myImage.Extent[p])
 					{
 						for (int q = 0; q < p; q++) I[q] = _myImage.Start[q];
-						_Ptr += _myImage.StepSize[p] - _myImage.StepSize[p-1] * (_myImage.Extent[p - 1] - 1);
+						_Ptr += _myImage.StepSize[p];
+						for (int q = 1; q < p; q++) _Ptr -= _myImage.StepSize[p-q] * (_myImage.Extent[p - q] - 1);
 						return i;
 					}
 				}
@@ -70,10 +71,11 @@ namespace ndl
 				}
 				for (int p = 3; p < DIM; p++)
 				{
-					if (++I[p] < _myImage.Extent[p])
+					if (DIM > p && ++I[p] < _myImage.Extent[p])
 					{
 						for (int q = 0; q < p; q++) I[q] = _myImage.Start[q];
-						_Ptr += _myImage.StepSize[p] - _myImage.StepSize[p - 1] * (_myImage.Extent[p - 1] - 1);
+						_Ptr += _myImage.StepSize[p];
+						for (int q = 1; q < p; q++) _Ptr -= _myImage.StepSize[p-q] * (_myImage.Extent[p-q] - 1);
 						return *this;
 					}
 				}
@@ -502,21 +504,17 @@ namespace ndl
 		}
 		return sb;
 	}
-	template<class T> std::ostream& operator<<(std::ostream& sb, const Image<T, 3>& r)
+	template<class T, int DIM> std::ostream& operator<<(std::ostream& sb, const Image<T, DIM>& r)
 	{
 		sb << std::fixed << std::setprecision(2);
-		for (int j = 0; j < r.Extent[1]; j++)
+		auto im = r.swap(1,2);
+		for (auto it = im.begin(); it != im.end(); ++it)
 		{
-			for (int k = 0; k < r.Extent[2]; k++)
-			{
-				for (int i = 0; i < r.Extent[0]; i++)
-				{
-					if (i != 0) sb << ", ";
-					sb << (double)r.at(std::array<int, 3>{ i, j, k });
-				}
-				if (k != r.Extent[2] - 1) sb << "  |  ";
-			}
-			sb << std::endl;
+			sb << (double)*it;
+			if (it.I[0] != im.Extent[0] - 1) sb << ", ";
+			else if (it.I[1] != im.Extent[1] - 1) sb << " | ";
+			else if (it.I[2] != im.Extent[2] - 1) sb << std::endl;
+			else sb << std::endl << std::endl;
 		}
 		return sb;
 	}
