@@ -47,7 +47,8 @@ namespace ndl
 					if (DIM > p && ++I[p] < _myImage.Extent[p])
 					{
 						for (int q = 0; q < p; q++) I[q] = _myImage.Start[q];
-						_Ptr += _myImage.StepSize[p] - _myImage.StepSize[p-1] * (_myImage.Extent[p - 1] - 1);
+						_Ptr += _myImage.StepSize[p];
+						for (int q = 1; q < p; q++) _Ptr -= _myImage.StepSize[p-q] * (_myImage.Extent[p - q] - 1);
 						return i;
 					}
 				}
@@ -73,7 +74,8 @@ namespace ndl
 					if (DIM > p && ++I[p] < _myImage.Extent[p])
 					{
 						for (int q = 0; q < p; q++) I[q] = _myImage.Start[q];
-						_Ptr += _myImage.StepSize[p] - _myImage.StepSize[p - 1] * (_myImage.Extent[p - 1] - 1);
+						_Ptr += _myImage.StepSize[p];
+						for (int q = 1; q < p; q++) _Ptr -= _myImage.StepSize[p-q] * (_myImage.Extent[p-q] - 1);
 						return *this;
 					}
 				}
@@ -510,7 +512,7 @@ namespace ndl
 			for (int k = 0; k < r.Extent[2]; k++)
 			{
 				for (int i = 0; i < r.Extent[0]; i++)
-				{
+		{
 					if (i != 0) sb << ", ";
 					sb << (double)r.at(std::array<int, 3>{ i, j, k });
 				}
