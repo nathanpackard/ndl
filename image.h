@@ -202,7 +202,7 @@ namespace ndl
 			return true;
 		}
 		template <class U> bool operator<  (const Image<U, DIM>& rhs) {
-			assert(rhs.Extent == Extent);
+			//assert(rhs.Extent == Extent);
 			auto rhsit = rhs.begin();
 			for (auto it = begin(); it != end(); ++it, ++rhsit) if (*it >= *rhsit) return false;
 			return true;
@@ -237,7 +237,7 @@ namespace ndl
 		template <class U> bool operator>  (const U& rhs) { return (rhs < *this); }
 		template <class U> bool operator>= (const Image<U, DIM>& rhs) { return !(*this < rhs); }
 		template <class U> bool operator>= (const U& rhs) { return !(*this < rhs); }
-		long size() { return std::accumulate(Extent.begin(), Extent.end(), 1, std::multiplies<int>()); }
+		long size() const { return std::accumulate(Extent.begin(), Extent.end(), 1, std::multiplies<int>()); }
 		std::string state()
 		{
 			std::ostringstream sb;
@@ -286,7 +286,7 @@ namespace ndl
 		{
 			return Image<T, DIM - 1>(*this, sliceDimension, sliceIndex);
 		}
-		Image<T, DIM> swap(int dimension1, int dimension2)
+		Image<T, DIM> swap(int dimension1, int dimension2) const
 		{
 			std::array<int, DIM> newExtent;
 			std::array<int, DIM> newOffset;
@@ -453,7 +453,7 @@ namespace ndl
 			return result;
 		}
 		template<class Op, class U> Image& MutableBinaryImageOp(const Image<U, DIM>& rhs) {
-			assert(rhs.Extent == Extent);
+			//assert(rhs.Extent == Extent);
 			Op o;
 			auto rhsit = rhs.begin();
 			for (auto it = begin(); it != end(); ++it, ++rhsit) *it = (T)o(*it, *rhsit);
@@ -484,7 +484,7 @@ namespace ndl
 		for (int i = 0; i < r.Extent[0]; i++)
 		{
 			if (i != 0) sb << ", ";
-			sb << (double)r.at(std::array<int, 1>{i});
+			sb << (double)r.at({i});
 		}
 		return sb;
 	}
@@ -496,7 +496,7 @@ namespace ndl
 			for (int i = 0; i < r.Extent[0]; i++)
 			{
 				if (i != 0) sb << ", ";
-				sb << (double)r.at(std::array<int, 2>{ i, j });
+				sb << (double)r.at({ i, j });
 			}
 			sb << std::endl;
 		}
@@ -525,32 +525,4 @@ namespace ndl
 		for (auto rhsit = rhs.begin(); rhsit != rhs.end(); ++rhsit) if (lhs >= *rhsit) return false;
 		return true;
 	}
-
-	template<class T, class T2> Image<T, 3>& ToIntegralImage(Image<T2,3>& image, Image<T, 3>& result)
-	{
-		result = image;
-		for (auto r = result.begin(); r != result.end(); ++r) {
-			if (r.I[0] > 0 && r.I[1] > 0 && r.I[2] > 0) *r += r[-result.StepSize[0] - result.StepSize[1] - result.StepSize[2]];
-			if (r.I[2] > 0) *r += r[-result.StepSize[2]];
-			if (r.I[1] > 0) *r += r[-result.StepSize[1]];
-			if (r.I[0] > 0) *r += r[-result.StepSize[0]];
-			if (r.I[0] > 0 && r.I[1] > 0) *r -= r[-result.StepSize[0] - result.StepSize[1]];
-			if (r.I[1] > 0 && r.I[2] > 0) *r -= r[-result.StepSize[1] - result.StepSize[2]];
-			if (r.I[0] > 0 && r.I[2] > 0) *r -= r[-result.StepSize[0] - result.StepSize[2]];
-		}
-		return result;
-	}
-	template<class T> T SampleIntegralImage(Image<T,3>& image) 
-	{
-		////Now for every query(x1, y1, z1) to(x2, y2, z2), 
-		//first convert the coordinates so that x1, y1, z1 is the corner of the cuboid closest to origin 
-		//and x2, y2, z2 is the corner that is farthest from origin.
-
-		//S((x1, y1, z1) to(x2, y2, z2)) = S0(x2, y2, z2) - S0(x2, y2, z1)
-		//- S0(x2, y1, z2) - S0(x1, y2, z2)
-		//+ S0(x1, y1, z2) + S0(x1, y2, z1) + S0(x2, y1, z1)
-		//- S0(x1, y1, z1)
-		return 0;
-	}
-
 }

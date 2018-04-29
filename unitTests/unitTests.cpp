@@ -298,23 +298,6 @@ void ImageLibrarySpeedTest()
 		std::cout << result({ { 0,3,1 },{ 0,3,1 },{ 0,0,1 } }) << std::endl;
 	}
 }
-void testIntegralImage()
-{
-	int size = 3;
-	std::cout << std::endl << "Original Image" << std::endl;
-	std::vector<unsigned short> image3Ddata(size*size*size);
-	Image<unsigned short, 3> image(image3Ddata.data(),{ size, size, size });
-	int i = 0;
-	for (auto it = image.begin(); it != image.end(); ++it) 
-		*it = ++i;
-	std::cout << image << std::endl;
-
-	std::cout << "Integral Image" << std::endl;
-
-	std::vector<long> integralImagedata(size*size*size);
-	Image<long, 3> integralImage(integralImagedata.data(), { size, size, size });
-	std::cout << ToIntegralImage(image, integralImage) << std::endl;
-}
 void displayBorderTests(Image<unsigned short, 3>& image3D) {
 	std::cout << "value: " << std::endl;
 	std::cout << "-2 x clamp: " << image3D.begin().clamp(-2, 0) << std::endl;
@@ -467,7 +450,6 @@ int main()
 	testImageLibraryDimensions();
 	testImageLibraryAccuracy();
 	ImageLibrarySpeedTest();
-	testIntegralImage();
 	testImageLibraryBorders();
 	TestImages("/home/nathan/dev/ndl/unitTests/data", "/tmp");
 	testreal();
