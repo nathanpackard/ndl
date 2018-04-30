@@ -262,16 +262,21 @@ namespace ndl
 		Image<T, DIM> operator()(const std::initializer_list<indexer>& list)
 		{
 			std::vector<indexer> index = list;
+			int indexSize = index.size();
 			std::array<int, DIM> newExtent;
 			std::array<int, DIM> newOffset;
 			std::array<int, DIM> newStepSize;
 			std::array<bool, DIM> newMirror;
 			for (int i = 0; i < DIM; i++)
 			{
+				int start=-1, end=-1, step=1;
 				newMirror[i] = false;
-				int start = index[i].data[0];
-				int end = index[i].data[1];
-				int step = index[i].data[2];
+				if (i < indexSize)
+				{
+					start = index[i].data[0];
+					end = index[i].data[1];
+					step = index[i].data[2];
+				}
 
 				if (start < 0)
 					start = 0;
