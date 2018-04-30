@@ -286,7 +286,7 @@ namespace ndl
 		}
 		Image<T, DIM - 1> slice(int sliceDimension, int sliceIndex) const
 		{
-			return Image<T, DIM - 1>(*this, sliceDimension, sliceIndex);
+			return Image<T, DIM - 1>(*this, sliceDimension, StepSize[sliceDimension] < 0 ? Extent[sliceDimension] - 1 - sliceIndex : sliceIndex);
 		}
 		Image<T, DIM> swap(int dimension1, int dimension2) const
 		{
