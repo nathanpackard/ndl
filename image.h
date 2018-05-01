@@ -182,6 +182,11 @@ namespace ndl
 			DataArray{ buffer }
 		{ }
 
+		static int size(std::array<int, DIM> extent)
+		{
+			return std::accumulate(extent.begin(), extent.end(), 1, std::multiplies<int>());
+		}
+
 		template<class U> Image& operator=(Image<U,DIM> &rhs) {
 			assert(rhs.Extent == Extent);
 			auto rhsit = rhs.begin();
@@ -438,18 +443,6 @@ namespace ndl
 			for (int i = 0; i < DIM; i++)
 				result[i] = (newStepSize[i] < 0 ? newExtent[i] - 1 : 0);
 			std::swap(result[swapDim1], result[swapDim2]);
-			return result;
-		}
-		std::array<int, DIM> makeStartSlice(const std::array<int, DIM + 1>& newStepSize, const std::array<int, DIM>& newExtent, int sliceDimension)
-		{
-			std::array<int, DIM> result{};
-			int t = 0;
-			for (int i = 0; i < DIM; i++)
-			{
-				if (i == sliceDimension) continue;
-				result[t] = (newStepSize[i] < 0 ? newExtent[i] - 1 : 0);
-				t++;
-			}
 			return result;
 		}
 		std::array<int, DIM> makeEnd(const std::array<int, DIM>& newExtent, const std::array<int, DIM>& newStepSize)
