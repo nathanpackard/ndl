@@ -482,10 +482,10 @@ namespace ndl
 	template<class T> std::ostream& operator<<(std::ostream& sb, const Image<T, 1>& r)
 	{
 		sb << std::fixed << std::setprecision(2);
-		for (int i = 0; i < r.Extent[0]; i++)
+		for (auto it = r.begin(); it != r.end(); ++it)
 		{
-			if (i != 0) sb << ", ";
-			sb << (double)r.at({i});
+			if (it != r.begin()) sb << ", ";
+			sb << (double)*it;
 		}
 		return sb;
 	}
