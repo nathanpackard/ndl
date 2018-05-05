@@ -345,7 +345,7 @@ namespace ndl
 			Start{ makeStart(StepSize, Extent, 0, 0) },
 			End{ makeEnd(Extent, StepSize) },
 			RootDataArray { source.RootDataArray },
-			DataArray { computeDataArraySlicePtr(sliceDimension, sliceIndex, source.StepSize) }
+			DataArray { computeDataArraySlicePtr(sliceDimension, sliceIndex) }
 		{ }
 
 		// protected helper methods
@@ -355,7 +355,7 @@ namespace ndl
 			for (int i = 0; i < DIM; i++) value += Start[i] * _abs(StepSize[i]) + Offset[i] * _abs(sourceStepSize[i]);
 			return value;
 		}
-		T* computeDataArraySlicePtr(int sliceDimension, int sliceIndex, const std::array<int, DIM + 1>& sourceStepSize)
+		T* computeDataArraySlicePtr(int sliceDimension, int sliceIndex)
 		{
 			T* result = RootDataArray;
 			int t = 0;
@@ -365,7 +365,7 @@ namespace ndl
 					result += sliceIndex * _abs(StepSize[i]);
 				else
 				{
-					result += Start[t] * _abs(StepSize[t]) + Offset[t] * _abs(sourceStepSize[i]);
+					result += Start[t] * _abs(StepSize[t]) + Offset[t] * _abs(StepSize[t]) / Extent[t];
 					t++;
 				}
 			}
