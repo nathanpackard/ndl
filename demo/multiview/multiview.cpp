@@ -46,6 +46,6 @@ int main()
 
     // display a decimated roi (TODO: fix this functionality)
     std::cout << ndImage.state();
-    std::cout << "image decimatedX roiX, ndImage({{1,-1, 2}}): \n" << ndImage({{0,-1, 2}}) << std::endl;
-    std::cout << ndImage({{0,-1, 2}}).state();
+    std::cout << "image decimatedX roiX, ndImage({{1,-1, 2}}): \n" << ndImage({{1,-1, 2}}) << std::endl;
+    std::cout << ndImage({{1,-1, 2}}).state();
 }

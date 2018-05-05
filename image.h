@@ -248,7 +248,7 @@ namespace ndl
 		std::string state()
 		{
 			std::ostringstream sb;
-			sb << "DataArray : " << ((long)DataArray - (long)RootDataArray) << std::endl;
+			sb << "DataArray : " << long(DataArray - RootDataArray) << std::endl;
 			for (int i = 0; i < DIM; i++) sb << "Start" << i << " : " << Start[i] << std::endl;
 			for (int i = 0; i < DIM; i++) sb << "Offset" << i << " : " << Offset[i] << std::endl;
 			for (int i = 0; i < DIM; i++) sb << "End" << i << " : " << End[i] << std::endl;
@@ -362,13 +362,14 @@ namespace ndl
 			for (int i = 0; i < DIM + 1; i++)
 			{
 				if (i == sliceDimension)
-					result += sliceIndex * _abs(sourceStepSize[i]);
+					result += sliceIndex * _abs(StepSize[i]);
 				else
 				{
 					result += Start[t] * _abs(StepSize[t]) + Offset[t] * _abs(sourceStepSize[i]);
 					t++;
 				}
 			}
+			std::cout << "MEMORY OFFSET: " << long(result - RootDataArray) << "\n";
 			return result;
 		}
 		std::array<int, DIM> makeStepSize(const std::array<int, DIM>& sourceStepSize, const std::array<bool, DIM>& mirror, const std::array<int, DIM>& stepSize, int swapDim1, int swapDim2)
