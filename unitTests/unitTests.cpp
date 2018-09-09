@@ -220,7 +220,7 @@ void testImageLibraryAccuracy()
 		auto resultit = result.begin();
 		for (auto it = roi1.begin(); it != roi1.end(); ++it)
 		{
-			*resultit = (it[roi1.StepSize[0]] + it[-roi1.StepSize[0]] + it[roi1.StepSize[1]] + it[-roi1.StepSize[1]]) * 0.25;
+			*resultit = (it[roi1.Stride[0]] + it[-roi1.Stride[0]] + it[roi1.Stride[1]] + it[-roi1.Stride[1]]) * 0.25;
 			++resultit;
 		}
 	});
@@ -234,7 +234,7 @@ void testImageLibraryAccuracy()
 	auto result2it = result2.begin();
 	for (auto roi2it = roi2.begin(); roi2it != roi2.end(); ++roi2it)
 	{
-		*result2it = (roi2it[roi2.StepSize[0]] + roi2it[-roi2.StepSize[0]] + roi2it[roi2.StepSize[1]] + roi2it[-roi2.StepSize[1]]) / 4;
+		*result2it = (roi2it[roi2.Stride[0]] + roi2it[-roi2.Stride[0]] + roi2it[roi2.Stride[1]] + roi2it[-roi2.Stride[1]]) / 4;
 		++result2it;
 	}
 	std::cout << result2 << std::endl;
@@ -268,7 +268,7 @@ void ImageLibrarySpeedTest()
 		basetime = codeTimer("roi1 convolution index", [&]() -> void
 		{
 			for (auto it = roi1.begin(), resultit = result.begin(); it != roi1.end(); ++it, ++resultit)
-				*resultit = (it[roi1.StepSize[0]] + it[-roi1.StepSize[0]] + it[roi1.StepSize[1]] + it[-roi1.StepSize[1]]) * 0.25;
+				*resultit = (it[roi1.Stride[0]] + it[-roi1.Stride[0]] + it[roi1.Stride[1]] + it[-roi1.Stride[1]]) * 0.25;
 		}, iterations);
 		std::cout << std::endl;
 		std::cout << result({ {0,3,1}, { 0,3,1 }, { 0,0,1 } }) << std::endl;
@@ -451,7 +451,7 @@ int main()
 	testImageLibraryAccuracy();
 	ImageLibrarySpeedTest();
 	testImageLibraryBorders();
-	TestImages("/home/nathan/dev/ndl/unitTests/data", "/tmp");
+	TestImages("/home/nathanpackard/dev/ndl/unitTests/data", "/tmp");
 	testreal();
 	testcomplex();
 	return 0;
