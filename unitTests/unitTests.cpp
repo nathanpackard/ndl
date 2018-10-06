@@ -26,152 +26,138 @@ void testImageLibraryDimensions()
 	std::vector<unsigned short> image1Ddata(size);
 	Image<unsigned short, 1> image1D(image1Ddata.data(), { size });
 	i = 0;
-	for (auto it = image1D.begin(); it != image1D.end(); ++it) 
+	for (auto it = image1D.begin(); it != image1D.end(); ++it)
 		*it = ++i;
-	std::cout << image1D << std::endl;
+	std::cout << image1D;
+
+	std::cout << std::endl << "1D Image - mirrored" << std::endl;
+	std::cout << image1D({{0,-1,-1}});
+	return;
 
 	//create a 2D image with increasing values
 	std::cout << std::endl << "2D Image" << std::endl;
 	std::vector<unsigned short> image2Ddata(size*size);
 	Image<unsigned short, 2> image2D(image2Ddata.data(), { size, size });
 	i = 0;
-	for (auto it = image2D.begin(); it != image2D.end(); ++it) 
+	for (auto it = image2D.begin(); it != image2D.end(); ++it)
 		*it = ++i;
-	std::cout << image2D << std::endl;
+	std::cout << image2D;
 
 	//create a 3D image with increasing values
 	std::cout << std::endl << "3D Image" << std::endl;
 	std::vector<unsigned short> image3Ddata( size*size*size );
 	Image<unsigned short, 3> image3D(image3Ddata.data(), { size, size, size });
 	i = 0;
-	for (auto it = image3D.begin(); it != image3D.end(); ++it) 
+	for (auto it = image3D.begin(); it != image3D.end(); ++it)
 		*it = ++i;
-	std::cout << image3D << std::endl << image3D.state() << std::endl;
+	std::cout << image3D;
 
 	//mirror the 3D image along X direction
 	std::cout << std::endl << "MirrorX" << std::endl;
 	Image<unsigned short, 3> image3DmirrorX = image3D({ {0,-1,-1},_,_ });
-	std::cout << image3DmirrorX << std::endl;
-	std::cout << image3DmirrorX.state() << std::endl;
+	std::cout << image3DmirrorX;
 
 	//mirror the 3D image along X direction again
 	std::cout << std::endl;
 	std::cout << "MirrorX" << std::endl;
 	Image<unsigned short, 3> image3DmirrorX2 = image3DmirrorX({ { 0,-1,-1 },_,_ });
-	std::cout << image3DmirrorX2 << std::endl;
-	std::cout << image3DmirrorX2.state() << std::endl;
+	std::cout << image3DmirrorX2;
 
 	//mirror the 3D image along X direction within an ROI
 	std::cout << std::endl;
 	std::cout << "MirrorXRoi" << std::endl;
 	Image<unsigned short, 3> image3DmirrorX3 = image3DmirrorX2({ { 1,-2,-1 },{ 1,-2,1 },{ 1,-2,1 } });
-	std::cout << image3DmirrorX3 << std::endl;
-	std::cout << image3DmirrorX3.state() << std::endl;
+	std::cout << image3DmirrorX3;
 
 	//mirror the 3D image along Y direction
 	std::cout << std::endl;
 	std::cout << "MirrorY" << std::endl;
 	Image<unsigned short, 3> image3DmirrorY = image3D({ _,{ 0,-1,-1 },_ });
-	std::cout << image3DmirrorY << std::endl;
-	std::cout << image3DmirrorY.state() << std::endl;
+	std::cout << image3DmirrorY;
 
 	//mirror the 3D image along Y direction again
 	std::cout << std::endl;
 	std::cout << "MirrorY" << std::endl;
 	Image<unsigned short, 3> image3DmirrorY2 = image3DmirrorY({ _,{ 0,-1,-1 },_ });
-	std::cout << image3DmirrorY2 << std::endl;
-	std::cout << image3DmirrorY2.state() << std::endl;
+	std::cout << image3DmirrorY2;
 
 	//mirror the 3D image along Y direction within an ROI
 	std::cout << std::endl;
 	std::cout << "MirrorYRoi" << std::endl;
 	Image<unsigned short, 3> image3DmirrorY3 = image3DmirrorY2({ { 1,-2,1 },{ 1,-2,-1 },{ 1,-2,1 } });
-	std::cout << image3DmirrorY3 << std::endl;
-	std::cout << image3DmirrorY3.state() << std::endl;
+	std::cout << image3DmirrorY3;
 
 	//mirror the 3D image along Z direction
 	std::cout << std::endl;
 	std::cout << "MirrorZ" << std::endl;
 	Image<unsigned short, 3> image3DmirrorZ = image3D({ _,_,{ 0,-1,-1 } });
-	std::cout << image3DmirrorZ << std::endl;
-	std::cout << image3DmirrorZ.state() << std::endl;
+	std::cout << image3DmirrorZ;
 
 	//mirror the 3D image along Z direction again
 	std::cout << std::endl;
 	std::cout << "MirrorZ" << std::endl;
 	Image<unsigned short, 3> image3DmirrorZ2 = image3DmirrorZ({ _,_,{ 0,-1,-1 } });
-	std::cout << image3DmirrorZ2 << std::endl;
-	std::cout << image3DmirrorZ2.state() << std::endl;
+	std::cout << image3DmirrorZ2;
 
 	//mirror the 3D image along Z direction within an ROI
 	std::cout << std::endl;
 	std::cout << "MirrorZRoi" << std::endl;
 	Image<unsigned short, 3> image3DmirrorZ3 = image3DmirrorZ2({ { 1,-2,1 },{ 1,-2,1 },{ 1,-2,-1 } });
-	std::cout << image3DmirrorZ3 << std::endl;
-	std::cout << image3DmirrorZ3.state() << std::endl;
+	std::cout << image3DmirrorZ3;
 
 	//mirror the 3D image along X,Y, and Z directions
 	std::cout << std::endl;
 	std::cout << "MirrorXYZ" << std::endl;
 	Image<unsigned short, 3> image3DmirrorXYZ = image3D({ { 0,-1,-1 },{ 0,-1,-1 },{ 0,-1,-1 } });
-	std::cout << image3DmirrorXYZ << std::endl;
-	std::cout << image3DmirrorXYZ.state() << std::endl;
+	std::cout << image3DmirrorXYZ;
 
 	//swap X and Y dimensions
 	std::cout << std::endl;
 	std::cout << "SwapXY" << std::endl;
 	Image<unsigned short, 3> image3DswapXY = image3D.swap(0,1);
-	std::cout << image3DswapXY << std::endl;
-	std::cout << image3DswapXY.state() << std::endl;
+	std::cout << image3DswapXY;
 
 	//swap X and Y dimensions again
 	std::cout << std::endl;
 	std::cout << "SwapXY" << std::endl;
 	Image<unsigned short, 3> image3DswapXY2 = image3DswapXY.swap(0, 1);
-	std::cout << image3DswapXY2 << std::endl;
-	std::cout << image3DswapXY2.state() << std::endl;
+	std::cout << image3DswapXY2;
 
 	//swap Y and Z dimensions
 	std::cout << std::endl;
 	std::cout << "SwapYZ" << std::endl;
 	Image<unsigned short, 3> image3DswapYZ = image3D.swap(1, 2);
-	std::cout << image3DswapYZ << std::endl;
-	std::cout << image3DswapYZ.state() << std::endl;
+	std::cout << image3DswapYZ;
 
 	//swap Y and Z dimensions again
 	std::cout << std::endl;
 	std::cout << "SwapYZ" << std::endl;
 	Image<unsigned short, 3> image3DswapYZ2 = image3DswapYZ.swap(1, 2);
-	std::cout << image3DswapYZ2 << std::endl;
-	std::cout << image3DswapYZ2.state() << std::endl;
+	std::cout << image3DswapYZ2;
 
 	//swap Z and X dimensions
 	std::cout << std::endl;
 	std::cout << "SwapZX" << std::endl;
 	Image<unsigned short, 3> image3DswapZX = image3D.swap(0, 2);
-	std::cout << image3DswapZX << std::endl;
-	std::cout << image3DswapZX.state() << std::endl;
+	std::cout << image3DswapZX;
 
 	//swap Z and X dimensions again
 	std::cout << std::endl;
 	std::cout << "SwapZX" << std::endl;
 	Image<unsigned short, 3> image3DswapZX2 = image3DswapZX.swap(0, 2);
-	std::cout << image3DswapZX2 << std::endl;
-	std::cout << image3DswapZX2.state() << std::endl;
+	std::cout << image3DswapZX2;
 
 	//get a sub-image while mirroring along y and skipping
 	std::cout << std::endl;
 	std::cout << "SubImage1" << std::endl;
 	Image<unsigned short, 3> subImage1 = image3D({ _,{ 0,3,-2 }, _ });
-	std::cout << subImage1 << std::endl;
-	std::cout << subImage1.state() << std::endl;
-	
+	std::cout << subImage1;
+
 	//get a sub-image
 	std::cout << std::endl;
 	std::cout << "SubImage2" << std::endl;
 	Image<unsigned short, 3> subImage2 = image3D({ _,{ 2,3 }, _ });
-	std::cout << subImage2 << std::endl;
-	std::cout << subImage2.state() << std::endl;
+	std::cout << subImage2;
 
 	//combination test
 	std::vector<unsigned short> imagedata(8*8*1);
@@ -182,10 +168,8 @@ void testImageLibraryDimensions()
 	for (auto it = roi1.begin(); it != roi1.end(); ++it)
 		*it = (unsigned short)(10 * it.I[0] / 2 + 1 + (it.I[1] + 1));
 	std::cout << roi1 << std::endl;
-	std::cout << roi1.state() << std::endl;
-	std::cout << std::endl;
 	std::cout << "image" << std::endl;
-	std::cout << image << std::endl;
+	std::cout << image;
 }
 void testImageLibraryAccuracy()
 {
@@ -193,25 +177,25 @@ void testImageLibraryAccuracy()
 	std::cout << "image" << std::endl;
 	std::vector<double> imagedata(12*12*2);
 	Image<double, 3> image(imagedata.data(), { 12, 12, 2 });
-	std::cout << image << std::endl;
+	std::cout << image;
 
 	std::cout << std::endl;
 	std::cout << "roi1" << std::endl;
 	Image<double, 3> roi1 = image({ { 2,-4,2 },{ 2,-4,2 },{ 0,0,1 } });
 	for (auto it = roi1.begin(); it != roi1.end(); ++it)
 		*it = it.I[0] / 2 + 1 + (it.I[1] + 1) / 10.0;
-	std::cout << roi1 << std::endl;
+	std::cout << roi1;
 
 	std::cout << std::endl;
 	std::cout << "roi2" << std::endl;
 	Image<double, 3> roi2 = image({ { 3,-4,2 },{ 1,-2,1 },{ 0,0,1 } });
 	for (auto it = roi2.begin(); it != roi2.end(); ++it)
 		*it = 1;
-	std::cout << roi2 << std::endl;
+	std::cout << roi2;
 
 	std::cout << std::endl;
 	std::cout << "image after roi updates" << std::endl;
-	std::cout << image << std::endl;
+	std::cout << image;
 
 	std::cout << std::endl;
 	Image<double, 3> result(roi1);
@@ -224,7 +208,7 @@ void testImageLibraryAccuracy()
 			++resultit;
 		}
 	});
-	std::cout << result << std::endl;
+	std::cout << result;
 
 	std::cout << std::endl;
 	std::cout << "ROI2" << std::endl;
@@ -237,7 +221,7 @@ void testImageLibraryAccuracy()
 		*result2it = (roi2it[roi2.Stride[0]] + roi2it[-roi2.Stride[0]] + roi2it[roi2.Stride[1]] + roi2it[-roi2.Stride[1]]) / 4;
 		++result2it;
 	}
-	std::cout << result2 << std::endl;
+	std::cout << result2;
 
 	std::cout << std::endl;
 	int zeros = 0;
@@ -271,7 +255,7 @@ void ImageLibrarySpeedTest()
 				*resultit = (it[roi1.Stride[0]] + it[-roi1.Stride[0]] + it[roi1.Stride[1]] + it[-roi1.Stride[1]]) * 0.25;
 		}, iterations);
 		std::cout << std::endl;
-		std::cout << result({ {0,3,1}, { 0,3,1 }, { 0,0,1 } }) << std::endl;
+		std::cout << result({ {0,3,1}, { 0,3,1 }, { 0,0,1 } });
 	}
 
 	{
@@ -283,7 +267,7 @@ void ImageLibrarySpeedTest()
 				*resultit = (it.clamp(1, 0) + it.clamp(-1, 0) + it.clamp(1, 1) + it.clamp(-1, 1)) * 0.25;
 		}, iterations);
 		std::cout << "noAnd is " << (100 * ((basetime / noAnd) - 1)) << "% faster" << std::endl << std::endl;
-		std::cout << result({ { 0,3,1 },{ 0,3,1 },{ 0,0,1 } }) << std::endl;
+		std::cout << result({ { 0,3,1 },{ 0,3,1 },{ 0,0,1 } });
 	}
 
 	{
@@ -295,20 +279,20 @@ void ImageLibrarySpeedTest()
 				*resultit = (it.wrap(1, 0) + it.wrap(-1, 0) + it.wrap(1, 1) + it.wrap(-1, 1)) * 0.25;
 		}, iterations);
 		std::cout << "noAnd is " << (100 * ((basetime / noAnd) - 1)) << "% faster" << std::endl << std::endl;
-		std::cout << result({ { 0,3,1 },{ 0,3,1 },{ 0,0,1 } }) << std::endl;
+		std::cout << result({ { 0,3,1 },{ 0,3,1 },{ 0,0,1 } });
 	}
 }
 void displayBorderTests(Image<unsigned short, 3>& image3D) {
 	std::cout << "value: " << std::endl;
-	std::cout << "-2 x clamp: " << image3D.begin().clamp(-2, 0) << std::endl;
-	std::cout << "-2 x wrap: " << image3D.begin().wrap(-2, 0) << std::endl;
-	std::cout << "-2 x reflect: " << image3D.begin().reflect(-2, 0) << std::endl;
-	std::cout << "-2 y clamp: " << image3D.begin().clamp(-2, 1) << std::endl;
-	std::cout << "-2 y wrap: " << image3D.begin().wrap(-2, 1) << std::endl;
-	std::cout << "-2 y reflect: " << image3D.begin().reflect(-2, 1) << std::endl;
-	std::cout << "-2 z clamp: " << image3D.begin().clamp(-2, 2) << std::endl;
-	std::cout << "-2 z wrap: " << image3D.begin().wrap(-2, 2) << std::endl;
-	std::cout << "-2 z reflect: " << image3D.begin().reflect(-2, 2) << std::endl;
+	std::cout << "-2 x clamp: " << image3D.begin().clamp(-2, 0);
+	std::cout << "-2 x wrap: " << image3D.begin().wrap(-2, 0);
+	std::cout << "-2 x reflect: " << image3D.begin().reflect(-2, 0);
+	std::cout << "-2 y clamp: " << image3D.begin().clamp(-2, 1);
+	std::cout << "-2 y wrap: " << image3D.begin().wrap(-2, 1);
+	std::cout << "-2 y reflect: " << image3D.begin().reflect(-2, 1);
+	std::cout << "-2 z clamp: " << image3D.begin().clamp(-2, 2);
+	std::cout << "-2 z wrap: " << image3D.begin().wrap(-2, 2);
+	std::cout << "-2 z reflect: " << image3D.begin().reflect(-2, 2);
 }
 void testImageLibraryBorders() {
 	int size = 4;
@@ -320,22 +304,22 @@ void testImageLibraryBorders() {
 	i = 0;
 	for (auto it = image3D.begin(); it != image3D.end(); ++it) 
 		*it = ++i;
-	std::cout << image3D << std::endl;
+	std::cout << image3D;
 	displayBorderTests(image3D);
 
 	std::cout << std::endl << "MirrorX" << std::endl;
 	Image<unsigned short, 3> MirrorX = image3D({ {0,-1,-1},{ 0,-1,1 },{ 0,-1,1 } });
-	std::cout << MirrorX << std::endl;
+	std::cout << MirrorX;
 	displayBorderTests(MirrorX);
 
 	std::cout << std::endl << "MirrorY" << std::endl;
 	Image<unsigned short, 3> MirrorY = image3D({ { 0,-1,1 },{ 0,-1,-1 },{ 0,-1,1 } });
-	std::cout << MirrorY << std::endl;
+	std::cout << MirrorY;
 	displayBorderTests(MirrorY);
 
 	std::cout << std::endl << "MirrorZ" << std::endl;
 	Image<unsigned short, 3> MirrorZ = image3D({ { 0,-1,1 },{ 0,-1,1 },{ 0,-1,-1 } });
-	std::cout << MirrorZ << std::endl;
+	std::cout << MirrorZ;
 	displayBorderTests(MirrorZ);
 }
 void TestImages(std::string inputFolder, std::string outputFolder)
@@ -448,11 +432,11 @@ void testreal() {
 int main()
 {
 	testImageLibraryDimensions();
-	testImageLibraryAccuracy();
-	ImageLibrarySpeedTest();
-	testImageLibraryBorders();
-	TestImages("/home/nathanpackard/dev/ndl/unitTests/data", "/tmp");
-	testreal();
-	testcomplex();
+	//testImageLibraryAccuracy();
+	//ImageLibrarySpeedTest();
+	//testImageLibraryBorders();
+	//TestImages("/home/nathanpackard/dev/ndl/unitTests/data", "/tmp");
+	//testreal();
+	//testcomplex();
 	return 0;
 }

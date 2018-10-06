@@ -68,7 +68,7 @@ namespace ndl
 	static constexpr int _wrap(int M, int x) { return (x < 0) ? (x + M) : ((x >= M) ? (x - M) : x); }
 	static constexpr int _clamp(int M, int x) { return (x < 0) ? 0 : ((x >= M) ? (M - 1) : x); }
 	template <class T> static constexpr auto _abs(const T & value) -> T { return (T{} < value) ? value : -value; }
-	
+    template <class T> static constexpr int _sgn(T val) { return (T(0) < val) - (val < T(0)); }
 	union indexer 
 	{
 		indexer(std::initializer_list<int> list) 

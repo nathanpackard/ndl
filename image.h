@@ -26,10 +26,19 @@ namespace ndl
 		public:
 			typedef iterator self_type;
 			typedef T value_type;
-			iterator(Image& parent, int last) : I{}, _Ptr(parent.DataArray), _myImage(parent) { I.back() = last; }
+			iterator(Image& parent, int first, int last) : I{}, _Ptr(parent.DataArray), _myImage(parent)
+			{
+			    I[0] = first;
+			    I.back() = last;
+			}
 			self_type operator++() {
 				self_type i = *this;
-				if ((I[0] += 1) != _myImage.End[0]) return i;
+				std::cout << "." << *i << std::endl;
+				if ((++I[0]) < _myImage.Extent[0])
+				{
+    				_Ptr += _myImage.Stride[0];
+				    return i;
+				}
 				if (DIM > 1 && ++I[1] < _myImage.Extent[1])
 				{
 					I[0] = _myImage.Start[0];
@@ -56,7 +65,11 @@ namespace ndl
 				return i;
 			}
 			self_type operator++(int junk) {
-				if ((I[0] += 1) != _myImage.End[0]) return *this;
+				if ((++I[0]) < _myImage.Extent[0])
+				{
+    				_Ptr += _myImage.Stride[0];
+    				return *this;
+				}
 				if (DIM > 1 && ++I[1] < _myImage.Extent[1])
 				{
 					I[0] = _myImage.Start[0];
@@ -158,10 +171,10 @@ namespace ndl
 
 			bool operator==(const self_type& rhs) { return I.back() == _myImage.Extent.back(); }
 			bool operator!=(const self_type& rhs) { return I.back() != _myImage.Extent.back(); }
-			std::array<int, DIM> I;
+			std::array<int, DIM> I;     // 3D index of current location
 		private:
-			T* _Ptr;
-			const Image& _myImage;
+			T* _Ptr;                    // pointer to current location
+			const Image& _myImage;      // reference to current image
 		};
 
 		// copy constructor (deep copy)
@@ -176,9 +189,8 @@ namespace ndl
 		Image(T* buffer, std::array<int, DIM> extent) :
 			Stride{ makeStride(extent)},
 			Extent(extent),
-			Offset{ },
 			Start{ },
-			End{ makeEnd(Extent, Stride, 0, 0) },
+			End{ makeEnd(Extent, Stride) },
 			RootDataArray{ buffer },
 			DataArray{ buffer }
 		{ }
@@ -249,18 +261,24 @@ namespace ndl
 		std::string state()
 		{
 			std::ostringstream sb;
-			sb << "          DataArray : " << long(DataArray - RootDataArray) << std::endl;
-			for (int i = 0; i < DIM; i++) sb << "          Start" << i << " : " << Start[i] << std::endl;
-			for (int i = 0; i < DIM; i++) sb << "          Offset" << i << " : " << Offset[i] << std::endl;
-			for (int i = 0; i < DIM; i++) sb << "          End" << i << " : " << End[i] << std::endl;
-			for (int i = 0; i < DIM; i++) sb << "          Stride" << i << " : " << Stride[i] << std::endl;
-			for (int i = 0; i < DIM; i++) sb << "          Extent" << i << " : " << Extent[i] << std::endl;
+			std::ostringstream spacing;
+            for(int t=0;t<5 - DIM;t++) spacing << "  ";
+
+    		sb << spacing.str() << "Dim=" << DIM << "\n";
+			sb << spacing.str() << "DataArray : " << long(DataArray - RootDataArray) << std::endl;
+			for (int i = 0; i < DIM; i++) sb << spacing.str() << "Start" << i << " : " << Start[i] << std::endl;
+			for (int i = 0; i < DIM; i++) sb << spacing.str() << "End" << i << " : " << End[i] << std::endl;
+			for (int i = 0; i < DIM; i++) sb << spacing.str() << "Stride" << i << " : " << Stride[i] << std::endl;
+			for (int i = 0; i < DIM; i++) sb << spacing.str() << "Extent" << i << " : " << Extent[i] << std::endl;
 			return sb.str();
 		}
 
 		//iterator methods
-		iterator begin() { return iterator(*this, 0); }
-		iterator end() { return iterator(*this, Extent.back()); }
+		iterator begin() { return iterator(*this, Start[0]); }
+		iterator end() {
+		    std::cout << End.back() << std::endl;
+		    return iterator(*this, End.back());
+		 }
 
 		//basic accessors
 		T& at(const std::array<int, DIM>& index) { return DataArray[std::inner_product(index.begin(), index.end(), Stride.begin(), 0)]; }
@@ -318,68 +336,50 @@ namespace ndl
 		// public members
 		const std::array<int, DIM> Extent;    // extent of each dimension
 		const std::array<int, DIM> Stride;    // stride of each dimension (linear memory skip factor)
-		const std::array<int, DIM> End;       // one plus the last point for each dimension
+		const std::array<int, DIM> End;       // (one plus the last point for each dimension) * stride
 
 		// protected internal variables (TODO: move to protected later)
-		const std::array<int, DIM> Offset;   //
-		const std::array<int, DIM> Start;    // the first point for each dimension
+		const std::array<int, DIM> Start;    // (the first point for each dimension) * stride
 		T* RootDataArray;                    // pointer to base memory (safe for all children classes)
-		T* DataArray;                        //
+		T* DataArray;                        // pointer to offset memory for current instance
 
 	protected:
 		// protected helper constructor. Construct from image, shares same memory
 		Image(const Image<T, DIM>& source, 
-			  const std::array<int, DIM>& offset, 
-			  const std::array<int, DIM>& extent, 
+			  const std::array<int, DIM>& offset,
+			  const std::array<int, DIM>& extent,
 			  const std::array<int, DIM>& stride,
 			  const std::array<bool, DIM>& mirror,
 			  int swapDim1 = 0,
 			  int swapDim2 = 0) :
 			Stride{ makeStride(source.Stride, mirror, stride, swapDim1, swapDim2) },
 			Extent{ makeExtent(extent, stride, swapDim1, swapDim2) },
-			Offset{ makeOffset(source.Offset, offset, swapDim1, swapDim2) },
-			Start{ makeStart(Stride, Extent, swapDim1, swapDim2) },
-			End{ makeEnd(Extent, Stride, swapDim1, swapDim2) },
+			Start{ makeStart(Stride, Extent) },
+			End{ makeEnd(Extent, Stride) },
 			RootDataArray{ source.RootDataArray },
-			DataArray{ computeDataArrayPtr(source.RootDataArray, source.Stride ) }
+			DataArray{ computeDataArrayPtr(source.DataArray, offset, source.Stride, swapDim1, swapDim2 ) }
 		{ }
 
 		// protected helper constructor. Construct from image, shares same memory, reduces dimension
 		Image(const Image<T, DIM + 1>& source, int sliceDimension, int sliceIndex) :
 			Stride{ makeStrideSlice(source.Stride, sliceDimension) },
 			Extent{ makeExtentSlice(source.Extent, sliceDimension) },
-			Offset{ makeOffsetSlice(source.Offset, sliceDimension) },
-			Start{ makeStart(Stride, Extent, 0, 0) },
-			End{ makeEnd(Extent, Stride, 0, 0) },
+			Start{ makeStart(Stride, Extent) },
+			End{ makeEnd(Extent, Stride) },
 			RootDataArray { source.RootDataArray },
-			DataArray { computeDataArraySlicePtr(sliceDimension, sliceIndex) }
+			DataArray { computeDataArraySlicePtr( source.DataArray, sliceDimension, sliceIndex, source.Stride) }
 		{ }
 
 		// protected helper methods
-		T* computeDataArrayPtr(T* sourceRootArray, const std::array<int,DIM>& sourceStride)
+		T* computeDataArrayPtr(T* sourceDataArray, const std::array<int, DIM>& offset, const std::array<int,DIM>& sourceStride, int swapDim1, int swapDim2)
 		{
-			T* value = sourceRootArray;
-			for (int i = 0; i < DIM; i++) value += Start[i] * _abs(Stride[i]) + Offset[i] * _abs(sourceStride[i]);
+			T* value = sourceDataArray;
+			for (int i = 0; i < DIM; i++) value += offset[i] * _abs(sourceStride[i]);
 			return value;
 		}
-		T* computeDataArraySlicePtr(int sliceDimension, int sliceIndex)
+		T* computeDataArraySlicePtr(T* sourceDataArray, int sliceDimension, int sliceIndex, const std::array<int,DIM + 1>& sourceStride)
 		{
-			T* result = RootDataArray;
-			int t = 0;
-			for (int i = 0; i < DIM + 1; i++)
-			{
-				if (i == sliceDimension)
-				{
-					result += sliceIndex * _abs(Stride[i]);
-					//result += Start[i] * _abs(Stride[i]) + Offset[i] * _abs(Stride[i]) / Extent[i];
-				}
-				else
-				{
-					result += Start[t] * _abs(Stride[t]) + Offset[t] * _abs(Stride[t]) / Extent[t];
-					t++;
-				}
-			}
-			return result;
+			return sourceDataArray + sliceIndex * _abs(sourceStride[sliceDimension]);
 		}
 		std::array<int, DIM> makeStride(const std::array<int, DIM>& sourceStride, const std::array<bool, DIM>& mirror, const std::array<int, DIM>& stride, int swapDim1, int swapDim2)
 		{
@@ -427,40 +427,20 @@ namespace ndl
 			}
 			return result;
 		}
-		std::array<int, DIM> makeOffset(const std::array<int, DIM>& sourceOffset, const std::array<int, DIM>& offset, int swapDim1, int swapDim2)
+		std::array<int, DIM> makeStart(const std::array<int, DIM>& newStride, const std::array<int, DIM>& newExtent)
 		{
 			std::array<int, DIM> result{};
 			for (int i = 0; i < DIM; i++)
-				result[i] = sourceOffset[i] + offset[i];
-			std::swap(result[swapDim1], result[swapDim2]);
+				result[i] = (newStride[i] < 0 ? (newExtent[i] - 1): 0);
 			return result;
 		}
-		std::array<int, DIM> makeOffsetSlice(const std::array<int, DIM + 1>& sourceOffset, int sliceDimension)
+		std::array<int, DIM> makeEnd(const std::array<int, DIM>& newExtent, const std::array<int, DIM>& newStride)
 		{
 			std::array<int, DIM> result{};
-			int t = 0;
-			for (int i = 0; i < DIM + 1; i++)
+			for (int i = 0; i < DIM; i++)
 			{
-				if (i == sliceDimension) continue;
-				result[t] = sourceOffset[i];
-				t++;
-			}
-			return result;
-		}
-		std::array<int, DIM> makeStart(const std::array<int, DIM>& newStride, const std::array<int, DIM>& newExtent, int swapDim1, int swapDim2)
-		{
-			std::array<int, DIM> result{};
-			for (int i = 0; i < DIM; i++)
-				result[i] = (newStride[i] < 0 ? newExtent[i] - 1 : 0);
-			std::swap(result[swapDim1], result[swapDim2]);
-			return result;
-		}
-		std::array<int, DIM> makeEnd(const std::array<int, DIM>& newExtent, const std::array<int, DIM>& newStride, int swapDim1, int swapDim2)
-		{
-			std::array<int, DIM> result{};
-			for (int i = 0; i < DIM; i++)
 				result[i] = (newStride[i] < 0 ? -1 : newExtent[i]);
-			std::swap(result[swapDim1], result[swapDim2]);
+			}
 			return result;
 		}
 		template<class Op, class U> Image& MutableBinaryImageOp(const Image<U, DIM>& rhs) {
@@ -490,7 +470,8 @@ namespace ndl
 		for (auto it = r.begin(); it != r.end(); ++it)
 			values.push_back(*it);
 		sb << std::fixed << std::setprecision(2);
-		sb << "          ";
+		sb << r.state();
+		sb << "        ";
         if (r.Stride[0] < 0)
             std::reverse(values.begin(), values.end());
 		for (auto it = values.begin(); it != values.end(); ++it)
@@ -498,22 +479,19 @@ namespace ndl
 			if (it != values.begin()) sb << ", ";
             sb << double(*it);
         }
+        sb << std::endl;
 		return sb;
 	}
 	template<class T, int DIM> std::ostream& operator<<(std::ostream& sb, const Image<T, DIM>& r)
 	{
 		sb << std::fixed << std::setprecision(2);
+		sb << r.state();
         for (int i=0;i<r.Extent[DIM - 1];i++)
         {
-            for(int t=0;t<5 - DIM;t++) sb << "  ";
-    		sb << " dim=" << DIM << ", slice " << i + 1 << "/" << r.Extent[DIM - 1] << " ";
-            for(int t=0;t<5 - DIM;t++) sb << "  ";
-            sb << "\n";
             auto current_slice = r.slice(DIM - 1, i);
-            sb << current_slice.state();
             sb << current_slice;
-            sb << std::endl;
         }
+        sb << std::endl;
 		return sb;
 	}
 	template <class T, class U, int DIM> bool operator<(const T& lhs, const Image<U, DIM>& rhs) {
