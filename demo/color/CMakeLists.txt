@@ -1,7 +1,0 @@
-cmake_minimum_required(VERSION 2.6)
-project(color)
-SET(CMAKE_BUILD_TYPE Release)
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -DCMAKE_GENERATOR_PLATFORM=x64")
-SET(CMAKE_CXX_FLAGS_RELEASE "-O4")
-include_directories(../../..)
-add_executable(color color.cpp)
