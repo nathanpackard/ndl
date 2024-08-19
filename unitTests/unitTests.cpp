@@ -19,7 +19,7 @@ using namespace ndl;
 using namespace ndl::fft;
 
 template <typename T>
-std::vector<T> createVectorWithSequence(int size) {
+std::vector<T> genLinVec(int size) {
     std::vector<T> v(size);
     std::iota(v.begin(), v.end(), T(1));
     return v;
@@ -29,10 +29,8 @@ template<typename T, int DIM>
 void passFailCheck(std::stringstream& passfail, const Image<T, DIM>& image, const std::vector<T>& refVec, const std::string testName) {
     bool testPassed = true;
     std::cout << image.state() << std::endl;
-    auto indicesVec = getColumnMajorIndices<DIM>(image.Extent);
-
     int total = 0;
-    for (const auto &index : indicesVec) 
+    for (const auto &index : image.getCoordinates()) 
 	{
         if (image.at(index) != refVec[total]) 
 		{
@@ -58,8 +56,9 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	for (auto it = image1D.begin(); it != image1D.end(); ++it) 
 		*it = ++i;
 	std::cout << image1D;
+
     // Pass/Fail check for 1D Image
-    passFailCheck(passfail, image1D, createVectorWithSequence<unsigned short>(size), "1D Image Test");
+    passFailCheck(passfail, image1D, genLinVec<unsigned short>(size), "1D Image Test");
 
 
 	//create a 2D image with increasing values
@@ -72,7 +71,7 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	std::cout << image2D;
 
     // Pass/Fail check for 2D Image
-    passFailCheck(passfail, image2D, createVectorWithSequence<unsigned short>(size*size), "2D Image Test");
+    passFailCheck(passfail, image2D, genLinVec<unsigned short>(size*size), "2D Image Test");
 
 	//create a 3D image with increasing values
 	std::cout << std::endl << "3D Image" << std::endl;
@@ -84,7 +83,7 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	std::cout << image3D;
 
     // Pass/Fail check for 3D Image
-    passFailCheck(passfail, image3D, createVectorWithSequence<unsigned short>(size*size*size), "3D Image Test");
+    passFailCheck(passfail, image3D, genLinVec<unsigned short>(size*size*size), "3D Image Test");
 
 	//mirror the 3D image along X direction
 	std::cout << std::endl << "MirrorX" << std::endl;
@@ -99,7 +98,7 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	std::cout << image3DmirrorX2;
 
     // Pass/Fail check for mirroredX 3D Image
-    passFailCheck(passfail, image3DmirrorX2, createVectorWithSequence<unsigned short>(size*size*size), "MirrorX 3D Image Test");
+    passFailCheck(passfail, image3DmirrorX2, genLinVec<unsigned short>(size*size*size), "MirrorX 3D Image Test 2");
 
 	//mirror the 3D image along X direction within an ROI
 	std::cout << std::endl;
@@ -120,7 +119,7 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	std::cout << image3DmirrorY2;
 
     // Pass/Fail check for mirroredY 3D Image
-    passFailCheck(passfail, image3DmirrorY2, createVectorWithSequence<unsigned short>(size*size*size), "MirrorY 3D Image Test");
+    passFailCheck(passfail, image3DmirrorY2, genLinVec<unsigned short>(size*size*size), "MirrorY 3D Image Test");
 
 	//mirror the 3D image along Y direction within an ROI
 	std::cout << std::endl;

@@ -289,6 +289,12 @@ namespace ndl
 			}
 			return Image<T, DIM>(*this, newOffset, newExtent, newStride, newMirror, dimension1, dimension2);
 		}
+		std::vector<std::array<int, DIM>> getCoordinates() {
+			std::vector<std::array<int, DIM>> allIndices;
+			std::array<int, DIM> indices = {};
+			generateCoordinates(Extent, indices, allIndices);
+			return allIndices;
+		}
 
 		// public members
 		const std::array<int, DIM> Extent;    // extent of each dimension
@@ -440,6 +446,20 @@ namespace ndl
 				result[i] = newExtent[i] * newStride[i];
 			return result;
 		}
+
+		// Generates multiple dimensional indices in order
+		void generateCoordinates(const std::array<int, DIM>& extents, std::array<int, DIM>& indices, std::vector<std::array<int, DIM>>& allIndices, std::size_t depth = 0) {
+			if (depth == DIM) {  // Reached the deepest level
+				allIndices.push_back(indices);
+				return;
+			}
+
+			for (int i = 0; i < extents[DIM - depth - 1]; ++i) {
+				indices[DIM - depth - 1] = i;
+				generateCoordinates(extents, indices, allIndices, depth + 1);
+			}
+		}
+
 		template<class Op, class U> 
 		Image& MutableBinaryImageOp(const Image<U, DIM>& rhs) {
 			assert(rhs.Extent == Extent);
@@ -483,8 +503,8 @@ namespace ndl
 				for (int i = 0; i < r.Extent[dim]; i++)
 				{
 					indices[dim] = i;
-					if (i != 0) sb << ", ";
 					sb << static_cast<double>(r.at(indices));
+					sb << ", ";
 				}
 				sb << std::endl;
 			}
