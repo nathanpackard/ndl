@@ -25,62 +25,24 @@ std::vector<T> createVectorWithSequence(int size) {
     return v;
 }
 
-
-template<typename T>
-void passFailCheck(std::stringstream& passfail, const Image<T, 1>& image, const std::vector<T>& refVec, const std::string testName)
-{
+template<typename T, int DIM>
+void passFailCheck(std::stringstream& passfail, const Image<T, DIM>& image, const std::vector<T>& refVec, const std::string testName) {
     bool testPassed = true;
-	std::cout << image.state() << std::endl;
-	for (int i = 0; i < image.Extent[0]; ++i) {
-		if (image.at({i}) != refVec[i])
+    std::cout << image.state() << std::endl;
+    auto indicesVec = getColumnMajorIndices<DIM>(image.Extent);
+
+    int total = 0;
+    for (const auto &index : indicesVec) 
+	{
+        if (image.at(index) != refVec[total]) 
 		{
-			testPassed = false;
-			break;
-		}
-	}
+            testPassed = false;
+            break;
+        }
+        total++;
+    }
     passfail << testName << ": " << (testPassed ? "Pass" : "Fail") << std::endl;
 }
-
-template<typename T>
-void passFailCheck(std::stringstream& passfail, const Image<T, 2>& image, const std::vector<T>& refVec, const std::string testName)
-{
-    bool testPassed = true;
-	std::cout << image.state() << std::endl;
-	int total = 0;
-	for (int j = 0; j < image.Extent[1]; ++j) {
-		for (int i = 0; i < image.Extent[0]; ++i) {
-			if (image.at(std::array<int, 2>({i, j})) != refVec[total])
-			{
-				testPassed = false;
-				break;
-			}
-			total += 1;
-		}
-	}
-    passfail << testName << ": " << (testPassed ? "Pass" : "Fail") << std::endl;
-}
-
-template<typename T>
-void passFailCheck(std::stringstream& passfail, const Image<T, 3>& image, const std::vector<T>& refVec, const std::string testName)
-{
-    bool testPassed = true;
-	std::cout << image.state() << std::endl;
-	int total = 0;
-	for (int k = 0; k < image.Extent[2]; ++k) {
-		for (int j = 0; j < image.Extent[1]; ++j) {
-			for (int i = 0; i < image.Extent[0]; ++i) {
-				if (image.at({i, j, k}) != refVec[total])
-				{
-					testPassed = false;
-					break;
-				}
-				total += 1;
-			}
-		}
-	}
-    passfail << testName << ": " << (testPassed ? "Pass" : "Fail") << std::endl;
-}
-
 
 void testImageLibraryDimensions(std::stringstream& passfail)
 {

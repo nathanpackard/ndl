@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <limits> // nan
+#include <vector>
 namespace ndl
 {
 	#define M_PI   3.141592653589793
@@ -53,6 +54,29 @@ namespace ndl
 			return SinCosSeries<1, 33, B, A>::value();
 		}
 	};
+
+	// Generates indices in column-major order
+	template<int DIM, int N = DIM>
+	void generateColumnMajorIndices(const std::array<int, DIM>& extents, std::array<int, DIM>& indices, std::vector<std::array<int, DIM>>& allIndices, std::size_t depth = 0) {
+		if (depth == N) {  // Reached the deepest level
+			allIndices.push_back(indices);
+			return;
+		}
+
+		// For column-major order, iterate the last dimension first
+		for (int i = 0; i < extents[N - depth - 1]; ++i) {
+			indices[N - depth - 1] = i;
+			generateColumnMajorIndices<DIM, N>(extents, indices, allIndices, depth + 1);
+		}
+	}
+
+	template<int DIM>
+	std::vector<std::array<int, DIM>> getColumnMajorIndices(const std::array<int, DIM>& extents) {
+		std::vector<std::array<int, DIM>> allIndices;
+		std::array<int, DIM> indices = {};
+		generateColumnMajorIndices<DIM>(extents, indices, allIndices);
+		return allIndices;
+	}
 
 	static constexpr double _pow(double x, int y) { return y == 0 ? 1.0 : x * _pow(x, y - 1); }
 	static constexpr int _factorial(int x) { return x == 0 ? 1 : x * _factorial(x - 1); }
