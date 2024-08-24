@@ -133,6 +133,12 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	std::cout << image3D;
     passFailCheck(passfail, image3D, generateFlattenedArray({size, size, size}), "3D Image Test");
 
+	//from the 3D image extract an ROI
+	std::cout << std::endl;
+	std::cout << "ExtractRoi" << std::endl;
+	Image<unsigned short, 3> image3DextractRoi = image3D({ {1,-2,1}, {1,-2,1}, {1,-2,1} });
+	std::cout << image3DextractRoi;
+
 	//mirror the 3D image along X direction
 	std::cout << std::endl << "MirrorX" << std::endl;
 	Image<unsigned short, 3> image3DmirrorX = image3D({ {0,-1,-1},_,_ });
