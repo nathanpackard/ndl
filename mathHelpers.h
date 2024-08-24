@@ -4,10 +4,6 @@
 #include <vector>
 namespace ndl
 {
-	#define M_PI   3.141592653589793
-	#define M_PI_2 1.570796326794897
-	#define M_E    2.718281828459045
-
 	template<unsigned M, unsigned N, unsigned B, unsigned A>
 	struct SinCosSeries {
 		static double value() {
@@ -70,26 +66,4 @@ namespace ndl
 	static constexpr int _clamp(int M, int x) { return (x < 0) ? 0 : ((x >= M) ? (M - 1) : x); }
 	template <class T> static constexpr auto _abs(const T & value) -> T { return (T{} < value) ? value : -value; }
     template <class T> static constexpr int _sgn(T val) { return (T(0) < val) - (val < T(0)); }
-	union indexer 
-	{
-		indexer(std::initializer_list<int> list) 
-		{
-			data[0] = 0;
-			data[1] = -1;
-			data[2] = 1;
-			std::vector<int> v = list;
-			int num = std::min(data.size(), v.size());
-			for(int i=0;i<num;i++)
-				data[i] = v[i];
-		}
-		indexer(int _first)
-		{
-			data[0] = _first;
-			data[1] = -1;
-			data[2] = 1;
-		}
-		std::array<int,3> data;
-		operator int() const { return data[0]; }
-	};
-	int _ = -1;
 }

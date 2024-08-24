@@ -71,7 +71,7 @@ namespace ndl
 				Image<uint8_t, 3> result(resultData.data(), extent);
 				int x = 0;
 				auto i = bmp.data.begin();
-				Image<uint8_t, 3> flipped = result({ _,_,{ 0,-1,-1 } });
+				Image<uint8_t, 3> flipped = result({}, {}, {1, 1, -1});
 				for (auto r = flipped.begin(); r != flipped.end(); ++r)
 				{
 					*r = *i;
@@ -150,7 +150,10 @@ namespace ndl
 			std::vector<T> result(std::accumulate(extent.begin(), extent.end(), 1, std::multiplies<int>()));
 			T* ptr = result.data();
 			long pixel_count = result.size();
-			if (sizeof(T) == image.get_bit_count() / 8) image.input_io->read((char*)ptr, pixel_count * sizeof(T));
+			if (sizeof(T) == image.get_bit_count() / 8)
+			{
+				image.input_io->read((char*)ptr, pixel_count * sizeof(T));
+			}
 			else
 			{
 				std::vector<char> data(pixel_count*image.get_bit_count() / 8);
@@ -209,7 +212,7 @@ namespace ndl
 					else if (image.Extent[0] == 4) bmp.bmih.biBitCount = 32;
 					else if (image.Extent[0] == 1) bmp.bmih.biBitCount = 8;
 					else throw std::runtime_error("the first dimensions for 3D represents color, an unsupported number of colors was selected");
-					auto flipped = image({ _,_,{ 0,-1,-1 } });
+					auto flipped = image.mirror(1);
 					int padding = (4 - ((bmp.bmih.biWidth * image.Extent[0]) % 4)) % 4;
 					int x = 0;
 					bmp.data = std::vector<unsigned char>((bmp.bmih.biWidth + padding) * bmp.bmih.biHeight * (image.Extent[0]));
@@ -232,7 +235,7 @@ namespace ndl
 					bmp.bmih.biWidth = image.Extent[0];
 					bmp.bmih.biHeight = image.Extent[1];
 					bmp.bmih.biBitCount = 8;
-					auto flipped = image({ _,{ 0,-1,-1 } });
+					auto flipped = image.mirror(1);
 					int padding = (4 - (bmp.bmih.biWidth % 4)) % 4;
 					int x = 0;
 					bmp.data = std::vector<unsigned char>((bmp.bmih.biWidth + padding) * bmp.bmih.biHeight * (bmp.bmih.biBitCount / 8));

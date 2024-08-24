@@ -136,72 +136,73 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	//from the 3D image extract an ROI
 	std::cout << std::endl;
 	std::cout << "ExtractRoi" << std::endl;
-	Image<unsigned short, 3> image3DextractRoi = image3D({ {1,-2,1}, {1,-2,1}, {1,-2,1} });
+	Image<unsigned short, 3> image3DextractRoi = image3D({1,1,1}, {-2,-2,-2});
+
 	std::cout << image3DextractRoi;
 
 	//mirror the 3D image along X direction
 	std::cout << std::endl << "MirrorX" << std::endl;
-	Image<unsigned short, 3> image3DmirrorX = image3D({ {0,-1,-1},_,_ });
+	Image<unsigned short, 3> image3DmirrorX = image3D({}, {}, {-1, 1, 1});
 	std::cout << image3DmirrorX;
     passFailCheck(passfail, image3DmirrorX, generateFlattenedArray({-size, size, size}), "MirrorX 3D Image Test 1");
 
 	//mirror the 3D image along X direction again
 	std::cout << std::endl;
 	std::cout << "MirrorX" << std::endl;
-	Image<unsigned short, 3> image3DmirrorX2 = image3DmirrorX({ { 0,-1,-1 },_,_ });
+	Image<unsigned short, 3> image3DmirrorX2 = image3DmirrorX({}, {}, {-1, 1, 1});
 	std::cout << image3DmirrorX2;
     passFailCheck(passfail, image3DmirrorX2, generateFlattenedArray({size, size, size}), "MirrorX 3D Image Test 2");
 
 	//mirror the 3D image along X direction within an ROI
 	std::cout << std::endl;
 	std::cout << "MirrorXRoi" << std::endl;
-	Image<unsigned short, 3> image3DmirrorX3 = image3DmirrorX2({ { 1,-2,-1 },{ 1,-2,1 },{ 1,-2,1 } });
+	Image<unsigned short, 3> image3DmirrorX3 = image3DmirrorX2({ 1, 1, 1 },{ -2,-2,-2 },{ -1,1,1 });
 	std::cout << image3DmirrorX3;
 
 	//mirror the 3D image along Y direction
 	std::cout << std::endl;
 	std::cout << "MirrorY" << std::endl;
-	Image<unsigned short, 3> image3DmirrorY = image3D({ _,{ 0,-1,-1 },_ });
+	Image<unsigned short, 3> image3DmirrorY = image3D({}, {}, {1, -1, 1});
 	std::cout << image3DmirrorY;
     passFailCheck(passfail, image3DmirrorY, generateFlattenedArray({size, -size, size}), "MirrorY 3D Image Test 1");
 
 	//mirror the 3D image along Y direction again
 	std::cout << std::endl;
 	std::cout << "MirrorY" << std::endl;
-	Image<unsigned short, 3> image3DmirrorY2 = image3DmirrorY({ _,{ 0,-1,-1 },_ });
+	Image<unsigned short, 3> image3DmirrorY2 = image3DmirrorY({}, {}, {1, -1, 1});
 	std::cout << image3DmirrorY2;
     passFailCheck(passfail, image3DmirrorY2, generateFlattenedArray({size, size, size}), "MirrorY 3D Image Test 2");
 
 	//mirror the 3D image along Y direction within an ROI
 	std::cout << std::endl;
 	std::cout << "MirrorYRoi" << std::endl;
-	Image<unsigned short, 3> image3DmirrorY3 = image3DmirrorY2({ { 1,-2,1 },{ 1,-2,-1 },{ 1,-2,1 } });
+	Image<unsigned short, 3> image3DmirrorY3 = image3DmirrorY2({ 1, 1, 1 },{ -2,-2,-2 },{ 1,-1,1 });
 	std::cout << image3DmirrorY3;
 
 	//mirror the 3D image along Z direction
 	std::cout << std::endl;
 	std::cout << "MirrorZ" << std::endl;
-	Image<unsigned short, 3> image3DmirrorZ = image3D({ _,_,{ 0,-1,-1 } });
+	Image<unsigned short, 3> image3DmirrorZ = image3D({}, {}, {1, 1, -1});
 	std::cout << image3DmirrorZ;
     passFailCheck(passfail, image3DmirrorZ, generateFlattenedArray({size, size, -size}), "MirrorZ 3D Image Test 1");
 
 	//mirror the 3D image along Z direction again
 	std::cout << std::endl;
 	std::cout << "MirrorZ" << std::endl;
-	Image<unsigned short, 3> image3DmirrorZ2 = image3DmirrorZ({ _,_,{ 0,-1,-1 } });
+	Image<unsigned short, 3> image3DmirrorZ2 = image3DmirrorZ({}, {}, {1, 1, -1});
 	std::cout << image3DmirrorZ2;
     passFailCheck(passfail, image3DmirrorZ2, generateFlattenedArray({size, size, size}), "MirrorZ 3D Image Test 2");
 
 	//mirror the 3D image along Z direction within an ROI
 	std::cout << std::endl;
 	std::cout << "MirrorZRoi" << std::endl;
-	Image<unsigned short, 3> image3DmirrorZ3 = image3DmirrorZ2({ { 1,-2,1 },{ 1,-2,1 },{ 1,-2,-1 } });
+	Image<unsigned short, 3> image3DmirrorZ3 = image3DmirrorZ2({ 1, 1, 1 },{ -2, -2, -2 },{ 1, 1, -1 });
 	std::cout << image3DmirrorZ3;
 
 	//mirror the 3D image along X,Y, and Z directions
 	std::cout << std::endl;
 	std::cout << "MirrorXYZ" << std::endl;
-	Image<unsigned short, 3> image3DmirrorXYZ = image3D({ { 0,-1,-1 },{ 0,-1,-1 },{ 0,-1,-1 } });
+	Image<unsigned short, 3> image3DmirrorXYZ = image3D({}, {}, {-1, -1, -1});
 	std::cout << image3DmirrorXYZ;
     passFailCheck(passfail, image3DmirrorXYZ, generateFlattenedArray({-size, -size, -size}), "MirrorXYZ 3D Image");
 
@@ -244,13 +245,13 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	//get a sub-image while mirroring along y and skipping
 	std::cout << std::endl;
 	std::cout << "SubImage1" << std::endl;
-	Image<unsigned short, 3> subImage1 = image3D({ _,{ 0,3,-2 }, _ });
+	Image<unsigned short, 3> subImage1 = image3D({},{ -1, 3, -1 }, { 1, -2, 1 });
 	std::cout << subImage1;
 	
 	//get a sub-image
 	std::cout << std::endl;
 	std::cout << "SubImage2" << std::endl;
-	Image<unsigned short, 3> subImage2 = image3D({ _,{ 2,3 }, _ });
+	Image<unsigned short, 3> subImage2 = image3D({0,2,0}, {-1,3,-1}, {});
 	std::cout << subImage2;
 
 	//combination test
@@ -258,7 +259,7 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	Image<unsigned short, 3> image(imagedata.data(), { 8, 8, 1 });
 	std::cout << std::endl;
 	std::cout << "roi1" << std::endl;
-	Image<unsigned short, 3> roi1 = image({ { 2,-4,2 },{ 2,-4,2 },{ 0,0,1 } });
+	Image<unsigned short, 3> roi1 = image({2,2,0}, {-4,-4,0}, {2,2,1});
 	for (auto it = roi1.begin(); it != roi1.end(); ++it)
 		*it = (unsigned short)(10 * it.I[0] / 2 + 1 + (it.I[1] + 1));
 	std::cout << roi1 << std::endl;
@@ -275,14 +276,14 @@ void testImageLibraryAccuracy(std::stringstream& passfail)
 
 	std::cout << std::endl;
 	std::cout << "roi1" << std::endl;
-	Image<double, 3> roi1 = image({ { 2,-4,2 },{ 2,-4,2 },{ 0,0,1 } });
+	Image<double, 3> roi1 = image({ 2,2,0 },{ -4,-4,0 },{ 2,2,1 });
 	for (auto it = roi1.begin(); it != roi1.end(); ++it)
 		*it = it.I[0] / 2 + 1 + (it.I[1] + 1) / 10.0;
 	std::cout << roi1;
 
 	std::cout << std::endl;
 	std::cout << "roi2" << std::endl;
-	Image<double, 3> roi2 = image({ { 3,-4,2 },{ 1,-2,1 },{ 0,0,1 } });
+	Image<double, 3> roi2 = image({ 3,1,0 },{ -4,-2,0 },{ 2,1,1 });
 	for (auto it = roi2.begin(); it != roi2.end(); ++it)
 		*it = 1;
 	std::cout << roi2;
@@ -331,10 +332,11 @@ void ImageLibrarySpeedTest(std::stringstream& passfail)
 	int iterations = 100;
 	std::vector<double> imagedata(1000 * 1000 * 2);
 	Image<double, 3> image(imagedata.data(), { 1000, 1000, 2 });
-	Image<double, 3> roi1 = image({ { 2,-4,2 },{ 2,-4,2 },{ 1,1,1 } });
+
+	Image<double, 3> roi1 = image({ 2,2,1 },{ -4,-4,1 },{ 2,2,1 });
 	for (auto it = roi1.begin(); it != roi1.end(); ++it) 
 		*it = it.I[0] / 2 + 1 + (it.I[1] + 1) / 10.0;
-	Image<double, 3> roi2 = image({ { 3,-4,2 },{ 1,-2,1 },{ 1,1,1 } });
+	Image<double, 3> roi2 = image({ 3,1,1 },{ -4,-2,1 },{ 2,1,1 });
 	for (auto it = roi2.begin(); it != roi2.end(); ++it)
 		*it = 1;
 
@@ -349,7 +351,7 @@ void ImageLibrarySpeedTest(std::stringstream& passfail)
 				*resultit = (it[roi1.Stride[0]] + it[-roi1.Stride[0]] + it[roi1.Stride[1]] + it[-roi1.Stride[1]]) * 0.25;
 		}, iterations);
 		std::cout << std::endl;
-		std::cout << result({ {0,3,1}, { 0,3,1 }, { 0,0,1 } });
+		std::cout << result({}, { 3,3,0 }, {});
 	}
 
 	{
@@ -361,7 +363,7 @@ void ImageLibrarySpeedTest(std::stringstream& passfail)
 				*resultit = (it.clamp(1, 0) + it.clamp(-1, 0) + it.clamp(1, 1) + it.clamp(-1, 1)) * 0.25;
 		}, iterations);
 		std::cout << "noAnd is " << (100 * ((basetime / noAnd) - 1)) << "% faster" << std::endl << std::endl;
-		std::cout << result({ { 0,3,1 },{ 0,3,1 },{ 0,0,1 } });
+		std::cout << result({},{ 3,3,0 },{});
 	}
 
 	{
@@ -373,7 +375,7 @@ void ImageLibrarySpeedTest(std::stringstream& passfail)
 				*resultit = (it.wrap(1, 0) + it.wrap(-1, 0) + it.wrap(1, 1) + it.wrap(-1, 1)) * 0.25;
 		}, iterations);
 		std::cout << "noAnd is " << (100 * ((basetime / noAnd) - 1)) << "% faster" << std::endl << std::endl;
-		std::cout << result({ { 0,3,1 },{ 0,3,1 },{ 0,0,1 } });
+		std::cout << result({},{ 3,3,0 },{});
 	}
 }
 void displayBorderTests(Image<unsigned short, 3>& image3D) {
@@ -402,17 +404,17 @@ void testImageLibraryBorders(std::stringstream& passfail) {
 	displayBorderTests(image3D);
 
 	std::cout << std::endl << "MirrorX" << std::endl;
-	Image<unsigned short, 3> MirrorX = image3D({ {0,-1,-1},{ 0,-1,1 },{ 0,-1,1 } });
+	Image<unsigned short, 3> MirrorX = image3D({},{ -1,-1,-1 },{ -1,1,1 });
 	std::cout << MirrorX;
 	displayBorderTests(MirrorX);
 
 	std::cout << std::endl << "MirrorY" << std::endl;
-	Image<unsigned short, 3> MirrorY = image3D({ { 0,-1,1 },{ 0,-1,-1 },{ 0,-1,1 } });
+	Image<unsigned short, 3> MirrorY = image3D({},{ -1,-1,-1 },{ 1,-1,1 });
 	std::cout << MirrorY;
 	displayBorderTests(MirrorY);
 
 	std::cout << std::endl << "MirrorZ" << std::endl;
-	Image<unsigned short, 3> MirrorZ = image3D({ { 0,-1,1 },{ 0,-1,1 },{ 0,-1,-1 } });
+	Image<unsigned short, 3> MirrorZ = image3D({},{ -1,-1,-1 },{ 1,1,-1 });
 	std::cout << MirrorZ;
 	displayBorderTests(MirrorZ);
 }

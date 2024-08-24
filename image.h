@@ -245,31 +245,65 @@ namespace ndl
 		//basic accessors
 		T& at(const std::array<int, DIM>& index) { return DataArray[std::inner_product(index.begin(), index.end(), Stride.begin(), 0)]; }
 		T& at(const std::array<int, DIM>& index) const { return DataArray[std::inner_product(index.begin(), index.end(), Stride.begin(), 0)]; }
-		Image<T, DIM> operator()(const std::initializer_list<indexer>& list)
+
+		Image<T, DIM> operator()(
+			const std::initializer_list<int>& start
+		)
 		{
-			std::vector<indexer> index = list;
+			return (*this)(start, {}, {});
+		}
+
+		Image<T, DIM> operator()(
+			const std::initializer_list<int>& start,
+			const std::initializer_list<int>& end
+		)
+		{
+			return (*this)(start, end, {});
+		}
+
+		Image<T, DIM> operator()(
+			const std::initializer_list<int>& start,
+			const std::initializer_list<int>& end,
+			const std::initializer_list<int>& step) const
+		{
 			std::array<int, DIM> newExtent;
 			std::array<int, DIM> newOffset;
 			std::array<int, DIM> newStride;
 			std::array<bool, DIM> newMirror;
+
+			auto startIt = start.begin();
+			auto endIt = end.begin();
+			auto stepIt = step.begin();
+
 			for (int i = 0; i < DIM; i++)
 			{
 				newMirror[i] = false;
-				int start = index[i].data[0];
-				int end = index[i].data[1];
-				int step = index[i].data[2];
+				
+				// Apply default values where needed
+				int s = (startIt != start.end() ? *startIt++ : 0);
+				int e = (endIt != end.end() ? *endIt++ : -1);
+				int st = (stepIt != step.end() ? *stepIt++ : 1);
 
-				if (start < 0)
-					start = 0;
-				while (end < start) 
-					end += Extent[i];
-				newOffset[i] = start;
-				newExtent[i] = 1 + end - start;
-				newStride[i] = abs(step);
-				if (step < 0) newMirror[i] = true;
+				while (s >= Extent[i])
+					s -= Extent[i];
+				if (s < 0) 
+					s = 0;
+				while (e >= Extent[i])
+					e -= Extent[i];
+				while (e < s) 
+					e += Extent[i];
+
+				newOffset[i] = s;
+				newExtent[i] = 1 + e - s;
+				newStride[i] = std::abs(st);
+				
+				if (st < 0) 
+					newMirror[i] = true;
 			}
+
 			return Image<T, DIM>(*this, newOffset, newExtent, newStride, newMirror);
 		}
+
 		Image<T, DIM - 1> slice(int sliceDimension, int sliceIndex) const
 		{
 			return Image<T, DIM - 1>(*this, sliceDimension, sliceIndex);
@@ -288,6 +322,21 @@ namespace ndl
 				newStride[i] = 1;
 			}
 			return Image<T, DIM>(*this, newOffset, newExtent, newStride, newMirror, dimension1, dimension2);
+		}
+		Image<T, DIM> mirror(int dimension) const
+		{
+			std::array<int, DIM> newExtent;
+			std::array<int, DIM> newOffset;
+			std::array<int, DIM> newStride;
+			std::array<bool, DIM> newMirror;
+			for (int i = 0; i < DIM; i++)
+			{
+				newMirror[i] = dimension == i ? true : false;
+				newOffset[i] = 0;
+				newExtent[i] = Extent[i];
+				newStride[i] = 1;
+			}
+			return Image<T, DIM>(*this, newOffset, newExtent, newStride, newMirror);
 		}
 		std::vector<std::array<int, DIM>> getCoordinates() {
 			std::vector<std::array<int, DIM>> allIndices;
