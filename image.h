@@ -332,9 +332,9 @@ namespace ndl
 			for (int i = 0; i < DIM; i++)
 			{
 				newMirror[i] = dimension == i ? true : false;
-				newOffset[i] = 0;
+				newOffset[i] = Offset[i];
 				newExtent[i] = Extent[i];
-				newStride[i] = 1;
+				newStride[i] = Stride[i];
 			}
 			return Image<T, DIM>(*this, newOffset, newExtent, newStride, newMirror);
 		}
