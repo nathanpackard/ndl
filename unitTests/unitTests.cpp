@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <complex>
 #include <type_traits>
+#include <initializer_list>
+#include <cmath>
 
 #include <ndl/image.h>
 #include <ndl/imageIO.h>
@@ -18,17 +20,59 @@
 using namespace ndl;
 using namespace ndl::fft;
 
-template <typename T>
-std::vector<T> genLinVec(int size) {
-    std::vector<T> v(size);
-    std::iota(v.begin(), v.end(), T(1));
+std::vector<int> genLinVec(int size) {
+    std::vector<int> v(size);
+    std::iota(v.begin(), v.end(), int(1));
     return v;
 }
 
+std::vector<int> generateFlattenedArray(const std::initializer_list<int>& sizes) {
+    // Convert initializer_list to vector
+    std::vector<int> sizesVec(sizes);
+
+    // Calculate total number of elements
+    int totalSize = 1;
+    for (auto size : sizesVec) {
+        totalSize *= std::abs(size);
+    }
+
+    // Initialize the result vector
+    std::vector<int> result(totalSize);
+
+    // Fill the result vector with correct values
+    for (int i = 0; i < totalSize; ++i) {
+        int index = i;
+        int flatIndex = 0;
+        int stride = 1;
+
+        for (auto it = sizesVec.begin(); it != sizesVec.end(); ++it) {
+            int size = *it;
+            int absSize = std::abs(size);
+            int coord = index % absSize;
+
+            // Adjust the coordinate if size is negative (reverse the order)
+            if (size < 0) {
+                coord = absSize - 1 - coord;
+            }
+
+            flatIndex += coord * stride;
+
+            // // Debug output for each step
+            // std::cout << "i = " << i << ", size = " << size << ", coord = " << coord 
+            //           << ", flatIndex = " << flatIndex << ", stride = " << stride << std::endl;
+
+            stride *= absSize;
+            index /= absSize;
+        }
+        result[flatIndex] = i + 1;
+    }
+
+    return result;
+}
+
 template<typename T, int DIM>
-void passFailCheck(std::stringstream& passfail, const Image<T, DIM>& image, const std::vector<T>& refVec, const std::string testName) {
+void passFailCheck(std::stringstream& passfail, const Image<T, DIM>& image, const std::vector<int>& refVec, const std::string testName) {
     bool testPassed = true;
-    std::cout << image.state() << std::endl;
     int total = 0;
     for (const auto &index : image.getCoordinates()) 
 	{
@@ -40,6 +84,16 @@ void passFailCheck(std::stringstream& passfail, const Image<T, DIM>& image, cons
         total++;
     }
     passfail << testName << ": " << (testPassed ? "Pass" : "Fail") << std::endl;
+	if (!testPassed)
+	{
+		std::cout << image.state() << std::endl;
+		total = 0;
+		for (const auto &index : image.getCoordinates()) 
+		{
+			passfail << "    img:ref (" << image.at(index) << ":" << refVec[total] << ")" << std::endl;
+			total++;
+		}
+	}
 }
 
 void testImageLibraryDimensions(std::stringstream& passfail)
@@ -56,9 +110,7 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	for (auto it = image1D.begin(); it != image1D.end(); ++it) 
 		*it = ++i;
 	std::cout << image1D;
-
-    // Pass/Fail check for 1D Image
-    passFailCheck(passfail, image1D, genLinVec<unsigned short>(size), "1D Image Test");
+    passFailCheck(passfail, image1D, generateFlattenedArray({size}), "1D Image Test");
 
 
 	//create a 2D image with increasing values
@@ -69,9 +121,7 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	for (auto it = image2D.begin(); it != image2D.end(); ++it) 
 		*it = ++i;
 	std::cout << image2D;
-
-    // Pass/Fail check for 2D Image
-    passFailCheck(passfail, image2D, genLinVec<unsigned short>(size*size), "2D Image Test");
+    passFailCheck(passfail, image2D, generateFlattenedArray({size, size}), "2D Image Test");
 
 	//create a 3D image with increasing values
 	std::cout << std::endl << "3D Image" << std::endl;
@@ -81,24 +131,20 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	for (auto it = image3D.begin(); it != image3D.end(); ++it) 
 		*it = ++i;
 	std::cout << image3D;
-
-    // Pass/Fail check for 3D Image
-    passFailCheck(passfail, image3D, genLinVec<unsigned short>(size*size*size), "3D Image Test");
+    passFailCheck(passfail, image3D, generateFlattenedArray({size, size, size}), "3D Image Test");
 
 	//mirror the 3D image along X direction
 	std::cout << std::endl << "MirrorX" << std::endl;
 	Image<unsigned short, 3> image3DmirrorX = image3D({ {0,-1,-1},_,_ });
-	std::cout << "image3DmirrorX state: " << std::endl << image3DmirrorX.state() << std::endl;
 	std::cout << image3DmirrorX;
+    passFailCheck(passfail, image3DmirrorX, generateFlattenedArray({-size, size, size}), "MirrorX 3D Image Test 1");
 
 	//mirror the 3D image along X direction again
 	std::cout << std::endl;
 	std::cout << "MirrorX" << std::endl;
 	Image<unsigned short, 3> image3DmirrorX2 = image3DmirrorX({ { 0,-1,-1 },_,_ });
 	std::cout << image3DmirrorX2;
-
-    // Pass/Fail check for mirroredX 3D Image
-    passFailCheck(passfail, image3DmirrorX2, genLinVec<unsigned short>(size*size*size), "MirrorX 3D Image Test 2");
+    passFailCheck(passfail, image3DmirrorX2, generateFlattenedArray({size, size, size}), "MirrorX 3D Image Test 2");
 
 	//mirror the 3D image along X direction within an ROI
 	std::cout << std::endl;
@@ -111,15 +157,14 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	std::cout << "MirrorY" << std::endl;
 	Image<unsigned short, 3> image3DmirrorY = image3D({ _,{ 0,-1,-1 },_ });
 	std::cout << image3DmirrorY;
+    passFailCheck(passfail, image3DmirrorY, generateFlattenedArray({size, -size, size}), "MirrorY 3D Image Test 1");
 
 	//mirror the 3D image along Y direction again
 	std::cout << std::endl;
 	std::cout << "MirrorY" << std::endl;
 	Image<unsigned short, 3> image3DmirrorY2 = image3DmirrorY({ _,{ 0,-1,-1 },_ });
 	std::cout << image3DmirrorY2;
-
-    // Pass/Fail check for mirroredY 3D Image
-    passFailCheck(passfail, image3DmirrorY2, genLinVec<unsigned short>(size*size*size), "MirrorY 3D Image Test");
+    passFailCheck(passfail, image3DmirrorY2, generateFlattenedArray({size, size, size}), "MirrorY 3D Image Test 2");
 
 	//mirror the 3D image along Y direction within an ROI
 	std::cout << std::endl;
@@ -132,12 +177,14 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	std::cout << "MirrorZ" << std::endl;
 	Image<unsigned short, 3> image3DmirrorZ = image3D({ _,_,{ 0,-1,-1 } });
 	std::cout << image3DmirrorZ;
+    passFailCheck(passfail, image3DmirrorZ, generateFlattenedArray({size, size, -size}), "MirrorZ 3D Image Test 1");
 
 	//mirror the 3D image along Z direction again
 	std::cout << std::endl;
 	std::cout << "MirrorZ" << std::endl;
 	Image<unsigned short, 3> image3DmirrorZ2 = image3DmirrorZ({ _,_,{ 0,-1,-1 } });
 	std::cout << image3DmirrorZ2;
+    passFailCheck(passfail, image3DmirrorZ2, generateFlattenedArray({size, size, size}), "MirrorZ 3D Image Test 2");
 
 	//mirror the 3D image along Z direction within an ROI
 	std::cout << std::endl;
@@ -150,6 +197,7 @@ void testImageLibraryDimensions(std::stringstream& passfail)
 	std::cout << "MirrorXYZ" << std::endl;
 	Image<unsigned short, 3> image3DmirrorXYZ = image3D({ { 0,-1,-1 },{ 0,-1,-1 },{ 0,-1,-1 } });
 	std::cout << image3DmirrorXYZ;
+    passFailCheck(passfail, image3DmirrorXYZ, generateFlattenedArray({-size, -size, -size}), "MirrorXYZ 3D Image");
 
 	//swap X and Y dimensions
 	std::cout << std::endl;
@@ -377,7 +425,6 @@ void TestImages(std::stringstream& passfail, std::string inputFolder, std::strin
 	ImageIO::Save(image, outputFolder + "/ng_bwgirl_crop.bmp");
 	ImageIO::Save(red, outputFolder + "/ng_bwgirl_crop_red.nrrd");
 
-	std::cout << "TEST1\n";
 	std::array<int, 3> extentNrrd;
 	std::vector<uint8_t> reloadVector = ImageIO::LoadNrrd<uint8_t, 3>(extentNrrd, outputFolder + "/ng_bwgirl_crop.nrrd");
 	Image<uint8_t, 3> reload(reloadVector.data(), extentNrrd);
@@ -387,10 +434,8 @@ void TestImages(std::stringstream& passfail, std::string inputFolder, std::strin
 	Image<float, 3> fimage(fimagedata.data(), image);
 	ImageIO::SaveRaw(fimage, outputFolder + std::string("/float_") + std::to_string(fimage.Extent[0]) + "x" + std::to_string(fimage.Extent[1]) + "x" + std::to_string(fimage.Extent[2]) + ".raw");
 
-	std::cout << "TEST2\n";
 	std::array<int, 3> bmpImageExtent;
 	std::vector<uint8_t> bmpImageData = ImageIO::Load(inputFolder + "/marbles.bmp", bmpImageExtent);
-	std::cout << "TEST3\n";
 	Image<uint8_t, 3> bmpImage(bmpImageData.data(), bmpImageExtent);
 	ImageIO::Save(bmpImage, outputFolder + "/marbles_output.bmp");
 	Image<uint8_t, 2> red2 = bmpImage.slice(0, 0);
