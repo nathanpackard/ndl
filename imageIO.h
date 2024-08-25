@@ -28,6 +28,7 @@ namespace ndl
 
 			if (extension == "jpg" || extension == "jpeg")
 			{
+				std::cout << "loading file: " << fileName << std::endl;
 				size_t size;
 				uint8_t *buf;
 				FILE *f;
@@ -60,6 +61,7 @@ namespace ndl
 			}
 			if (extension == "bmp")
 			{
+				std::cout << "loading file: " << fileName << std::endl;
 				bitmap bmp(fileName.c_str());
 				if (bmp.bmih.biBitCount != 32 && bmp.bmih.biBitCount != 24) throw std::runtime_error("unsupported bit count");
 				int nColors = bmp.bmih.biBitCount / 8;
@@ -199,10 +201,12 @@ namespace ndl
 			//handle each filetype
 			if (extension == "nrrd")
 			{
+				std::cout << "saving output file: " << fileName << std::endl;
 				NRRD::save(fileName, data.data(), DIM, image.Extent.data());
 			} 
 			else if (extension == "bmp")
 			{
+				std::cout << "saving output file: " << fileName << std::endl;
 				bitmap bmp;
 				if (DIM == 3) 
 				{
@@ -212,7 +216,7 @@ namespace ndl
 					else if (image.Extent[0] == 4) bmp.bmih.biBitCount = 32;
 					else if (image.Extent[0] == 1) bmp.bmih.biBitCount = 8;
 					else throw std::runtime_error("the first dimensions for 3D represents color, an unsupported number of colors was selected");
-					auto flipped = image.mirror(1);
+					auto flipped = image({}, {}, {1, 1, -1});
 					int padding = (4 - ((bmp.bmih.biWidth * image.Extent[0]) % 4)) % 4;
 					int x = 0;
 					bmp.data = std::vector<unsigned char>((bmp.bmih.biWidth + padding) * bmp.bmih.biHeight * (image.Extent[0]));
@@ -235,10 +239,10 @@ namespace ndl
 					bmp.bmih.biWidth = image.Extent[0];
 					bmp.bmih.biHeight = image.Extent[1];
 					bmp.bmih.biBitCount = 8;
-					auto flipped = image.mirror(1);
+					auto flipped = image({}, {}, {1, -1});
 					int padding = (4 - (bmp.bmih.biWidth % 4)) % 4;
 					int x = 0;
-					bmp.data = std::vector<unsigned char>((bmp.bmih.biWidth + padding) * bmp.bmih.biHeight * (bmp.bmih.biBitCount / 8));
+					bmp.data = std::vector<unsigned char>((bmp.bmih.biWidth + padding) * bmp.bmih.biHeight);
 					auto i = bmp.data.begin();
 					for (auto r = flipped.begin(); r != flipped.end(); ++r)
 					{

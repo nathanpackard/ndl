@@ -91,6 +91,10 @@ public:
     template<typename char_type>
     bool save_to_file(const char_type* file_name)
     {
+        bmih.biPlanes = bmih.biPlanes > 0 ? bmih.biPlanes : 1;
+        bmih.biSizeImage = data.size();
+
+        std::cout << this->state() << std::endl;
         std::ofstream out(file_name, std::ios::binary);
         if (!bmfh.write(out))
             return false;
