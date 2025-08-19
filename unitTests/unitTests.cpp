@@ -447,10 +447,10 @@ void TestImages(std::stringstream& passfail, std::string inputFolder, std::strin
 	Image<uint8_t, 3> bmpImage(bmpImageData.data(), bmpImageExtent);
 	ImageIO::Save(bmpImage, outputFolder + "/marbles_output.bmp");
 	Image<uint8_t, 2> red2 = bmpImage.slice(0, 0);
-	ImageIO::Save(red2, outputFolder + "/marbles_red2_output.bmp");
 	Image<uint8_t, 2> green2 = bmpImage.slice(0, 1);
-	ImageIO::Save(green2, outputFolder + "/marbles_green2_output.bmp");
 	Image<uint8_t, 2> blue2 = bmpImage.slice(0, 2);
+	ImageIO::Save(red2, outputFolder + "/marbles_red2_output.bmp");
+	ImageIO::Save(green2, outputFolder + "/marbles_green2_output.bmp");
 	ImageIO::Save(blue2, outputFolder + "/marbles_blue2_output.bmp");
 	ImageIO::SaveRaw(red2, outputFolder + std::string("/red2_") + std::to_string(red2.Extent[0]) + "x" + std::to_string(red2.Extent[1]) + ".raw");
 	ImageIO::SaveRaw(green2, outputFolder + std::string("/green2_") + std::to_string(green2.Extent[0]) + "x" + std::to_string(green2.Extent[1]) + ".raw");
@@ -525,16 +525,34 @@ void testreal(std::stringstream& passfail) {
 		std::cout << input[i] << "\n";
 	std::cout << "==========================\n Ellapsed time: " << std::scientific  << ellapsed << " sec\n";
 }
+
+
+#include <unistd.h>
+#include <limits.h>
+#include <filesystem>
+namespace fs = std::filesystem;
+
 int main()
 {
-	std::stringstream passfail;
-	testImageLibraryDimensions(passfail);
-	testImageLibraryAccuracy(passfail);
-	ImageLibrarySpeedTest(passfail);
-	testImageLibraryBorders(passfail);
-	TestImages(passfail, "/home/nathan.packard/git/ndl/unitTests/data", "/tmp");
-	testreal(passfail);
-	testcomplex(passfail);
-	std::cout << "\n\nPass/Fail Results:\n" << passfail.str() << "\n";
-	return 0;
+    std::stringstream passfail;
+
+    // Get path to current executable
+    char result[PATH_MAX];
+    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+    fs::path exePath = fs::path(std::string(result, (count > 0) ? count : 0)).parent_path();
+
+    // Build relative paths (assumes executable is in subfolder)
+    fs::path dataPath = exePath / ".." / "unitTests" / "data";
+    fs::path tmpPath  = "/tmp";
+
+    testImageLibraryDimensions(passfail);
+    testImageLibraryAccuracy(passfail);
+    ImageLibrarySpeedTest(passfail);
+    testImageLibraryBorders(passfail);
+    TestImages(passfail, dataPath.string(), tmpPath.string());
+    testreal(passfail);
+    testcomplex(passfail);
+
+    std::cout << "\n\nPass/Fail Results:\n" << passfail.str() << "\n";
+    return 0;
 }
