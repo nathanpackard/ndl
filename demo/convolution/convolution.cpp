@@ -73,29 +73,17 @@ void toDisplayable(const Image<double, DIM>& src, Image<uint8_t, DIM>& dst, doub
 }
 
 // Applies a (non-negative-weight) kernel to a color image one channel at a
-// time, so colors don't bleed into each other -- slice() shares memory with
-// src/dst rather than copying, and convolve()/gaussian_blur() don't care how
-// many dimensions they're given, so this is just a loop, not special-cased
-// library code. Safe to write straight to a uint8_t output only because
-// every kernel used with this helper below has non-negative weights summing
-// to <= 1, which guarantees the result never leaves [0,255].
+// time, via per_channel(), so colors don't bleed into each other. Safe to
+// write straight to a uint8_t output only because every kernel used with
+// this helper below has non-negative weights summing to <= 1, which
+// guarantees the result never leaves [0,255].
 void convolveColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, BorderMode border)
 {
-    for (int c = 0; c < src.extent()[0]; c++)
-    {
-        Image<uint8_t, 2> srcChannel = src.slice(0, c);
-        Image<uint8_t, 2> dstChannel = dst.slice(0, c);
-        srcChannel.convolve(kernel, dstChannel, border);
-    }
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.convolve(kernel, d, border); });
 }
 void gaussianBlurColor(const Image<uint8_t, 3>& src, double sigma, Image<uint8_t, 3>& dst, BorderMode border)
 {
-    for (int c = 0; c < src.extent()[0]; c++)
-    {
-        Image<uint8_t, 2> srcChannel = src.slice(0, c);
-        Image<uint8_t, 2> dstChannel = dst.slice(0, c);
-        srcChannel.gaussian_blur(sigma, dstChannel, border);
-    }
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.gaussian_blur(sigma, d, border); });
 }
 // Same idea, but for kernels that can produce negative or out-of-range
 // results (sharpen, emboss): convolves through a double intermediate per
@@ -103,20 +91,13 @@ void gaussianBlurColor(const Image<uint8_t, 3>& src, double sigma, Image<uint8_t
 // own uint8_t output path.
 void convolveColorSafe(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, BorderMode border, double bias = 0.0)
 {
-    for (int c = 0; c < src.extent()[0]; c++)
+    per_channel(src, dst, 0, [&](const auto& s, auto& d)
     {
-        Image<uint8_t, 2> srcChannel = src.slice(0, c);
-
-        std::vector<double> srcDblData(srcChannel.size());
-        Image<double, 2> srcDbl(srcDblData.data(), srcChannel); // deep copy, converts uint8_t -> double
-
-        std::vector<double> outDblData(srcChannel.size());
-        Image<double, 2> outDbl(outDblData.data(), srcChannel.extent());
+        OwnedImage<double, 2> srcDbl(s); // deep copy, converts uint8_t -> double
+        auto outDbl = OwnedImage<double, 2>::like(srcDbl);
         srcDbl.convolve(kernel, outDbl, border);
-
-        Image<uint8_t, 2> dstChannel = dst.slice(0, c);
-        toDisplayable(outDbl, dstChannel, bias);
-    }
+        toDisplayable(outDbl, d, bias);
+    });
 }
 
 // Moves the zero-frequency (DC) component from index 0 of each axis to the
@@ -154,8 +135,7 @@ void fftCorrelateColor(const Image<uint8_t, 3>& src, const Image<double, 2>& ker
     // computed once and reused for every channel below rather than
     // recomputed per channel.
     std::array<int, 2> center{ kernel.extent()[0] / 2, kernel.extent()[1] / 2 };
-    std::vector<std::complex<double>> kernelPaddedData((size_t)W * H);
-    Image<std::complex<double>, 2> kernelPadded(kernelPaddedData.data(), { W, H });
+    OwnedImage<std::complex<double>, 2> kernelPadded({ W, H });
     kernelPadded = std::complex<double>(0, 0);
     for (const auto& kCoord : kernel.coordinates())
     {
@@ -168,36 +148,29 @@ void fftCorrelateColor(const Image<uint8_t, 3>& src, const Image<double, 2>& ker
         }
         kernelPadded.at(at) = std::complex<double>(kernel.at(kCoord), 0);
     }
-    std::vector<std::complex<double>> kernelFreqData((size_t)W * H);
-    Image<std::complex<double>, 2> kernelFreq(kernelFreqData.data(), { W, H });
+    auto kernelFreq = OwnedImage<std::complex<double>, 2>::like(kernelPadded);
     fftn<double, 2>(kernelPadded, kernelFreq);
 
-    for (int c = 0; c < src.extent()[0]; c++)
+    per_channel(src, dst, 0, [&](const auto& s, auto& d)
     {
-        Image<uint8_t, 2> srcChannel = src.slice(0, c);
+        OwnedImage<double, 2> srcDbl(s); // deep copy, converts uint8_t -> double
 
-        std::vector<double> srcDblData(srcChannel.size());
-        Image<double, 2> srcDbl(srcDblData.data(), srcChannel); // deep copy, converts uint8_t -> double
-
-        std::vector<std::complex<double>> imgFreqData((size_t)W * H), productData((size_t)W * H);
-        Image<std::complex<double>, 2> imgFreq(imgFreqData.data(), { W, H });
-        Image<std::complex<double>, 2> product(productData.data(), { W, H });
+        auto imgFreq = OwnedImage<std::complex<double>, 2>::like(kernelFreq);
         fftn<double, 2>(srcDbl, imgFreq);
 
+        auto product = OwnedImage<std::complex<double>, 2>::like(kernelFreq);
         for (const auto& coord : product.coordinates())
             product.at(coord) = std::conj(kernelFreq.at(coord)) * imgFreq.at(coord);
 
-        std::vector<double> backData((size_t)W * H);
-        Image<double, 2> back(backData.data(), { W, H });
+        auto back = OwnedImage<double, 2>::like(srcDbl);
         ifftn<double, 2>(product, back);
 
-        Image<uint8_t, 2> dstChannel = dst.slice(0, c);
         for (const auto& coord : back.coordinates())
         {
             double v = back.at(coord);
-            dstChannel.at(coord) = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+            d.at(coord) = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
         }
-    }
+    });
 }
 
 int main()
@@ -218,8 +191,7 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 1: how convolve() works ===\n";
 
-    std::vector<int> gridData(25);
-    Image<int, 2> grid(gridData.data(), { 5, 5 });
+    OwnedImage<int, 2> grid({ 5, 5 });
     { int i = 0; for (auto it = grid.begin(); it != grid.end(); ++it) *it = ++i; }
 
     step("Image<int,2> grid(data, {5,5});  ... fill 1..25",
@@ -228,10 +200,8 @@ int main()
         "             step in Part 1.");
     showArray("grid", grid);
 
-    std::vector<int> identityKernelData = { 0,0,0, 0,1,0, 0,0,0 };
-    Image<int, 2> identityKernel(identityKernelData.data(), { 3, 3 });
-    std::vector<int> out1Data(25);
-    Image<int, 2> out1(out1Data.data(), { 5, 5 });
+    OwnedImage<int, 2> identityKernel({ 3, 3 }, { 0,0,0, 0,1,0, 0,0,0 });
+    OwnedImage<int, 2> out1({ 5, 5 });
 
     step("grid.convolve(identityKernel, out1)",
         "convolve(kernel, output) centers `kernel` on every position of *this in turn, multiplies\n"
@@ -244,10 +214,9 @@ int main()
     grid.convolve(identityKernel, out1);
     showArray("out1 (should equal grid)", out1);
 
-    std::vector<int> sumKernelData(9, 1);
-    Image<int, 2> sumKernel(sumKernelData.data(), { 3, 3 });
-    std::vector<int> out2Data(25);
-    Image<int, 2> out2(out2Data.data(), { 5, 5 });
+    OwnedImage<int, 2> sumKernel({ 3, 3 });
+    sumKernel = 1;
+    OwnedImage<int, 2> out2({ 5, 5 });
 
     step("grid.convolve(sumKernel, out2)   // sumKernel is 3x3, all 1s",
         "Every weight is 1, so each output value is just the SUM of the 3x3 neighborhood around it:\n"
@@ -289,10 +258,9 @@ int main()
         "             unblurred reference to compare every later step against.");
     saveForInspection("photo", photo, "01_original.png");
 
-    std::vector<double> boxKernelData(9, 1.0 / 9.0);
-    Image<double, 2> boxKernel(boxKernelData.data(), { 3, 3 });
-    std::vector<uint8_t> boxBlurredData(photo.size());
-    Image<uint8_t, 3> boxBlurred(boxBlurredData.data(), photoExtent);
+    OwnedImage<double, 2> boxKernel({ 3, 3 });
+    boxKernel = 1.0 / 9.0;
+    OwnedImage<uint8_t, 3> boxBlurred(photoExtent);
 
     step("convolveColor(photo, boxKernel, boxBlurred, BorderMode::Clamp)   // boxKernel is 3x3, all 1/9",
         "The exact same sumKernel idea from Part 1, just normalized (weights sum to 1 instead of 9)\n"
@@ -315,16 +283,14 @@ int main()
         "             (radius = ceil(3*sigma), so sigma=1.0 gives a 7x7 kernel here) and calls convolve()\n"
         "             with it -- so blurring a single bright dot traces out that kernel's actual shape,\n"
         "             printed below as numbers.");
-    std::vector<double> impulseData(121, 0.0);
-    Image<double, 2> impulse(impulseData.data(), { 11, 11 });
+    OwnedImage<double, 2> impulse({ 11, 11 });
+    impulse = 0.0;
     impulse(5, 5) = 1000.0;
-    std::vector<double> responseData(121);
-    Image<double, 2> response(responseData.data(), { 11, 11 });
+    OwnedImage<double, 2> response({ 11, 11 });
     impulse.gaussian_blur(1.0, response);
     showArray("response (the Gaussian kernel's own shape, scaled by 1000)", response);
 
-    std::vector<uint8_t> gauss1Data(photo.size());
-    Image<uint8_t, 3> gauss1(gauss1Data.data(), photoExtent);
+    OwnedImage<uint8_t, 3> gauss1(photoExtent);
     step("gaussianBlurColor(photo, 2.0, gauss1, BorderMode::Clamp)",
         "The same gaussian_blur() call, on the real photo, per channel. sigma=2.0 gives a wider,\n"
         "             softer blur than Part 2's 3x3 box -- compare 02_box_blur.png and\n"
@@ -332,8 +298,7 @@ int main()
     gaussianBlurColor(photo, 2.0, gauss1, BorderMode::Clamp);
     saveForInspection("gaussian-blurred (sigma=2.0)", gauss1, "03_gaussian_sigma2.png");
 
-    std::vector<uint8_t> gauss2Data(photo.size());
-    Image<uint8_t, 3> gauss2(gauss2Data.data(), photoExtent);
+    OwnedImage<uint8_t, 3> gauss2(photoExtent);
     step("gaussianBlurColor(photo, 6.0, gauss2, BorderMode::Clamp)",
         "A much larger sigma -- the radius grows with it too (ceil(3*6.0)=18, a 37x37 kernel), so\n"
         "             this is a heavy blur, the kind used to approximate depth-of-field or to build an\n"
@@ -357,8 +322,7 @@ int main()
     std::vector<uint8_t> marblesData = image_io::load(dataDir + "/marbles.bmp", marblesExtent);
     Image<uint8_t, 3> marbles(marblesData.data(), marblesExtent);
 
-    std::vector<uint8_t> grey3Data((size_t)marbles.extent()[1] * marbles.extent()[2]);
-    Image<uint8_t, 3> grey3(grey3Data.data(), { 1, marbles.extent()[1], marbles.extent()[2] });
+    OwnedImage<uint8_t, 3> grey3({ 1, marbles.extent()[1], marbles.extent()[2] });
     step("marbles.mean(0, grey3)   // per-axis reduction over the channel axis",
         "Sobel below looks for brightness change, not color, so marbles.bmp is reduced to greyscale\n"
         "             first -- reusing Image::mean(axis, output) from the reductions work rather than\n"
@@ -369,13 +333,10 @@ int main()
     Image<uint8_t, 2> greyU8 = grey3.slice(0, 0); // drop the now-size-1 channel axis, back to plain 2D
     showText("greyU8", "extent {" + std::to_string(greyU8.extent()[0]) + ", " + std::to_string(greyU8.extent()[1]) + "}, single channel");
 
-    std::vector<double> greyDblData(greyU8.size());
-    Image<double, 2> grey(greyDblData.data(), greyU8); // deep copy, converts uint8_t -> double for Sobel's signed math
+    OwnedImage<double, 2> grey(greyU8); // deep copy, converts uint8_t -> double for Sobel's signed math
 
-    std::vector<double> sobelXData = { -1,0,1,  -2,0,2,  -1,0,1 };
-    std::vector<double> sobelYData = { -1,-2,-1,  0,0,0,  1,2,1 };
-    Image<double, 2> sobelX(sobelXData.data(), { 3, 3 });
-    Image<double, 2> sobelY(sobelYData.data(), { 3, 3 });
+    OwnedImage<double, 2> sobelX({ 3, 3 }, { -1,0,1,  -2,0,2,  -1,0,1 });
+    OwnedImage<double, 2> sobelY({ 3, 3 }, { -1,-2,-1,  0,0,0,  1,2,1 });
 
     step("grey.convolve(sobelX, gx, BorderMode::Reflect); grey.convolve(sobelY, gy, BorderMode::Reflect)",
         "Two more 3x3 kernels -- proof convolve() takes any weights, not just symmetric blur-style\n"
@@ -385,8 +346,7 @@ int main()
     showArray("sobelX", sobelX);
     showArray("sobelY", sobelY);
 
-    std::vector<double> gxData(grey.size()), gyData(grey.size());
-    Image<double, 2> gx(gxData.data(), grey.extent()), gy(gyData.data(), grey.extent());
+    auto gx = OwnedImage<double, 2>::like(grey), gy = OwnedImage<double, 2>::like(grey);
     grey.convolve(sobelX, gx, BorderMode::Reflect);
     grey.convolve(sobelY, gy, BorderMode::Reflect);
 
@@ -395,21 +355,18 @@ int main()
         "             methods (multiply/add) added alongside convolve(), rather than a hand-written loop,\n"
         "             then a sqrt+clamp pass (toDisplayable) converts back to a displayable 8-bit image,\n"
         "             saved as a single-channel (greyscale) PNG.");
-    std::vector<double> gx2Data(grey.size()), gy2Data(grey.size()), magSqData(grey.size());
-    Image<double, 2> gx2(gx2Data.data(), grey.extent()), gy2(gy2Data.data(), grey.extent()), magSq(magSqData.data(), grey.extent());
+    auto gx2 = OwnedImage<double, 2>::like(grey), gy2 = OwnedImage<double, 2>::like(grey), magSq = OwnedImage<double, 2>::like(grey);
     gx.multiply(gx, gx2);
     gy.multiply(gy, gy2);
     gx2.add(gy2, magSq);
 
-    std::vector<double> magData(grey.size());
-    Image<double, 2> magnitude(magData.data(), grey.extent());
+    auto magnitude = OwnedImage<double, 2>::like(grey);
     {
         auto sqIt = magSq.begin();
         for (auto it = magnitude.begin(); it != magnitude.end(); ++it, ++sqIt) *it = std::sqrt(*sqIt);
     }
 
-    std::vector<uint8_t> edgeData(grey.size());
-    Image<uint8_t, 3> edgeImage(edgeData.data(), { 1, grey.extent()[0], grey.extent()[1] });
+    OwnedImage<uint8_t, 3> edgeImage({ 1, grey.extent()[0], grey.extent()[1] });
     Image<uint8_t, 2> edgeChannel = edgeImage.slice(0, 0);
     toDisplayable(magnitude, edgeChannel);
     saveForInspection("Sobel edge magnitude", edgeImage, "05_sobel_edges.png");
@@ -419,10 +376,8 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 5: arbitrary kernels ===\n";
 
-    std::vector<double> sharpenData = { 0,-1,0,  -1,5,-1,  0,-1,0 };
-    Image<double, 2> sharpenKernel(sharpenData.data(), { 3, 3 });
-    std::vector<uint8_t> sharpenedData(photo.size());
-    Image<uint8_t, 3> sharpened(sharpenedData.data(), photoExtent);
+    OwnedImage<double, 2> sharpenKernel({ 3, 3 }, { 0,-1,0,  -1,5,-1,  0,-1,0 });
+    OwnedImage<uint8_t, 3> sharpened(photoExtent);
 
     step("convolveColorSafe(photo, sharpenKernel, sharpened, BorderMode::Reflect)",
         "convolve() places no restriction on kernel weights -- here center=5, neighbors=-1, weights\n"
@@ -435,10 +390,8 @@ int main()
     convolveColorSafe(photo, sharpenKernel, sharpened, BorderMode::Reflect);
     saveForInspection("sharpened photo", sharpened, "06_sharpen.png");
 
-    std::vector<double> embossData = { -2,-1,0,  -1,1,1,  0,1,2 };
-    Image<double, 2> embossKernel(embossData.data(), { 3, 3 });
-    std::vector<uint8_t> embossedData(photo.size());
-    Image<uint8_t, 3> embossed(embossedData.data(), photoExtent);
+    OwnedImage<double, 2> embossKernel({ 3, 3 }, { -2,-1,0,  -1,1,1,  0,1,2 });
+    OwnedImage<uint8_t, 3> embossed(photoExtent);
 
     step("convolveColorSafe(photo, embossKernel, embossed, BorderMode::Reflect, 128.0)",
         "An asymmetric kernel: it responds to change along one diagonal and is flat along the other,\n"
@@ -467,12 +420,10 @@ int main()
     Image<uint8_t, 3> crop = marbles.view({ 0, 581, 372 }, { 2, 836, 627 });
     saveForInspection("crop", crop, "08_crop.png");
 
-    std::vector<uint8_t> greyCrop3Data((size_t)crop.extent()[1] * crop.extent()[2]);
-    Image<uint8_t, 3> greyCrop3(greyCrop3Data.data(), { 1, crop.extent()[1], crop.extent()[2] });
+    OwnedImage<uint8_t, 3> greyCrop3({ 1, crop.extent()[1], crop.extent()[2] });
     crop.mean(0, greyCrop3);
     Image<uint8_t, 2> greyCropU8 = greyCrop3.slice(0, 0);
-    std::vector<double> greyCropDblData(greyCropU8.size());
-    Image<double, 2> greyCropDbl(greyCropDblData.data(), greyCropU8); // deep copy, uint8_t -> double
+    OwnedImage<double, 2> greyCropDbl(greyCropU8); // deep copy, uint8_t -> double
 
     step("fftn<double,2>(greyCropDbl, freq)   // greyscale, so there's one spectrum to look at, not three",
         "The magnitude of each complex output value says how much of that frequency is present in the\n"
@@ -482,23 +433,19 @@ int main()
         "             convention -- DC in the middle, not the corner) and a log(1+magnitude) scale tames\n"
         "             its enormous dynamic range (the DC term alone is the sum of all 65536 pixels) so\n"
         "             faint high-frequency detail doesn't just disappear next to it.");
-    std::vector<std::complex<double>> greyFreqData((size_t)crop.extent()[1] * crop.extent()[2]);
-    Image<std::complex<double>, 2> greyFreq(greyFreqData.data(), greyCropU8.extent());
+    OwnedImage<std::complex<double>, 2> greyFreq(greyCropU8.extent());
     fftn<double, 2>(greyCropDbl, greyFreq);
 
-    std::vector<double> logMagData(greyCropU8.size());
-    Image<double, 2> logMag(logMagData.data(), greyCropU8.extent());
+    auto logMag = OwnedImage<double, 2>::like(greyCropU8);
     {
         auto fIt = greyFreq.begin();
         for (auto it = logMag.begin(); it != logMag.end(); ++it, ++fIt) *it = std::log(1.0 + std::abs(*fIt));
     }
-    std::vector<double> magShiftedData(greyCropU8.size());
-    Image<double, 2> magShifted(magShiftedData.data(), greyCropU8.extent());
+    auto magShifted = OwnedImage<double, 2>::like(greyCropU8);
     fftshift(logMag, magShifted);
 
     double maxMag = magShifted.max();
-    std::vector<uint8_t> spectrumData(greyCropU8.size());
-    Image<uint8_t, 3> spectrumImage(spectrumData.data(), { 1, greyCropU8.extent()[0], greyCropU8.extent()[1] });
+    OwnedImage<uint8_t, 3> spectrumImage({ 1, greyCropU8.extent()[0], greyCropU8.extent()[1] });
     Image<uint8_t, 2> spectrumChannel = spectrumImage.slice(0, 0);
     {
         auto mIt = magShifted.begin();
@@ -514,13 +461,11 @@ int main()
         "             and transforms back. That's a real, independent computation of the *same* answer\n"
         "             Part 2's convolveColor(crop, boxKernel, ..., BorderMode::Wrap) would give -- computed\n"
         "             below for direct comparison rather than taken on faith.");
-    std::vector<uint8_t> fftBoxBlurredData(crop.size());
-    Image<uint8_t, 3> fftBoxBlurred(fftBoxBlurredData.data(), crop.extent());
+    OwnedImage<uint8_t, 3> fftBoxBlurred(crop.extent());
     fftCorrelateColor(crop, boxKernel, fftBoxBlurred);
     saveForInspection("FFT-domain box blur", fftBoxBlurred, "10_fft_box_blur.png");
 
-    std::vector<uint8_t> spatialBoxBlurredData(crop.size());
-    Image<uint8_t, 3> spatialBoxBlurred(spatialBoxBlurredData.data(), crop.extent());
+    OwnedImage<uint8_t, 3> spatialBoxBlurred(crop.extent());
     convolveColor(crop, boxKernel, spatialBoxBlurred, BorderMode::Wrap);
     saveForInspection("spatial-domain box blur (BorderMode::Wrap, for a fair comparison)", spatialBoxBlurred, "11_spatial_box_blur_wrap.png");
 
@@ -536,10 +481,9 @@ int main()
         "             on the kernel. A 3x3 kernel is 9 taps; a 51x51 one is 2601, ~300x more spatial work for\n"
         "             the exact same image, while the FFT side barely changes (same 7 image-sized transforms\n"
         "             either way -- 1 for the kernel, 2 per channel). Averaged over a few repetitions below.");
-    std::vector<double> box51Data((size_t)51 * 51, 1.0 / (51.0 * 51.0));
-    Image<double, 2> box51Kernel(box51Data.data(), { 51, 51 });
-    std::vector<uint8_t> timingOutData(crop.size());
-    Image<uint8_t, 3> timingOut(timingOutData.data(), crop.extent());
+    OwnedImage<double, 2> box51Kernel({ 51, 51 });
+    box51Kernel = 1.0 / (51.0 * 51.0);
+    OwnedImage<uint8_t, 3> timingOut(crop.extent());
     const int reps = 3;
 
     auto t0 = std::chrono::steady_clock::now();

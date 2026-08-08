@@ -10,6 +10,7 @@
 #include <array>
 #include <algorithm>
 #include <type_traits>
+#include <utility>
 #include <cstddef>
 #include <stdexcept>
 #include <string>
@@ -18,9 +19,31 @@
 
 namespace ndl
 {
+	template<class T, int DIM> class Image; // forward declaration, needed by is_image_like below
+
 	// Border handling for Image::convolve() -- reuses the same _clamp/_wrap/_reflect
 	// primitives the iterator's clamp()/wrap()/reflect() accessors use for the same purpose.
 	enum class BorderMode { Clamp, Wrap, Reflect };
+
+	namespace detail
+	{
+		// Detects "U is Image<X,D>, or publicly derives from it, for some X
+		// and D" -- used to keep the "scalar" overloads of
+		// operator=/+=/-=/etc. and add()/subtract()/multiply()/divide() from
+		// matching an Image (or Image-derived, e.g. OwnedImage) argument
+		// better than the sibling Image-taking overload does. Without this,
+		// passing an OwnedImage -- which IS-A Image, but is also its own
+		// concrete type -- prefers the "scalar" overload (an exact type
+		// match beats the derived-to-base conversion the Image overload
+		// needs), which then fails to compile for the by-value overloads
+		// (OwnedImage isn't copyable, and those take their argument by
+		// value) or would silently do the wrong thing for the by-reference
+		// ones (broadcasting/comparing against the whole object rather than
+		// treating it as another image).
+		template<class X, int D> std::true_type is_image_test(const Image<X, D>*);
+		std::false_type is_image_test(...);
+		template<class U> struct is_image_like : decltype(is_image_test(std::declval<std::remove_reference_t<U>*>())) {};
+	}
 
 	template <class T, int DIM>
 	class Image
@@ -243,7 +266,14 @@ namespace ndl
 			for (auto it = begin(); it != end(); ++it, ++rhsIt) *it = *rhsIt;
 			return *this;
 		}
-		template<class U>
+		// Every "scalar" overload below (of operator=, comparisons, the
+		// compound-assignment operators, and add()/subtract()/multiply()/
+		// divide()) is constrained to exclude Image-like U -- see
+		// detail::is_image_like's comment for why: without it, passing an
+		// OwnedImage argument (which IS-A Image, but is also its own
+		// concrete type) prefers these "scalar" overloads over the sibling
+		// Image-taking ones, which is never what's meant.
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>>
 		Image& operator=(U rhs) {
 			for (auto it = begin(); it != end(); ++it)
 				*it = rhs;
@@ -255,7 +285,7 @@ namespace ndl
 			for (auto it = begin(); it != end(); ++it, ++rhsIt) if (*it != *rhsIt) return false;
 			return true;
 		}
-		template <class U> bool operator== (const U& rhs) const {
+		template <class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> bool operator== (const U& rhs) const {
 			for (auto it = begin(); it != end(); ++it) if (*it != rhs) return false;
 			return true;
 		}
@@ -265,27 +295,27 @@ namespace ndl
 			for (auto it = begin(); it != end(); ++it, ++rhsIt) if (*it >= *rhsIt) return false;
 			return true;
 		}
-		template <class U> bool operator<  (const U& rhs) const {
+		template <class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> bool operator<  (const U& rhs) const {
 			for (auto it = begin(); it != end(); ++it) if (*it >= rhs) return false;
 			return true;
 		}
 		void negate() { mutableUnaryOp<std::negate<T>>(); }
 		template<class U> Image& operator+=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::plus<T>>(rhs); }
-		template<class U> Image& operator+=(const U rhs) { return mutableBinaryScalarOp<std::plus<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator+=(const U rhs) { return mutableBinaryScalarOp<std::plus<T>>(rhs); }
 		template<class U> Image& operator-=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::minus<T>>(rhs); }
-		template<class U> Image& operator-=(const U rhs) { return mutableBinaryScalarOp<std::minus<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator-=(const U rhs) { return mutableBinaryScalarOp<std::minus<T>>(rhs); }
 		template<class U> Image& operator*=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::multiplies<T>>(rhs); }
-		template<class U> Image& operator*=(const U rhs) { return mutableBinaryScalarOp<std::multiplies<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator*=(const U rhs) { return mutableBinaryScalarOp<std::multiplies<T>>(rhs); }
 		template<class U> Image& operator/=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::divides<T>>(rhs); }
-		template<class U> Image& operator/=(const U rhs) { return mutableBinaryScalarOp<std::divides<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator/=(const U rhs) { return mutableBinaryScalarOp<std::divides<T>>(rhs); }
 		template<class U> Image& operator%=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::modulus<T>>(rhs); }
-		template<class U> Image& operator%=(const U rhs) { return mutableBinaryScalarOp<std::modulus<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator%=(const U rhs) { return mutableBinaryScalarOp<std::modulus<T>>(rhs); }
 		template<class U> Image& operator|=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::bit_or<T>>(rhs); }
-		template<class U> Image& operator|=(const U rhs) { return mutableBinaryScalarOp<std::bit_or<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator|=(const U rhs) { return mutableBinaryScalarOp<std::bit_or<T>>(rhs); }
 		template<class U> Image& operator&=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::bit_and<T>>(rhs); }
-		template<class U> Image& operator&=(const U rhs) { return mutableBinaryScalarOp<std::bit_and<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator&=(const U rhs) { return mutableBinaryScalarOp<std::bit_and<T>>(rhs); }
 		template<class U> Image& operator^=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::bit_xor<T>>(rhs); }
-		template<class U> Image& operator^=(const U rhs) { return mutableBinaryScalarOp<std::bit_xor<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator^=(const U rhs) { return mutableBinaryScalarOp<std::bit_xor<T>>(rhs); }
 		void logical_not() { mutableUnaryOp<std::logical_not<T>>(); }
 
 		// Non-mutating arithmetic: writes the result into a caller-provided
@@ -295,15 +325,15 @@ namespace ndl
 		// the caller always provides the buffer at construction); these are
 		// the explicit equivalent. output must share *this's extent.
 		template<class U> void add(const Image<U, DIM>& rhs, Image<T, DIM>& output) const { binaryImageOp<std::plus<T>>(rhs, output); }
-		template<class U> void add(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::plus<T>>(rhs, output); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> void add(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::plus<T>>(rhs, output); }
 		template<class U> void subtract(const Image<U, DIM>& rhs, Image<T, DIM>& output) const { binaryImageOp<std::minus<T>>(rhs, output); }
-		template<class U> void subtract(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::minus<T>>(rhs, output); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> void subtract(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::minus<T>>(rhs, output); }
 		template<class U> void multiply(const Image<U, DIM>& rhs, Image<T, DIM>& output) const { binaryImageOp<std::multiplies<T>>(rhs, output); }
-		template<class U> void multiply(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::multiplies<T>>(rhs, output); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> void multiply(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::multiplies<T>>(rhs, output); }
 		template<class U> void divide(const Image<U, DIM>& rhs, Image<T, DIM>& output) const { binaryImageOp<std::divides<T>>(rhs, output); }
-		template<class U> void divide(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::divides<T>>(rhs, output); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> void divide(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::divides<T>>(rhs, output); }
 		template<class U> bool operator!= (const Image<U, DIM>& rhs) const { return !(*this == rhs); }
-		template<class U> bool operator!= (const U& rhs) const { return !(*this == rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> bool operator!= (const U& rhs) const { return !(*this == rhs); }
 		template<class U> bool operator<= (const Image<U, DIM>& rhs) const { return !(rhs < *this); }
 		template<class U> bool operator<= (const U& rhs) const { return !(rhs < *this); }
 		template<class U> bool operator>  (const Image<U, DIM>& rhs) const { return (rhs < *this); }
@@ -363,16 +393,15 @@ namespace ndl
 		void min(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
 		{
 			assert(output.extent() == extent_);
-			std::array<int, DIM> center;
-			for (int i = 0; i < DIM; i++) center[i] = kernel.extent()[i] / 2;
+			auto center = kernelCenter(kernel);
+			auto taps = kernelIncludedTaps(kernel);
 
 			for (const auto& coord : coordinates())
 			{
 				bool first = true;
 				T best{};
-				for (const auto& kCoord : kernel.coordinates())
+				for (const auto& kCoord : taps)
 				{
-					if (kernel.at(kCoord) == K(0)) continue;
 					T v = at(kernelTapCoord(coord, kCoord, center, border));
 					if (first || v < best) { best = v; first = false; }
 				}
@@ -383,16 +412,15 @@ namespace ndl
 		void max(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
 		{
 			assert(output.extent() == extent_);
-			std::array<int, DIM> center;
-			for (int i = 0; i < DIM; i++) center[i] = kernel.extent()[i] / 2;
+			auto center = kernelCenter(kernel);
+			auto taps = kernelIncludedTaps(kernel);
 
 			for (const auto& coord : coordinates())
 			{
 				bool first = true;
 				T best{};
-				for (const auto& kCoord : kernel.coordinates())
+				for (const auto& kCoord : taps)
 				{
-					if (kernel.at(kCoord) == K(0)) continue;
 					T v = at(kernelTapCoord(coord, kCoord, center, border));
 					if (first || v > best) { best = v; first = false; }
 				}
@@ -614,13 +642,13 @@ namespace ndl
 		void convolve(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
 		{
 			assert(output.extent() == extent_);
-			std::array<int, DIM> center;
-			for (int i = 0; i < DIM; i++) center[i] = kernel.extent()[i] / 2;
+			auto center = kernelCenter(kernel);
+			auto taps = kernelIncludedTaps(kernel); // zero-weight taps contribute nothing to the sum, so skipping them is free
 
 			for (const auto& coord : coordinates())
 			{
 				double total = 0;
-				for (const auto& kCoord : kernel.coordinates())
+				for (const auto& kCoord : taps)
 					total += static_cast<double>(at(kernelTapCoord(coord, kCoord, center, border))) * static_cast<double>(kernel.at(kCoord));
 				output.at(coord) = static_cast<T>(total);
 			}
@@ -660,18 +688,15 @@ namespace ndl
 		{
 			assert(output.extent() == extent_);
 			assert(percentile >= 0.0 && percentile <= 100.0);
-			std::array<int, DIM> center;
-			for (int i = 0; i < DIM; i++) center[i] = kernel.extent()[i] / 2;
+			auto center = kernelCenter(kernel);
+			auto taps = kernelIncludedTaps(kernel);
 
 			std::vector<T> window;
 			for (const auto& coord : coordinates())
 			{
 				window.clear();
-				for (const auto& kCoord : kernel.coordinates())
-				{
-					if (kernel.at(kCoord) == K(0)) continue;
+				for (const auto& kCoord : taps)
 					window.push_back(at(kernelTapCoord(coord, kCoord, center, border)));
-				}
 				std::size_t rank = (std::size_t)std::llround((percentile / 100.0) * (window.size() - 1));
 				auto mid = window.begin() + rank;
 				std::nth_element(window.begin(), mid, window.end());
@@ -949,6 +974,34 @@ namespace ndl
 			return srcCoord;
 		}
 
+		// Shared setup for every kernel-walking operation (convolve()/min()/
+		// max()/percentile_filter()): the kernel's center, and its nonzero
+		// ("included") taps, computed once per call rather than once per
+		// output pixel. This isn't just style -- kernel.coordinates()
+		// allocates and recursively rebuilds the kernel's whole coordinate
+		// list, so calling it from inside the per-pixel loop (as an earlier
+		// version of this file did) turns a kernel with K taps into K
+		// allocations *per output pixel*, for an unintentional O(N*K) worth
+		// of allocation on top of the O(N*K) of actual work -- roughly a 3x
+		// slowdown measured on a 256x256 image with a 51x51 kernel. Filtering
+		// out zero taps here also means the inner loops below never need
+		// their own "is this tap included" check.
+		template<class K>
+		std::array<int, DIM> kernelCenter(const Image<K, DIM>& kernel) const
+		{
+			std::array<int, DIM> center;
+			for (int i = 0; i < DIM; i++) center[i] = kernel.extent()[i] / 2;
+			return center;
+		}
+		template<class K>
+		std::vector<std::array<int, DIM>> kernelIncludedTaps(const Image<K, DIM>& kernel) const
+		{
+			std::vector<std::array<int, DIM>> taps;
+			for (const auto& kCoord : kernel.coordinates())
+				if (kernel.at(kCoord) != K(0)) taps.push_back(kCoord);
+			return taps;
+		}
+
 		// Generates multiple dimensional indices in order
 		void generateCoordinates(const std::array<int, DIM>& extents, std::array<int, DIM>& indices, std::vector<std::array<int, DIM>>& allIndices, std::size_t depth = 0) const {
 			if (depth == DIM) {  // Reached the deepest level
@@ -1035,6 +1088,111 @@ namespace ndl
 		T* data_;
 	};
 
+	namespace detail
+	{
+		// Holds nothing but the buffer, and exposes it as `data` (a plain
+		// member, not inherited vector methods) -- deliberately NOT a
+		// std::vector itself as OwnedImage's base, because private
+		// inheritance only hides *accessibility*, not the *name*: an
+		// ambiguous-lookup error between std::vector<T>::begin()/at() and
+		// Image<T,DIM>::begin()/at() would still fire on every unqualified
+		// call, regardless of which base is private. Wrapping the vector in
+		// a one-member struct means this base contributes exactly one name
+		// (`data`) to lookup, so nothing collides with Image's interface.
+		template<class T>
+		struct OwnedImageStorage
+		{
+			std::vector<T> data;
+			explicit OwnedImageStorage(std::size_t n) : data(n) { }
+		};
+	}
+
+	// Owns its own backing storage, unlike Image (which never allocates and
+	// always operates on caller-supplied memory) -- a convenience for the
+	// very common "I just need a fresh output buffer of this shape" case, so
+	// call sites don't have to spell out their own std::vector<T> +
+	// Image<T,DIM> pair by hand every time. Everything else about it *is* an
+	// Image: it inherits the full public interface (erode(), view(), at(),
+	// begin()/end(), ...), so an OwnedImage can be used anywhere an
+	// Image<T,DIM> is expected.
+	//
+	// Move-only, not copyable: Image's data_/root_data_ are raw pointers
+	// into the owned buffer, resolved once at construction, so copying the
+	// buffer (which allocates a *new* one) would leave those pointers aimed
+	// at the old, about-to-be-destroyed allocation. Moving is safe -- a
+	// std::vector's move transfers ownership of its existing heap allocation
+	// without relocating it, so the inherited pointers stay valid across a
+	// move even though they were never told about it.
+	//
+	// Move-CONSTRUCTIBLE but not move-ASSIGNABLE: assignment is a different
+	// story from construction. Image's own operator= writes element values
+	// into memory that already exists (extent_/stride_/etc. are const, so an
+	// existing Image can never be rebound to a different buffer or shape) --
+	// exactly the semantics a shared "view" needs, but incompatible with
+	// what a real move-assignment would require (fully replacing *this's
+	// identity with another object's). Move-construction doesn't have this
+	// problem, since it builds a brand new object rather than reassigning an
+	// existing one, so it's supported normally.
+	//
+	// Privately inheriting from OwnedImageStorage<T> (rather than holding it
+	// as a plain member) is the mechanism that makes any of this safe to
+	// begin with: base classes finish constructing in declaration order,
+	// before any of the derived class's own members do -- so
+	// OwnedImageStorage<T> (listed first) is fully built, and its data
+	// pointer already stable, by the time Image<T,DIM>'s own constructor
+	// (listed second) runs and captures that pointer. A member-initializer-
+	// list ordering trick can't substitute for this: a std::vector *member*
+	// would still be uninitialized when a base class constructor needed it,
+	// regardless of what order it's written in the initializer list -- base
+	// subobjects always finish first.
+	template<class T, int DIM>
+	class OwnedImage : private detail::OwnedImageStorage<T>, public Image<T, DIM>
+	{
+		using Storage = detail::OwnedImageStorage<T>;
+	public:
+		explicit OwnedImage(std::array<int, DIM> extent)
+			: Storage(Image<T, DIM>::size(extent)), Image<T, DIM>(Storage::data.data(), extent)
+		{ }
+
+		// For the common case of a small kernel/grid with specific literal
+		// values (e.g. a Sobel kernel), which a plain extent-only
+		// OwnedImage can't express any more directly than the
+		// std::vector-then-Image pair it's meant to replace -- this makes
+		// it a single line instead: OwnedImage<double,2> sobelX({3,3},
+		// {-1,0,1, -2,0,2, -1,0,1});
+		OwnedImage(std::array<int, DIM> extent, std::initializer_list<T> values)
+			: Storage(Image<T, DIM>::size(extent)), Image<T, DIM>(Storage::data.data(), extent)
+		{
+			assert(values.size() == Storage::data.size());
+			std::copy(values.begin(), values.end(), Storage::data.begin());
+		}
+
+		// Deep copy of `source`, converting element type if needed -- the
+		// owned equivalent of Image's own T*+source constructor, minus the
+		// caller having to allocate a buffer for it first.
+		template<class U>
+		explicit OwnedImage(const Image<U, DIM>& source)
+			: Storage(source.size()), Image<T, DIM>(Storage::data.data(), source)
+		{ }
+
+		// Declaring any operator= here hides ALL of Image's operator=
+		// overloads (ordinary C++ name hiding, not specific to this class) --
+		// this brings the scalar-broadcast and cross-type ones back into
+		// scope, while the two explicit overloads below still correctly win
+		// for the exact OwnedImage-to-OwnedImage case (a non-template exact
+		// match beats a using-declared template).
+		using Image<T, DIM>::operator=;
+		OwnedImage(const OwnedImage&) = delete;
+		OwnedImage& operator=(const OwnedImage&) = delete;
+		OwnedImage(OwnedImage&&) = default;
+		OwnedImage& operator=(OwnedImage&&) = delete;
+
+		// A fresh, uninitialized buffer with the same extent as `source` --
+		// the owned equivalent of numpy's empty_like().
+		template<class U>
+		static OwnedImage like(const Image<U, DIM>& source) { return OwnedImage(source.extent()); }
+	};
+
 	// Structuring-element / kernel shapes for convolve()/erode()/dilate()/
 	// median_filter()/percentile_filter() -- all five read a kernel the same
 	// way (nonzero tap = included, and convolve() additionally uses the
@@ -1076,6 +1234,25 @@ namespace ndl
 				coord[axis] = i;
 				kernel.at(coord) = T(1);
 			}
+		}
+	}
+
+	// Applies `fn` independently to each index along `channelAxis`, via
+	// slice()'d views into src/dst -- the shared shape behind every "run
+	// this per color channel, so channels don't bleed into each other"
+	// helper (blur, convolve, erode, ...): `fn` receives
+	// (srcChannel, dstChannel), both Image<T,DIM-1>, and is expected to
+	// write dstChannel however it likes (e.g. `s.gaussian_blur(2.0, d,
+	// BorderMode::Clamp)`). Since slice() shares memory rather than copying,
+	// this costs nothing beyond the operation `fn` itself performs.
+	template<class T, int DIM, class Fn>
+	void per_channel(const Image<T, DIM>& src, Image<T, DIM>& dst, int channelAxis, Fn&& fn)
+	{
+		for (int c = 0; c < src.extent()[channelAxis]; c++)
+		{
+			Image<T, DIM - 1> srcChannel = src.slice(channelAxis, c);
+			Image<T, DIM - 1> dstChannel = dst.slice(channelAxis, c);
+			fn(srcChannel, dstChannel);
 		}
 	}
 

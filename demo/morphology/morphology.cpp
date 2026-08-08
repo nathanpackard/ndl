@@ -45,47 +45,29 @@ void saveForInspection(const std::string& label, const Image<T, DIM>& img, const
 
 // Per-channel helpers, same reasoning as demo/convolution's convolveColor():
 // erode()/dilate()/median_filter() run one color channel at a time so colors
-// don't bleed into each other -- slice() shares memory rather than copying,
-// so this is just a loop. Unlike convolve() with an arbitrary (possibly
-// negative-weight) kernel, none of these three can produce a value outside
-// the input's own range -- min/max/percentile always return one of the
-// actual input values -- so there's no clamping/double-precision-intermediate
-// concern here the way sharpen/emboss needed in demo/convolution.
+// don't bleed into each other -- per_channel() (from image.h) does the
+// slice()-and-loop mechanics once, shared with demo/convolution, so each of
+// these is just its underlying Image method plumbed through. Unlike
+// convolve() with an arbitrary (possibly negative-weight) kernel, none of
+// these three can produce a value outside the input's own range --
+// min/max/percentile always return one of the actual input values -- so
+// there's no clamping/double-precision-intermediate concern here the way
+// sharpen/emboss needed in demo/convolution.
 void erodeColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, BorderMode border)
 {
-    for (int c = 0; c < src.extent()[0]; c++)
-    {
-        Image<uint8_t, 2> srcChannel = src.slice(0, c);
-        Image<uint8_t, 2> dstChannel = dst.slice(0, c);
-        srcChannel.erode(kernel, dstChannel, border);
-    }
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.erode(kernel, d, border); });
 }
 void dilateColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, BorderMode border)
 {
-    for (int c = 0; c < src.extent()[0]; c++)
-    {
-        Image<uint8_t, 2> srcChannel = src.slice(0, c);
-        Image<uint8_t, 2> dstChannel = dst.slice(0, c);
-        srcChannel.dilate(kernel, dstChannel, border);
-    }
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.dilate(kernel, d, border); });
 }
 void medianColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, BorderMode border)
 {
-    for (int c = 0; c < src.extent()[0]; c++)
-    {
-        Image<uint8_t, 2> srcChannel = src.slice(0, c);
-        Image<uint8_t, 2> dstChannel = dst.slice(0, c);
-        srcChannel.median_filter(kernel, dstChannel, border);
-    }
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.median_filter(kernel, d, border); });
 }
 void percentileColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, double percentile, BorderMode border)
 {
-    for (int c = 0; c < src.extent()[0]; c++)
-    {
-        Image<uint8_t, 2> srcChannel = src.slice(0, c);
-        Image<uint8_t, 2> dstChannel = dst.slice(0, c);
-        srcChannel.percentile_filter(kernel, dstChannel, percentile, border);
-    }
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.percentile_filter(kernel, d, percentile, border); });
 }
 
 // Corrupts a fixed fraction of pixels to pure black or pure white --
@@ -127,8 +109,7 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 1: how erode()/dilate()/median_filter() work ===\n";
 
-    std::vector<int> gridData(25);
-    Image<int, 2> grid(gridData.data(), { 5, 5 });
+    OwnedImage<int, 2> grid({ 5, 5 });
     { int i = 0; for (auto it = grid.begin(); it != grid.end(); ++it) *it = ++i; }
 
     step("Image<int,2> grid(data, {5,5});  ... fill 1..25",
@@ -137,11 +118,9 @@ int main()
         "             it, same as convolve() -- they just combine the neighborhood differently.");
     showArray("grid", grid);
 
-    std::vector<double> boxData(9);
-    Image<double, 2> box3(boxData.data(), { 3, 3 });
+    OwnedImage<double, 2> box3({ 3, 3 });
     make_box_kernel(box3);
-    std::vector<double> crossData(9);
-    Image<double, 2> cross3(crossData.data(), { 3, 3 });
+    OwnedImage<double, 2> cross3({ 3, 3 });
     make_cross_kernel(cross3);
 
     step("make_box_kernel(box3); make_cross_kernel(cross3);   // both 3x3",
@@ -153,8 +132,7 @@ int main()
     showArray("box3", box3);
     showArray("cross3", cross3);
 
-    std::vector<int> out1Data(25);
-    Image<int, 2> out1(out1Data.data(), { 5, 5 });
+    OwnedImage<int, 2> out1({ 5, 5 });
 
     step("grid.erode(box3, out1)   // == grid.min(box3, out1) -- same operation, two names",
         "erode() replaces each value with the MINIMUM of its neighborhood -- out1(2,2) should\n"
@@ -194,15 +172,12 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 2: box vs cross, made visible ===\n";
 
-    std::vector<int> dotData(11 * 11, 0);
-    Image<int, 2> dot(dotData.data(), { 11, 11 });
+    OwnedImage<int, 2> dot({ 11, 11 });
     dot(5, 5) = 1;
 
-    std::vector<double> box5Data(25);
-    Image<double, 2> box5(box5Data.data(), { 5, 5 });
+    OwnedImage<double, 2> box5({ 5, 5 });
     make_box_kernel(box5);
-    std::vector<double> cross5Data(25);
-    Image<double, 2> cross5(cross5Data.data(), { 5, 5 });
+    OwnedImage<double, 2> cross5({ 5, 5 });
     make_cross_kernel(cross5);
 
     step("dot.dilate(box5, boxGrown) vs dot.dilate(cross5, crossGrown)   // radius-2 kernels",
@@ -212,11 +187,9 @@ int main()
         "             translated to the point): a box grows the dot into a solid 5x5 SQUARE, a cross\n"
         "             grows it into a thin 5-long PLUS SIGN, not a filled diamond -- only the 4 axis\n"
         "             arms turn on, the diagonal-adjacent cells stay 0, printed below side by side.");
-    std::vector<int> boxGrownData(121);
-    Image<int, 2> boxGrown(boxGrownData.data(), { 11, 11 });
+    OwnedImage<int, 2> boxGrown({ 11, 11 });
     dot.dilate(box5, boxGrown);
-    std::vector<int> crossGrownData(121);
-    Image<int, 2> crossGrown(crossGrownData.data(), { 11, 11 });
+    OwnedImage<int, 2> crossGrown({ 11, 11 });
     dot.dilate(cross5, crossGrown);
     showArray("boxGrown (square)", boxGrown);
     showArray("crossGrown (plus sign)", crossGrown);
@@ -231,8 +204,7 @@ int main()
     Image<uint8_t, 3> marbles(marblesData.data(), marblesExtent);
     saveForInspection("marbles", marbles, "01_original.png");
 
-    std::vector<uint8_t> erodedData(marbles.size());
-    Image<uint8_t, 3> eroded(erodedData.data(), marblesExtent);
+    OwnedImage<uint8_t, 3> eroded(marblesExtent);
     step("erodeColor(marbles, box5, eroded, BorderMode::Clamp)",
         "erode() on a real photo shrinks bright regions and thickens dark ones -- the bright\n"
         "             highlights on each marble should visibly shrink, and the dark gaps between\n"
@@ -240,8 +212,7 @@ int main()
     erodeColor(marbles, box5, eroded, BorderMode::Clamp);
     saveForInspection("eroded", eroded, "02_eroded.png");
 
-    std::vector<uint8_t> dilatedData(marbles.size());
-    Image<uint8_t, 3> dilated(dilatedData.data(), marblesExtent);
+    OwnedImage<uint8_t, 3> dilated(marblesExtent);
     step("dilateColor(marbles, box5, dilated, BorderMode::Clamp)",
         "The mirror image: bright regions grow, dark regions shrink -- compare 02_eroded.png\n"
         "             and 03_dilated.png against 01_original.png side by side.");
@@ -256,8 +227,7 @@ int main()
     Image<uint8_t, 3> crop = marbles.view({ 0, 453, 244 }, { 2, 964, 755 }); // 512x512, all 3 channels
     saveForInspection("crop", crop, "04_crop.png");
 
-    std::vector<uint8_t> noisyData(crop.size());
-    Image<uint8_t, 3> noisy(noisyData.data(), crop.extent());
+    OwnedImage<uint8_t, 3> noisy(crop.extent());
     step("addSaltAndPepperNoise(crop, noisy, 0.05)   // 5% of pixels forced to pure black or white",
         "Salt-and-pepper noise -- scattered pixels forced to 0 or 255, nothing in between -- is\n"
         "             the specific corruption median_filter() (unlike gaussian_blur()) is good at\n"
@@ -266,8 +236,7 @@ int main()
     addSaltAndPepperNoise(crop, noisy, 0.05);
     saveForInspection("noisy", noisy, "05_noisy.png");
 
-    std::vector<uint8_t> medianCleanedData(crop.size());
-    Image<uint8_t, 3> medianCleaned(medianCleanedData.data(), crop.extent());
+    OwnedImage<uint8_t, 3> medianCleaned(crop.extent());
     step("medianColor(noisy, box3, medianCleaned, BorderMode::Clamp)",
         "Each noisy pixel is very likely to be outvoted by its (uncorrupted) neighbors' median,\n"
         "             so it gets replaced outright -- edges and texture should come back looking sharp,\n"
@@ -276,8 +245,7 @@ int main()
     medianColor(noisy, box3, medianCleaned, BorderMode::Clamp);
     saveForInspection("median-cleaned", medianCleaned, "06_median_cleaned.png");
 
-    std::vector<uint8_t> gaussianCleanedData(crop.size());
-    Image<uint8_t, 3> gaussianCleaned(gaussianCleanedData.data(), crop.extent());
+    OwnedImage<uint8_t, 3> gaussianCleaned(crop.extent());
     step("gaussianBlurColor-style: noisy.slice(0,c).gaussian_blur(1.5, ..., BorderMode::Clamp) per channel",
         "For comparison: the same noisy image run through demo/convolution's Part 3 tool instead.\n"
         "             A gaussian blur averages every pixel with its neighbors, including the 0s and\n"
@@ -285,12 +253,7 @@ int main()
         "             soft grey/white smudge over its neighborhood, and blurs real edges at the same\n"
         "             time. Compare 06_median_cleaned.png (sharp) against 07_gaussian_cleaned.png\n"
         "             (smudged) directly.");
-    for (int c = 0; c < noisy.extent()[0]; c++)
-    {
-        Image<uint8_t, 2> srcChannel = noisy.slice(0, c);
-        Image<uint8_t, 2> dstChannel = gaussianCleaned.slice(0, c);
-        srcChannel.gaussian_blur(1.5, dstChannel, BorderMode::Clamp);
-    }
+    per_channel(noisy, gaussianCleaned, 0, [](const auto& s, auto& d) { s.gaussian_blur(1.5, d, BorderMode::Clamp); });
     saveForInspection("gaussian-cleaned", gaussianCleaned, "07_gaussian_cleaned.png");
 
     long medianDiff = 0, gaussianDiff = 0;
@@ -313,8 +276,7 @@ int main()
         "             'soft' erode/dilate -- p=10 shrinks bright regions like erode but is more\n"
         "             resistant to a single stray dark noise pixel, since it takes the 10th-ranked\n"
         "             value of the neighborhood rather than the strict minimum.");
-    std::vector<uint8_t> p10Data(crop.size()), p50Data(crop.size()), p90Data(crop.size());
-    Image<uint8_t, 3> p10(p10Data.data(), crop.extent()), p50(p50Data.data(), crop.extent()), p90(p90Data.data(), crop.extent());
+    OwnedImage<uint8_t, 3> p10(crop.extent()), p50(crop.extent()), p90(crop.extent());
     percentileColor(noisy, box3, p10, 10.0, BorderMode::Clamp);
     percentileColor(noisy, box3, p50, 50.0, BorderMode::Clamp);
     percentileColor(noisy, box3, p90, 90.0, BorderMode::Clamp);
@@ -332,8 +294,7 @@ int main()
         "             morphology vocabulary) removes small bright specks -- salt noise, mostly --\n"
         "             while letting large bright regions shrink and then grow back to roughly their\n"
         "             original size. No new library code, just two calls in sequence.");
-    std::vector<uint8_t> openStageData(crop.size()), openedData(crop.size());
-    Image<uint8_t, 3> openStage(openStageData.data(), crop.extent()), opened(openedData.data(), crop.extent());
+    OwnedImage<uint8_t, 3> openStage(crop.extent()), opened(crop.extent());
     erodeColor(noisy, box3, openStage, BorderMode::Clamp);
     dilateColor(openStage, box3, opened, BorderMode::Clamp);
     saveForInspection("opened (erode then dilate)", opened, "11_opened.png");
@@ -342,8 +303,7 @@ int main()
         "The other order: dilate then erode (\"closing\") instead fills small dark specks --\n"
         "             pepper noise -- while similarly restoring large regions close to their original\n"
         "             size.");
-    std::vector<uint8_t> closeStageData(crop.size()), closedData(crop.size());
-    Image<uint8_t, 3> closeStage(closeStageData.data(), crop.extent()), closed(closedData.data(), crop.extent());
+    OwnedImage<uint8_t, 3> closeStage(crop.extent()), closed(crop.extent());
     dilateColor(noisy, box3, closeStage, BorderMode::Clamp);
     erodeColor(closeStage, box3, closed, BorderMode::Clamp);
     saveForInspection("closed (dilate then erode)", closed, "12_closed.png");
@@ -353,10 +313,8 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 7: Otsu thresholding ===\n";
 
-    std::vector<uint8_t> greyCleanData(crop.size() / crop.extent()[0]);
-    Image<uint8_t, 3> greyClean3(greyCleanData.data(), { 1, crop.extent()[1], crop.extent()[2] });
-    std::vector<uint8_t> greyNoisyData(crop.size() / crop.extent()[0]);
-    Image<uint8_t, 3> greyNoisy3(greyNoisyData.data(), { 1, crop.extent()[1], crop.extent()[2] });
+    OwnedImage<uint8_t, 3> greyClean3({ 1, crop.extent()[1], crop.extent()[2] });
+    OwnedImage<uint8_t, 3> greyNoisy3({ 1, crop.extent()[1], crop.extent()[2] });
     step("crop.mean(0, greyClean3); noisy.mean(0, greyNoisy3);   // per-axis reduction over the channel axis",
         "otsu_threshold()/threshold() work on one scalar per pixel, so both the clean crop and its\n"
         "             salt-and-pepper-corrupted copy (both already built in Part 4) are reduced to\n"
@@ -374,8 +332,7 @@ int main()
         "             breaking a *different* operation than the blur it was shown against there.");
     uint8_t tNoisy = greyNoisy.otsu_threshold();
     showText("otsu_threshold() on the noisy greyscale", std::to_string((int)tNoisy));
-    std::vector<uint8_t> binaryNoisyData(greyNoisy.size());
-    Image<uint8_t, 3> binaryNoisy(binaryNoisyData.data(), { 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
+    OwnedImage<uint8_t, 3> binaryNoisy({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> binaryNoisyChannel = binaryNoisy.slice(0, 0);
     greyNoisy.threshold(tNoisy, binaryNoisyChannel, (uint8_t)255, (uint8_t)0);
     saveForInspection("binary (thresholded directly, noisy)", binaryNoisy, "13_binary_noisy.png");
@@ -389,21 +346,18 @@ int main()
         "             13_binary_noisy.png against 15_binary_denoised.png directly, and both against\n"
         "             14_binary_clean.png -- the Otsu result on the never-corrupted crop, the ground truth\n"
         "             both are approximating.");
-    std::vector<uint8_t> greyDenoisedData(greyNoisy.size());
-    Image<uint8_t, 2> greyDenoised(greyDenoisedData.data(), greyNoisy.extent());
+    OwnedImage<uint8_t, 2> greyDenoised(greyNoisy.extent());
     greyNoisy.median_filter(box3, greyDenoised, BorderMode::Clamp);
 
     uint8_t tClean = greyClean.otsu_threshold();
-    std::vector<uint8_t> binaryCleanData(greyClean.size());
-    Image<uint8_t, 3> binaryClean(binaryCleanData.data(), { 1, greyClean.extent()[0], greyClean.extent()[1] });
+    OwnedImage<uint8_t, 3> binaryClean({ 1, greyClean.extent()[0], greyClean.extent()[1] });
     Image<uint8_t, 2> binaryCleanChannel = binaryClean.slice(0, 0);
     greyClean.threshold(tClean, binaryCleanChannel, (uint8_t)255, (uint8_t)0);
     saveForInspection("binary (clean crop, ground truth)", binaryClean, "14_binary_clean.png");
 
     uint8_t tDenoised = greyDenoised.otsu_threshold();
     showText("otsu_threshold(): clean / noisy / denoised", std::to_string((int)tClean) + " / " + std::to_string((int)tNoisy) + " / " + std::to_string((int)tDenoised));
-    std::vector<uint8_t> binaryDenoisedData(greyNoisy.size());
-    Image<uint8_t, 3> binaryDenoised(binaryDenoisedData.data(), { 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
+    OwnedImage<uint8_t, 3> binaryDenoised({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> binaryDenoisedChannel = binaryDenoised.slice(0, 0);
     greyDenoised.threshold(tDenoised, binaryDenoisedChannel, (uint8_t)255, (uint8_t)0);
     saveForInspection("binary (denoised first)", binaryDenoised, "15_binary_denoised.png");
@@ -433,9 +387,8 @@ int main()
         "             black ones, dilate() does the opposite -- the classic \"binary morphology\" operations\n"
         "             from any image processing textbook, built from the exact same two methods this demo\n"
         "             already used on real-valued images.");
-    std::vector<uint8_t> erodedBinaryData(greyNoisy.size()), dilatedBinaryData(greyNoisy.size());
-    Image<uint8_t, 3> erodedBinaryImg(erodedBinaryData.data(), { 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
-    Image<uint8_t, 3> dilatedBinaryImg(dilatedBinaryData.data(), { 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
+    OwnedImage<uint8_t, 3> erodedBinaryImg({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
+    OwnedImage<uint8_t, 3> dilatedBinaryImg({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> erodedBinaryChannel = erodedBinaryImg.slice(0, 0);
     Image<uint8_t, 2> dilatedBinaryChannel = dilatedBinaryImg.slice(0, 0);
     binaryDenoisedChannel.erode(box3, erodedBinaryChannel, BorderMode::Clamp);
@@ -448,18 +401,16 @@ int main()
         "             binary result) mops up whatever small speckles median_filter() didn't fully catch --\n"
         "             a standard real-world pipeline: denoise, threshold, then clean up the binary result\n"
         "             with morphology.");
-    std::vector<uint8_t> openStage2Data(greyNoisy.size()), opened2Data(greyNoisy.size());
-    Image<uint8_t, 3> openStage2Img(openStage2Data.data(), { 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
-    Image<uint8_t, 3> opened2Img(opened2Data.data(), { 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
+    OwnedImage<uint8_t, 3> openStage2Img({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
+    OwnedImage<uint8_t, 3> opened2Img({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> openStage2Channel = openStage2Img.slice(0, 0);
     Image<uint8_t, 2> opened2Channel = opened2Img.slice(0, 0);
     binaryDenoisedChannel.erode(box3, openStage2Channel, BorderMode::Clamp);
     openStage2Channel.dilate(box3, opened2Channel, BorderMode::Clamp);
     saveForInspection("binary opened", opened2Img, "18_binary_opened.png");
 
-    std::vector<uint8_t> closeStage2Data(greyNoisy.size()), closed2Data(greyNoisy.size());
-    Image<uint8_t, 3> closeStage2Img(closeStage2Data.data(), { 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
-    Image<uint8_t, 3> closed2Img(closed2Data.data(), { 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
+    OwnedImage<uint8_t, 3> closeStage2Img({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
+    OwnedImage<uint8_t, 3> closed2Img({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> closeStage2Channel = closeStage2Img.slice(0, 0);
     Image<uint8_t, 2> closed2Channel = closed2Img.slice(0, 0);
     binaryDenoisedChannel.dilate(box3, closeStage2Channel, BorderMode::Clamp);
