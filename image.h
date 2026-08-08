@@ -349,6 +349,57 @@ namespace ndl
 		void sum(int axis, Image<T, DIM>& output) const { axisReduceOp(axis, output, std::plus<T>{}); }
 		void min(int axis, Image<T, DIM>& output) const { axisReduceOp(axis, output, [](T a, T b) { return b < a ? b : a; }); }
 		void max(int axis, Image<T, DIM>& output) const { axisReduceOp(axis, output, [](T a, T b) { return b > a ? b : a; }); }
+
+		// A third min()/max() overload, alongside the whole-image and per-axis
+		// ones above: a *local* min/max, taken over the neighborhood `kernel`
+		// marks (same "kernel centered on every output position" walk
+		// convolve() uses, and the same kernel type -- see kernelTapCoord()'s
+		// comment). This is exactly morphological erosion/dilation, so
+		// erode()/dilate() below just call these directly; both names are
+		// kept since "windowed min/max" and "erode/dilate" are both standard
+		// vocabulary for the identical operation, and which one reads clearer
+		// depends on context.
+		template<class K>
+		void min(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
+		{
+			assert(output.extent() == extent_);
+			std::array<int, DIM> center;
+			for (int i = 0; i < DIM; i++) center[i] = kernel.extent()[i] / 2;
+
+			for (const auto& coord : coordinates())
+			{
+				bool first = true;
+				T best{};
+				for (const auto& kCoord : kernel.coordinates())
+				{
+					if (kernel.at(kCoord) == K(0)) continue;
+					T v = at(kernelTapCoord(coord, kCoord, center, border));
+					if (first || v < best) { best = v; first = false; }
+				}
+				output.at(coord) = best;
+			}
+		}
+		template<class K>
+		void max(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
+		{
+			assert(output.extent() == extent_);
+			std::array<int, DIM> center;
+			for (int i = 0; i < DIM; i++) center[i] = kernel.extent()[i] / 2;
+
+			for (const auto& coord : coordinates())
+			{
+				bool first = true;
+				T best{};
+				for (const auto& kCoord : kernel.coordinates())
+				{
+					if (kernel.at(kCoord) == K(0)) continue;
+					T v = at(kernelTapCoord(coord, kCoord, center, border));
+					if (first || v > best) { best = v; first = false; }
+				}
+				output.at(coord) = best;
+			}
+		}
+
 		void mean(int axis, Image<T, DIM>& output) const {
 			sum(axis, output);
 			T count = static_cast<T>(extent_[axis]);
@@ -570,23 +621,148 @@ namespace ndl
 			{
 				double total = 0;
 				for (const auto& kCoord : kernel.coordinates())
-				{
-					std::array<int, DIM> srcCoord;
-					for (int i = 0; i < DIM; i++)
-					{
-						int x = coord[i] + kCoord[i] - center[i];
-						switch (border)
-						{
-						case BorderMode::Wrap:    x = _wrap(extent_[i], x); break;
-						case BorderMode::Reflect: x = _reflect(extent_[i], x); break;
-						default:                  x = _clamp(extent_[i], x); break;
-						}
-						srcCoord[i] = x;
-					}
-					total += static_cast<double>(at(srcCoord)) * static_cast<double>(kernel.at(kCoord));
-				}
+					total += static_cast<double>(at(kernelTapCoord(coord, kCoord, center, border))) * static_cast<double>(kernel.at(kCoord));
 				output.at(coord) = static_cast<T>(total);
 			}
+		}
+
+		// Morphology: the classic "shrink bright regions" (erode) / "grow
+		// bright regions" (dilate) operations are just names for the local
+		// min()/max() overload above -- kept as their own entry points since
+		// "erode/dilate" is the standard vocabulary in image processing
+		// specifically, even though the operation is identical.
+		template<class K>
+		void erode(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { min(kernel, output, border); }
+		template<class K>
+		void dilate(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { max(kernel, output, border); }
+
+		// percentile_filter() walks the same "kernel centered on every output
+		// position" pattern (see kernelTapCoord()'s comment), but instead of
+		// combining the values under the kernel, picks ONE of them: the
+		// window is partially sorted (std::nth_element, average O(n) rather
+		// than a full O(n log n) sort) and the value at nearest-rank
+		// round(percentile/100 * (N-1)) of its N included values is kept.
+		// percentile 0/50/100 are exactly min/median/max over the window --
+		// median_filter() below is just this at 50 -- so this is a strict
+		// generalization of erode()/median_filter()/dilate() rather than a
+		// separate operation. Anything in between is a genuine "soft" version
+		// of erode/dilate: percentile 10 shrinks bright regions like erode
+		// but is more resistant to a single dark outlier pixel, since it
+		// takes the 10th-ranked value rather than the strict minimum. Same
+		// 0/1-mask "nonzero = included" convention as min/max above --
+		// make_box_kernel()/make_cross_kernel() below work here too. Unlike
+		// a mean/gaussian blur, the output is always one of the actual input
+		// values (never an average), which is what makes median_filter()
+		// specifically good at removing salt-and-pepper noise without
+		// smearing edges.
+		template<class K>
+		void percentile_filter(const Image<K, DIM>& kernel, Image<T, DIM>& output, double percentile, BorderMode border = BorderMode::Clamp) const
+		{
+			assert(output.extent() == extent_);
+			assert(percentile >= 0.0 && percentile <= 100.0);
+			std::array<int, DIM> center;
+			for (int i = 0; i < DIM; i++) center[i] = kernel.extent()[i] / 2;
+
+			std::vector<T> window;
+			for (const auto& coord : coordinates())
+			{
+				window.clear();
+				for (const auto& kCoord : kernel.coordinates())
+				{
+					if (kernel.at(kCoord) == K(0)) continue;
+					window.push_back(at(kernelTapCoord(coord, kCoord, center, border)));
+				}
+				std::size_t rank = (std::size_t)std::llround((percentile / 100.0) * (window.size() - 1));
+				auto mid = window.begin() + rank;
+				std::nth_element(window.begin(), mid, window.end());
+				output.at(coord) = *mid;
+			}
+		}
+		template<class K>
+		void median_filter(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { percentile_filter(kernel, output, 50.0, border); }
+
+		// Binarizes *this into `output`: `onValue` where the source value is
+		// greater than `thresholdValue`, `offValue` otherwise. Defaults to a
+		// generic 0/1 mask -- the same "nonzero = included" convention
+		// erode()/dilate()/median_filter()/percentile_filter()/convolve()
+		// already use for kernels -- rather than assuming an 8-bit image;
+		// pass onValue=T(255) explicitly for a directly-viewable black/white
+		// image instead. Strictly greater-than, not >=, to match
+		// otsu_threshold()'s own class split below (background is values <=
+		// the threshold, foreground is values above it) -- `thresholdValue`
+		// is usually its result, but any fixed cutoff works too.
+		void threshold(T thresholdValue, Image<T, DIM>& output, T onValue = T(1), T offValue = T(0)) const
+		{
+			assert(output.extent() == extent_);
+			auto outIt = output.begin();
+			for (auto it = begin(); it != end(); ++it, ++outIt) *outIt = (*it > thresholdValue) ? onValue : offValue;
+		}
+
+		// Otsu's method: the value that maximizes between-class variance of
+		// *this's own histogram -- equivalently, the split that separates
+		// the two classes of values (below/above it) as cleanly as possible.
+		// The standard automatic threshold for turning a grayscale image
+		// into a binary one without picking a cutoff by hand (Otsu, N.,
+		// 1979, "A threshold selection method from gray-level histograms").
+		// Generic over T: the histogram spans *this's own [min(),max()]
+		// range divided into `bins` equal-width buckets (default 256 --
+		// enough resolution for classic 8-bit imagery, and a reasonable
+		// default for anything else), rather than assuming any fixed range,
+		// so this works the same way for uint8_t, int, float, or double
+		// data. A noisy image widens both classes' spread and can shift
+		// where they overlap, so Otsu still works on it directly, but
+		// denoising first (e.g. median_filter()) generally finds a cleaner
+		// split -- see demo/morphology.
+		T otsu_threshold(int bins = 256) const
+		{
+			assert(bins > 1);
+			T lo = min();
+			T hi = max();
+			if (lo == hi) return lo; // degenerate: only one value present, nothing to split
+
+			double range = static_cast<double>(hi) - static_cast<double>(lo);
+			auto bucketOf = [&](T value) {
+				int b = (int)((static_cast<double>(value) - static_cast<double>(lo)) / range * bins);
+				return b < 0 ? 0 : (b >= bins ? bins - 1 : b);
+			};
+
+			std::vector<std::size_t> histogram(bins, 0);
+			for (auto it = begin(); it != end(); ++it) histogram[bucketOf(*it)]++;
+
+			std::size_t total = size();
+			double sumAll = 0;
+			for (int i = 0; i < bins; i++) sumAll += (double)i * histogram[i];
+
+			std::size_t weightBackground = 0;
+			double sumBackground = 0;
+			double bestVariance = -1;
+			int bestBucket = 0;
+			for (int b = 0; b < bins; b++)
+			{
+				weightBackground += histogram[b];
+				if (weightBackground == 0) continue;
+				std::size_t weightForeground = total - weightBackground;
+				if (weightForeground == 0) break;
+
+				sumBackground += (double)b * histogram[b];
+				double meanBackground = sumBackground / weightBackground;
+				double meanForeground = (sumAll - sumBackground) / weightForeground;
+
+				double diff = meanBackground - meanForeground;
+				double variance = (double)weightBackground * (double)weightForeground * diff * diff;
+				if (variance > bestVariance)
+				{
+					bestVariance = variance;
+					bestBucket = b;
+				}
+			}
+
+			// Map the winning bucket back to a value in T's own range -- its
+			// upper edge, so "value <= threshold" / "value > threshold"
+			// reproduce the same background/foreground split the bucket
+			// boundary represented.
+			double thresholdValue = static_cast<double>(lo) + range * static_cast<double>(bestBucket + 1) / static_cast<double>(bins);
+			return static_cast<T>(thresholdValue);
 		}
 
 		// Gaussian blur: builds a normalized (weights sum to 1) Gaussian
@@ -750,6 +926,29 @@ namespace ndl
 			return result;
 		}
 
+		// Resolves the border-handled source coordinate for kernel tap
+		// `kCoord` (centered via `center`) when computing the value at
+		// `coord` -- shared by convolve()/erode()/dilate()/median_filter(),
+		// all of which walk the same "kernel centered on every output
+		// position" pattern and differ only in how they combine the values
+		// found under the kernel.
+		std::array<int, DIM> kernelTapCoord(const std::array<int, DIM>& coord, const std::array<int, DIM>& kCoord, const std::array<int, DIM>& center, BorderMode border) const
+		{
+			std::array<int, DIM> srcCoord;
+			for (int i = 0; i < DIM; i++)
+			{
+				int x = coord[i] + kCoord[i] - center[i];
+				switch (border)
+				{
+				case BorderMode::Wrap:    x = _wrap(extent_[i], x); break;
+				case BorderMode::Reflect: x = _reflect(extent_[i], x); break;
+				default:                  x = _clamp(extent_[i], x); break;
+				}
+				srcCoord[i] = x;
+			}
+			return srcCoord;
+		}
+
 		// Generates multiple dimensional indices in order
 		void generateCoordinates(const std::array<int, DIM>& extents, std::array<int, DIM>& indices, std::vector<std::array<int, DIM>>& allIndices, std::size_t depth = 0) const {
 			if (depth == DIM) {  // Reached the deepest level
@@ -835,6 +1034,50 @@ namespace ndl
 		T* root_data_;
 		T* data_;
 	};
+
+	// Structuring-element / kernel shapes for convolve()/erode()/dilate()/
+	// median_filter()/percentile_filter() -- all five read a kernel the same
+	// way (nonzero tap = included, and convolve() additionally uses the
+	// nonzero value as a weight), so the same kernel object works with any
+	// of them. `kernel` must already exist (caller-owned, as always in this
+	// library); its own extent picks the radius, e.g. a {5,5} kernel is a
+	// radius-2 box or cross.
+	//
+	// make_box_kernel(): every tap set to 1 -- the full rectangular
+	// neighborhood, no shape restriction beyond the kernel's own extent.
+	template<class T, int DIM>
+	void make_box_kernel(Image<T, DIM>& kernel) { kernel = T(1); }
+
+	// make_cross_kernel(): only the center and the taps that vary along
+	// EXACTLY ONE axis (every other axis pinned to center) are set to 1,
+	// everything else to 0 -- a plus sign in 2D, and its N-dimensional
+	// generalization in general: a "jack" with one pair of arms per
+	// dimension (6 arms in 3D, along +/-x, +/-y, +/-z). Diagonal-adjacent
+	// taps a box of the same radius would include (e.g. the 4 corners of a
+	// 3x3 box) are deliberately left out -- this is 4-connectivity (2*DIM in
+	// general) rather than a box's 8-connectivity (3^DIM - 1 in general), the
+	// same distinction that matters for connected-component labeling or
+	// thinning. Also cheaper than a box of the same radius: DIM*(2r+1)-(DIM-1)
+	// taps instead of (2r+1)^DIM. Note this is a thin cross, not a filled
+	// diamond (L1 ball) -- dilating a single point with it reproduces the
+	// cross shape exactly (see demo/morphology Part 2), not a solid region.
+	template<class T, int DIM>
+	void make_cross_kernel(Image<T, DIM>& kernel)
+	{
+		kernel = T(0);
+		std::array<int, DIM> center;
+		for (int i = 0; i < DIM; i++) center[i] = kernel.extent()[i] / 2;
+		kernel.at(center) = T(1);
+		for (int axis = 0; axis < DIM; axis++)
+		{
+			std::array<int, DIM> coord = center;
+			for (int i = 0; i < kernel.extent()[axis]; i++)
+			{
+				coord[axis] = i;
+				kernel.at(coord) = T(1);
+			}
+		}
+	}
 
 	//operator overloads
 	//
