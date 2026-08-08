@@ -4,6 +4,8 @@
 #include "imageIO/avi.h"
 #include "imageIO/dicom.h"
 #include "imageIO/NRRD/nrrd.h"
+#include "imageIO/png/src/yspng.h"
+#include "imageIO/png/src/yspngenc.h"
 #include <algorithm>
 #include <array>
 #include <exception>
@@ -91,6 +93,18 @@ namespace ndl
 					}
 				}
 				return resultData;
+			}
+			if (extension == "png")
+			{
+				std::cout << "loading file: " << fileName << std::endl;
+				YsGenericPngDecoder::verboseMode = YSFALSE;
+				YsRawPngDecoder decoder;
+				if (decoder.Decode(fileName.c_str()) != YSOK) throw std::runtime_error("failed to decode png: " + fileName);
+				// YsRawPngDecoder always expands to interleaved RGBA regardless of the source color type.
+				extent = { 4, decoder.wid, decoder.hei };
+				size_t size = (size_t)decoder.wid * decoder.hei * 4;
+				std::vector<uint8_t> result(decoder.rgba, decoder.rgba + size);
+				return result;
 			}
 			throw std::runtime_error("unknown data type!!");
 		}
@@ -263,6 +277,26 @@ namespace ndl
 				}
 				else throw std::runtime_error("unsupported dimension");
 				bmp.save_to_file(fileName.c_str());
+			}
+			else if (extension == "png")
+			{
+				std::cout << "saving output file: " << fileName << std::endl;
+				if (sizeof(T) != 1) throw std::runtime_error("png save requires an 8-bit-per-channel image");
+				if (DIM != 3) throw std::runtime_error("png save requires a 3D image (channel,width,height)");
+				int nColors = image.extent()[0];
+				int width = image.extent()[1];
+				int height = image.extent()[2];
+				int colorType;
+				if (nColors == 1) colorType = 0;      // Greyscale
+				else if (nColors == 3) colorType = 2; // Truecolor
+				else if (nColors == 4) colorType = 6; // Truecolor with alpha
+				else throw std::runtime_error("the first dimension for 3D represents color, an unsupported number of colors was selected");
+				// data is already contiguous with dim0 (channel) fastest and top-to-bottom row order,
+				// exactly what PNG expects -- unlike bmp, no vertical flip is needed here.
+				YsRawPngEncoder encoder;
+				encoder.verboseMode = YSFALSE;
+				if (encoder.EncodeToFile(fileName.c_str(), width, height, 8, colorType, (const unsigned char*)data.data()) != YSOK)
+					throw std::runtime_error("failed to encode png: " + fileName);
 			}
 			else
 			{

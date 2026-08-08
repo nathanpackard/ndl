@@ -790,6 +790,191 @@ void testImageComparisonOperators(std::stringstream& passfail) {
 	passfail << "operator< (vs scalar): " << (d < 6 ? "Pass" : "Fail") << std::endl;
 }
 
+void testImageReductions(std::stringstream& passfail) {
+	std::cout << std::endl << "IMAGE REDUCTIONS" << std::endl;
+
+	std::vector<int> data(12);
+	Image<int, 2> img(data.data(), { 4, 3 }); // x=4 (dim0), y=3 (dim1)
+	int i = 0;
+	for (auto it = img.begin(); it != img.end(); ++it) *it = ++i; // 1..12, x fastest
+
+	passfail << "sum() whole image: " << (img.sum() == 78 ? "Pass" : "Fail") << std::endl;
+	passfail << "min() whole image: " << (img.min() == 1 ? "Pass" : "Fail") << std::endl;
+	passfail << "max() whole image: " << (img.max() == 12 ? "Pass" : "Fail") << std::endl;
+	passfail << "mean() whole image: " << (std::abs(img.mean() - 6.5) < 1e-9 ? "Pass" : "Fail") << std::endl;
+
+	// Per-axis (keepdims) reduction along dim0 (x): output extent {1,3}, one
+	// result per row y. y=0: 1+2+3+4=10, y=1: 5+6+7+8=26, y=2: 9+10+11+12=42.
+	std::vector<int> sumData(3);
+	Image<int, 2> sumOut(sumData.data(), { 1, 3 });
+	img.sum(0, sumOut);
+	bool sumOk = sumOut(0, 0) == 10 && sumOut(0, 1) == 26 && sumOut(0, 2) == 42;
+	passfail << "sum(axis, output) reduces dim0 correctly: " << (sumOk ? "Pass" : "Fail") << std::endl;
+
+	std::vector<int> minData(3), maxData(3);
+	Image<int, 2> minOut(minData.data(), { 1, 3 }), maxOut(maxData.data(), { 1, 3 });
+	img.min(0, minOut);
+	img.max(0, maxOut);
+	bool minOk = minOut(0, 0) == 1 && minOut(0, 1) == 5 && minOut(0, 2) == 9;
+	bool maxOk = maxOut(0, 0) == 4 && maxOut(0, 1) == 8 && maxOut(0, 2) == 12;
+	passfail << "min(axis, output) reduces dim0 correctly: " << (minOk ? "Pass" : "Fail") << std::endl;
+	passfail << "max(axis, output) reduces dim0 correctly: " << (maxOk ? "Pass" : "Fail") << std::endl;
+
+	// Reduce along dim1 (y) instead, to prove axis selection isn't hardcoded to
+	// dim0. Output extent {4,1}, one result per column x.
+	// x=0: 1+5+9=15, x=1: 2+6+10=18, x=2: 3+7+11=21, x=3: 4+8+12=24.
+	std::vector<int> sumYData(4);
+	Image<int, 2> sumYOut(sumYData.data(), { 4, 1 });
+	img.sum(1, sumYOut);
+	bool sumYOk = sumYOut(0, 0) == 15 && sumYOut(1, 0) == 18 && sumYOut(2, 0) == 21 && sumYOut(3, 0) == 24;
+	passfail << "sum(axis, output) reduces dim1 correctly: " << (sumYOk ? "Pass" : "Fail") << std::endl;
+
+	std::vector<int> meanData(3);
+	Image<int, 2> meanOut(meanData.data(), { 1, 3 });
+	img.mean(0, meanOut);
+	bool meanOk = meanOut(0, 0) == 2 && meanOut(0, 1) == 6 && meanOut(0, 2) == 10; // integer division of 10,26,42 by 4
+	passfail << "mean(axis, output) reduces dim0 correctly: " << (meanOk ? "Pass" : "Fail") << std::endl;
+}
+
+void testImageConvolution(std::stringstream& passfail) {
+	std::cout << std::endl << "IMAGE CONVOLUTION" << std::endl;
+
+	// 4x4 image, values 1..16 (x fastest)
+	std::vector<int> data(16);
+	Image<int, 2> img(data.data(), { 4, 4 });
+	int i = 0;
+	for (auto it = img.begin(); it != img.end(); ++it) *it = ++i;
+
+	// Identity kernel (1 at center, 0 elsewhere) leaves the image unchanged.
+	std::vector<int> identityKernelData = { 0,0,0, 0,1,0, 0,0,0 };
+	Image<int, 2> identityKernel(identityKernelData.data(), { 3, 3 });
+	std::vector<int> outData(16);
+	Image<int, 2> out(outData.data(), { 4, 4 });
+	img.convolve(identityKernel, out);
+	passfail << "convolve() with identity kernel leaves image unchanged: " << (out == img ? "Pass" : "Fail") << std::endl;
+
+	// All-ones 3x3 kernel: at an interior point every tap is in-bounds, so the
+	// result is just the sum of the 3x3 neighborhood.
+	std::vector<int> sumKernelData(9, 1);
+	Image<int, 2> sumKernel(sumKernelData.data(), { 3, 3 });
+	img.convolve(sumKernel, out, BorderMode::Clamp);
+	int expectedInterior = 1 + 2 + 3 + 5 + 6 + 7 + 9 + 10 + 11; // 3x3 block around (1,1)
+	passfail << "convolve() sum kernel matches expected interior value: " << (out(1, 1) == expectedInterior ? "Pass" : "Fail") << std::endl;
+
+	// At corner (0,0), clamping the out-of-range taps (-1 -> 0) collapses the
+	// 9 taps onto the 2x2 block (0,0),(1,0),(0,1),(1,1), with (0,0) counted 4x
+	// and the other two edge cells counted 2x each -- derive that generically
+	// from img's own values rather than hardcoding a number.
+	img.convolve(sumKernel, out, BorderMode::Clamp);
+	int clampCorner = out(0, 0);
+	int expectedClampCorner = 4 * img(0, 0) + 2 * img(1, 0) + 2 * img(0, 1) + img(1, 1);
+	passfail << "convolve() clamp border matches hand-derived value: " << (clampCorner == expectedClampCorner ? "Pass" : "Fail") << std::endl;
+
+	// Wrap (circular) border handling picks entirely different source pixels
+	// at the corner (it wraps to the opposite edge instead of repeating the
+	// edge pixel), so it must disagree with the clamp result computed above.
+	img.convolve(sumKernel, out, BorderMode::Wrap);
+	int wrapCorner = out(0, 0);
+	passfail << "convolve() wrap border differs from clamp border at the corner: " << (wrapCorner != clampCorner ? "Pass" : "Fail") << std::endl;
+
+	// A radius-2 (5x5) kernel distinguishes reflect from clamp too: clamp maps
+	// offsets -2,-1 both to 0, while reflect maps -2 to 1 and -1 to 0 -- a
+	// different multiset of source pixels, so the corner values must differ.
+	std::vector<int> sumKernel5Data(25, 1);
+	Image<int, 2> sumKernel5(sumKernel5Data.data(), { 5, 5 });
+	img.convolve(sumKernel5, out, BorderMode::Clamp);
+	int clampCorner5 = out(0, 0);
+	img.convolve(sumKernel5, out, BorderMode::Reflect);
+	int reflectCorner5 = out(0, 0);
+	passfail << "convolve() reflect border differs from clamp border with a wider kernel: " << (reflectCorner5 != clampCorner5 ? "Pass" : "Fail") << std::endl;
+}
+
+void testImageArithmeticNonMutating(std::stringstream& passfail) {
+	std::cout << std::endl << "IMAGE NON-MUTATING ARITHMETIC" << std::endl;
+
+	std::vector<int> dataA(4), dataB(4), dataOut(4);
+	Image<int, 1> a(dataA.data(), { 4 }), b(dataB.data(), { 4 }), out(dataOut.data(), { 4 });
+	for (int i = 0; i < 4; i++) { dataA[i] = i + 1; dataB[i] = 10; } // a=1,2,3,4  b=10,10,10,10
+
+	a.add(b, out); // 11,12,13,14
+	bool addOk = true; for (int i = 0; i < 4; i++) if (out(i) != i + 11) addOk = false;
+	passfail << "add(image, output) computes correct sum: " << (addOk ? "Pass" : "Fail") << std::endl;
+
+	a.subtract(2, out); // -1,0,1,2
+	bool subOk = true; for (int i = 0; i < 4; i++) if (out(i) != i - 1) subOk = false;
+	passfail << "subtract(scalar, output) computes correct difference: " << (subOk ? "Pass" : "Fail") << std::endl;
+
+	a.multiply(b, out); // 10,20,30,40
+	bool mulOk = true; for (int i = 0; i < 4; i++) if (out(i) != (i + 1) * 10) mulOk = false;
+	passfail << "multiply(image, output) computes correct product: " << (mulOk ? "Pass" : "Fail") << std::endl;
+
+	a.divide(1, out); // 1,2,3,4 unchanged
+	bool divOk = true; for (int i = 0; i < 4; i++) if (out(i) != i + 1) divOk = false;
+	passfail << "divide(scalar, output) computes correct quotient: " << (divOk ? "Pass" : "Fail") << std::endl;
+
+	bool aUnchanged = true; for (int i = 0; i < 4; i++) if (a(i) != i + 1) aUnchanged = false;
+	passfail << "non-mutating arithmetic never wrote back into *this across all calls: " << (aUnchanged ? "Pass" : "Fail") << std::endl;
+}
+
+void testImagePngRoundtrip(std::stringstream& passfail, std::string outputFolder) {
+	std::cout << std::endl << "IMAGE PNG ROUND TRIP" << std::endl;
+
+	const int W = 6, H = 5;
+	std::vector<uint8_t> rgba(W * H * 4);
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++)
+			for (int c = 0; c < 4; c++)
+				rgba[(y * W + x) * 4 + c] = (uint8_t)((x * 37 + y * 53 + c * 19) % 251);
+
+	std::array<int, 3> extent{ 4, W, H };
+	Image<uint8_t, 3> img(rgba.data(), extent);
+
+	std::string path = outputFolder + "/ndl_png_roundtrip_test.png";
+	image_io::save(img, path);
+
+	std::array<int, 3> loadedExtent;
+	std::vector<uint8_t> loaded = image_io::load(path, loadedExtent);
+
+	passfail << "png save/load round trip preserves extent: " << (loadedExtent == extent ? "Pass" : "Fail") << std::endl;
+	bool pixelsMatch = loaded.size() == rgba.size() && std::equal(loaded.begin(), loaded.end(), rgba.begin());
+	passfail << "png save/load round trip preserves pixel data exactly: " << (pixelsMatch ? "Pass" : "Fail") << std::endl;
+
+	// Also exercise the RGB (3-channel) and greyscale (1-channel) encode
+	// paths, since the decoder/encoder both branch on channel count
+	// internally and always expand back out to RGBA on load.
+	std::vector<uint8_t> rgbData(W * H * 3);
+	for (size_t i = 0; i < rgbData.size(); i++) rgbData[i] = (uint8_t)(i * 7 % 251);
+	std::array<int, 3> rgbExtent{ 3, W, H };
+	Image<uint8_t, 3> rgbImg(rgbData.data(), rgbExtent);
+	image_io::save(rgbImg, outputFolder + "/ndl_png_roundtrip_rgb_test.png");
+	std::array<int, 3> rgbLoadedExtent;
+	std::vector<uint8_t> rgbLoaded = image_io::load(outputFolder + "/ndl_png_roundtrip_rgb_test.png", rgbLoadedExtent);
+	bool rgbOk = rgbLoadedExtent[0] == 4 && rgbLoadedExtent[1] == W && rgbLoadedExtent[2] == H;
+	for (int y = 0; y < H && rgbOk; y++)
+		for (int x = 0; x < W && rgbOk; x++)
+			for (int c = 0; c < 3 && rgbOk; c++)
+				if (rgbLoaded[(y * W + x) * 4 + c] != rgbData[(y * W + x) * 3 + c]) rgbOk = false;
+	passfail << "png round trip preserves RGB color data (3-channel save, RGBA load): " << (rgbOk ? "Pass" : "Fail") << std::endl;
+
+	std::vector<uint8_t> greyData(W * H);
+	for (size_t i = 0; i < greyData.size(); i++) greyData[i] = (uint8_t)(i * 11 % 251);
+	std::array<int, 3> greyExtent{ 1, W, H };
+	Image<uint8_t, 3> greyImg(greyData.data(), greyExtent);
+	image_io::save(greyImg, outputFolder + "/ndl_png_roundtrip_grey_test.png");
+	std::array<int, 3> greyLoadedExtent;
+	std::vector<uint8_t> greyLoaded = image_io::load(outputFolder + "/ndl_png_roundtrip_grey_test.png", greyLoadedExtent);
+	bool greyOk = greyLoadedExtent[0] == 4 && greyLoadedExtent[1] == W && greyLoadedExtent[2] == H;
+	for (int y = 0; y < H && greyOk; y++)
+		for (int x = 0; x < W && greyOk; x++)
+		{
+			uint8_t v = greyData[y * W + x];
+			size_t o = (y * W + x) * 4;
+			// Greyscale PNG expands to R=G=B=v, A=255 on decode.
+			if (greyLoaded[o] != v || greyLoaded[o + 1] != v || greyLoaded[o + 2] != v || greyLoaded[o + 3] != 255) greyOk = false;
+		}
+	passfail << "png round trip preserves greyscale data (1-channel save, RGBA load): " << (greyOk ? "Pass" : "Fail") << std::endl;
+}
+
 // --- Composite Image operations: chaining two or more view-producing operations ---
 
 void testCompositeViewOfView(std::stringstream& passfail) {
@@ -865,6 +1050,68 @@ void testCompositeWriteThroughView(std::stringstream& passfail) {
 	for (auto v : img) if (v != 0) nonZeroCount++;
 	passfail << "write through a composed view only changes that one element: "
 		<< (nonZeroCount == 1 ? "Pass" : "Fail") << std::endl;
+}
+
+void testCompositeConvolveThenReduce(std::stringstream& passfail) {
+	std::cout << std::endl << "COMPOSITE: CONVOLVE THEN REDUCE" << std::endl;
+
+	std::vector<int> data(20);
+	Image<int, 2> img(data.data(), { 5, 4 });
+	int i = 0;
+	for (auto it = img.begin(); it != img.end(); ++it) *it = ++i;
+
+	std::vector<int> kernelData = { 1,2,1, 2,4,2, 1,2,1 };
+	Image<int, 2> kernel(kernelData.data(), { 3, 3 });
+
+	std::vector<int> outData(20);
+	Image<int, 2> out(outData.data(), { 5, 4 });
+	img.convolve(kernel, out, BorderMode::Wrap);
+
+	// With wrap (circular) border handling, a fixed circular shift is a
+	// bijection over a periodic image, so every image pixel contributes to
+	// exactly kernel.size() output positions with the same total weight
+	// (kernel.sum()) no matter where it sits -- the sum of the whole
+	// convolved output is therefore always exactly kernel.sum() * image.sum(),
+	// independent of image content. This checks convolve() and sum() against
+	// each other rather than against a hand-computed constant.
+	int expected = kernel.sum() * img.sum();
+	passfail << "convolve() with wrap border + sum() satisfies kernel.sum()*image.sum() identity: "
+		<< (out.sum() == expected ? "Pass" : "Fail") << std::endl;
+}
+
+void testCompositePngWithView(std::stringstream& passfail, std::string outputFolder) {
+	std::cout << std::endl << "COMPOSITE: PNG ROUND TRIP THROUGH A VIEW" << std::endl;
+
+	const int W = 8, H = 6;
+	std::vector<uint8_t> rgba(W * H * 4);
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++)
+			for (int c = 0; c < 4; c++)
+				rgba[(y * W + x) * 4 + c] = (uint8_t)((x * 5 + y * 3 + c) % 251);
+
+	std::array<int, 3> extent{ 4, W, H };
+	Image<uint8_t, 3> img(rgba.data(), extent);
+
+	// mirror the x axis (dim1 -- dim0 is channel here) before saving, to prove
+	// save() correctly flattens a non-contiguous/mirrored view before handing
+	// its bytes to the PNG encoder.
+	Image<uint8_t, 3> mirrored = img.mirror(1);
+	std::string path = outputFolder + "/ndl_png_roundtrip_view_test.png";
+	image_io::save(mirrored, path);
+
+	std::array<int, 3> loadedExtent;
+	std::vector<uint8_t> loaded = image_io::load(path, loadedExtent);
+
+	bool ok = loadedExtent == extent;
+	if (ok)
+	{
+		Image<uint8_t, 3> loadedImg(loaded.data(), loadedExtent);
+		for (int y = 0; y < H && ok; y++)
+			for (int x = 0; x < W && ok; x++)
+				for (int c = 0; c < 4 && ok; c++)
+					if (loadedImg(c, x, y) != img(c, W - 1 - x, y)) ok = false;
+	}
+	passfail << "png save() of a mirrored view() round trips to the mirrored pixel data: " << (ok ? "Pass" : "Fail") << std::endl;
 }
 
 void TestImages(std::stringstream& passfail, std::string inputFolder, std::string outputFolder)
@@ -1339,6 +1586,10 @@ int main()
     testImageExtentStride(passfail);
     testImageArithmeticOperators(passfail);
     testImageComparisonOperators(passfail);
+    testImageReductions(passfail);
+    testImageConvolution(passfail);
+    testImageArithmeticNonMutating(passfail);
+    testImagePngRoundtrip(passfail, tmpPath.string());
 
     // Image: composite operations
     testCompositeViewOfView(passfail);
@@ -1346,6 +1597,8 @@ int main()
     testCompositeMirrorThenSlice(passfail);
     testCompositeWriteThroughView(passfail);
     testSliceComposition(passfail);
+    testCompositeConvolveThenReduce(passfail);
+    testCompositePngWithView(passfail, tmpPath.string());
 
     // Matrix: individual operations
     testMatrixConstruction(passfail);

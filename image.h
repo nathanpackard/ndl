@@ -17,6 +17,10 @@
 
 namespace ndl
 {
+	// Border handling for Image::convolve() -- reuses the same _clamp/_wrap/_reflect
+	// primitives the iterator's clamp()/wrap()/reflect() accessors use for the same purpose.
+	enum class BorderMode { Clamp, Wrap, Reflect };
+
 	template <class T, int DIM>
 	class Image
 	{
@@ -268,6 +272,21 @@ namespace ndl
 		template<class U> Image& operator^=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::bit_xor<T>>(rhs); }
 		template<class U> Image& operator^=(const U rhs) { return mutableBinaryScalarOp<std::bit_xor<T>>(rhs); }
 		void logical_not() { mutableUnaryOp<std::logical_not<T>>(); }
+
+		// Non-mutating arithmetic: writes the result into a caller-provided
+		// output image instead of allocating one. A true operator+ returning
+		// a new Image would need to allocate memory somewhere, which
+		// conflicts with this class's whole design (it never owns memory --
+		// the caller always provides the buffer at construction); these are
+		// the explicit equivalent. output must share *this's extent.
+		template<class U> void add(const Image<U, DIM>& rhs, Image<T, DIM>& output) const { binaryImageOp<std::plus<T>>(rhs, output); }
+		template<class U> void add(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::plus<T>>(rhs, output); }
+		template<class U> void subtract(const Image<U, DIM>& rhs, Image<T, DIM>& output) const { binaryImageOp<std::minus<T>>(rhs, output); }
+		template<class U> void subtract(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::minus<T>>(rhs, output); }
+		template<class U> void multiply(const Image<U, DIM>& rhs, Image<T, DIM>& output) const { binaryImageOp<std::multiplies<T>>(rhs, output); }
+		template<class U> void multiply(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::multiplies<T>>(rhs, output); }
+		template<class U> void divide(const Image<U, DIM>& rhs, Image<T, DIM>& output) const { binaryImageOp<std::divides<T>>(rhs, output); }
+		template<class U> void divide(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::divides<T>>(rhs, output); }
 		template<class U> bool operator!= (const Image<U, DIM>& rhs) const { return !(*this == rhs); }
 		template<class U> bool operator!= (const U& rhs) const { return !(*this == rhs); }
 		template<class U> bool operator<= (const Image<U, DIM>& rhs) const { return !(rhs < *this); }
@@ -277,6 +296,49 @@ namespace ndl
 		template<class U> bool operator>= (const Image<U, DIM>& rhs) const { return !(*this < rhs); }
 		template<class U> bool operator>= (const U& rhs) const { return !(*this < rhs); }
 		std::size_t size() const { return std::accumulate(extent_.begin(), extent_.end(), std::size_t(1), std::multiplies<std::size_t>()); }
+
+		// Whole-image reductions: fold every element down to a single scalar.
+		// mean() returns double regardless of T so an integer image doesn't
+		// silently truncate; the others keep T since sum/min/max of T values
+		// are themselves meaningfully a T (matching the caller's own domain).
+		T sum() const {
+			T total{};
+			for (auto it = begin(); it != end(); ++it) total = static_cast<T>(total + *it);
+			return total;
+		}
+		T min() const {
+			assert(size() > 0);
+			auto it = begin();
+			T result = *it;
+			for (++it; it != end(); ++it) if (*it < result) result = *it;
+			return result;
+		}
+		T max() const {
+			assert(size() > 0);
+			auto it = begin();
+			T result = *it;
+			for (++it; it != end(); ++it) if (*it > result) result = *it;
+			return result;
+		}
+		double mean() const {
+			assert(size() > 0);
+			double total = 0;
+			for (auto it = begin(); it != end(); ++it) total += static_cast<double>(*it);
+			return total / static_cast<double>(size());
+		}
+
+		// Per-axis reductions (numpy's keepdims=True convention): output must
+		// already exist with *this's own extent except extent 1 along `axis`,
+		// so the result can be broadcast back against *this without reshaping.
+		// Caller owns output's memory, same as every other operation here.
+		void sum(int axis, Image<T, DIM>& output) const { axisReduceOp(axis, output, std::plus<T>{}); }
+		void min(int axis, Image<T, DIM>& output) const { axisReduceOp(axis, output, [](T a, T b) { return b < a ? b : a; }); }
+		void max(int axis, Image<T, DIM>& output) const { axisReduceOp(axis, output, [](T a, T b) { return b > a ? b : a; }); }
+		void mean(int axis, Image<T, DIM>& output) const {
+			sum(axis, output);
+			T count = static_cast<T>(extent_[axis]);
+			for (auto it = output.begin(); it != output.end(); ++it) *it = static_cast<T>(*it / count);
+		}
 
 		// human readable dump of the view's internal bookkeeping, useful when debugging strides/offsets
 		std::string to_string() const
@@ -472,6 +534,46 @@ namespace ndl
 			}
 			return Image<T, DIM>(*this, newOffset, newExtent, newStride, newMirror);
 		}
+		// Applies `kernel` to *this via correlation (the kernel is not flipped --
+		// the same convention OpenCV's filter2D uses, as opposed to signal
+		// processing's flipped-kernel definition), writing a same-size result
+		// into `output`, which must already exist with *this's own extent.
+		// Kernel indices are centered: extent K along a dimension covers
+		// offsets -(K/2) .. K-(K/2)-1 from the output element being computed,
+		// so an odd-sized kernel (e.g. 3x3) reaches an equal number of
+		// neighbors in each direction. `border` selects how an offset that
+		// falls outside *this is handled, via the same _clamp/_wrap/_reflect
+		// primitives the iterator's clamp()/wrap()/reflect() accessors use.
+		template<class K>
+		void convolve(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
+		{
+			assert(output.extent() == extent_);
+			std::array<int, DIM> center;
+			for (int i = 0; i < DIM; i++) center[i] = kernel.extent()[i] / 2;
+
+			for (const auto& coord : coordinates())
+			{
+				double total = 0;
+				for (const auto& kCoord : kernel.coordinates())
+				{
+					std::array<int, DIM> srcCoord;
+					for (int i = 0; i < DIM; i++)
+					{
+						int x = coord[i] + kCoord[i] - center[i];
+						switch (border)
+						{
+						case BorderMode::Wrap:    x = _wrap(extent_[i], x); break;
+						case BorderMode::Reflect: x = _reflect(extent_[i], x); break;
+						default:                  x = _clamp(extent_[i], x); break;
+						}
+						srcCoord[i] = x;
+					}
+					total += static_cast<double>(at(srcCoord)) * static_cast<double>(kernel.at(kCoord));
+				}
+				output.at(coord) = static_cast<T>(total);
+			}
+		}
+
 		std::vector<std::array<int, DIM>> coordinates() const {
 			std::vector<std::array<int, DIM>> allIndices;
 			std::array<int, DIM> indices = {};
@@ -628,6 +730,49 @@ namespace ndl
 			Op o;
 			for (auto it = begin(); it != end(); ++it) *it = static_cast<T>(o(*it));
 			return *this;
+		}
+		template<class Op, class U>
+		void binaryImageOp(const Image<U, DIM>& rhs, Image<T, DIM>& output) const {
+			assert(rhs.extent() == extent_);
+			assert(output.extent() == extent_);
+			Op o;
+			auto rhsIt = rhs.begin();
+			auto outIt = output.begin();
+			for (auto it = begin(); it != end(); ++it, ++rhsIt, ++outIt) *outIt = static_cast<T>(o(*it, *rhsIt));
+		}
+		template<class Op, class U>
+		void binaryScalarOp(const U rhs, Image<T, DIM>& output) const {
+			assert(output.extent() == extent_);
+			Op o;
+			auto outIt = output.begin();
+			for (auto it = begin(); it != end(); ++it, ++outIt) *outIt = static_cast<T>(o(*it, rhs));
+		}
+
+		// Shared by sum(axis,...)/min(axis,...)/max(axis,...): folds *this down
+		// to output along `axis` using `op` as the pairwise combiner. Relies on
+		// generateCoordinates()'s fixed nested-loop order (dimension DIM-1
+		// outermost, dimension 0 innermost): for any fixed combination of the
+		// non-`axis` dimensions, coordinates with index 0 along `axis` are
+		// always produced before coordinates with a higher index along `axis`
+		// (the `axis` loop is strictly outside every loop below it, so its
+		// index-0 pass over the inner dimensions completes before index 1
+		// starts) -- so a single pass can seed output on the first visit to
+		// each output cell and fold every subsequent visit into it, with no
+		// separate initialization pass and no dependency on T having an
+		// identity element for `op`.
+		template<class Op>
+		void axisReduceOp(int axis, Image<T, DIM>& output, Op op) const {
+			assert(axis >= 0 && axis < DIM);
+			assert(output.extent()[axis] == 1);
+			for (int i = 0; i < DIM; i++) assert(i == axis || output.extent()[i] == extent_[i]);
+
+			for (const auto& coord : coordinates())
+			{
+				auto outCoord = coord;
+				outCoord[axis] = 0;
+				if (coord[axis] == 0) output.at(outCoord) = at(coord);
+				else output.at(outCoord) = static_cast<T>(op(output.at(outCoord), at(coord)));
+			}
 		}
 
 		// protected internal variables
