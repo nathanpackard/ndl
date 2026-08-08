@@ -1,21 +1,9 @@
 #include <gtest/gtest.h>
 #include <vector>
-#include <algorithm>
-#include <iostream>
 #include <sstream>
-#include <cstdint>
-#include <type_traits>
-#include <initializer_list>
-#include <cmath>
-#include <set>
-#include <functional>
-#include <filesystem>
+#include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/imageIO.h>
-#include <ndl/utility.h>
-#include <ndl/mathHelpers.h>
-#include <ndl/matrix.h>
 
 #include "testHelpers.h"
 

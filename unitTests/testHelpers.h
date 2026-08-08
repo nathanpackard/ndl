@@ -8,8 +8,6 @@
 #include <cmath>
 #include <ndl/image.h>
 
-using namespace ndl;
-
 // Shared helpers used across the split-out test files (originally all
 // defined once at the top of unitTests.cpp). Kept byte-identical to their
 // original bodies -- only reportPassFail() below is new, added as the
@@ -21,12 +19,22 @@ using namespace ndl;
 // failure (via ADD_FAILURE(), so one failing check doesn't abort the
 // others in the same TEST) while printing every line either way, matching
 // the original tool's visible output.
-std::vector<int> genLinVec(int size) {
+//
+// Every function here is `inline` -- this header is included by several
+// independent test executables' translation units, and while each one
+// today happens to include it exactly once, `inline` is what actually
+// makes that safe (no multiple-definition risk if that ever changes)
+// rather than relying on it staying true by convention. Deliberately not
+// `using namespace ndl;` at this header's scope, unlike each .cpp file's
+// own explicit using-directive -- a shared header pulling a namespace into
+// every includer's global scope is a surprise callers didn't ask for, so
+// Image is qualified as ndl::Image here instead.
+inline std::vector<int> genLinVec(int size) {
     std::vector<int> v(size);
     std::iota(v.begin(), v.end(), int(1));
     return v;
 }
-std::vector<int> generateFlattenedArray(const std::initializer_list<int>& sizes) {
+inline std::vector<int> generateFlattenedArray(const std::initializer_list<int>& sizes) {
     // Convert initializer_list to vector
     std::vector<int> sizesVec(sizes);
 
@@ -70,7 +78,7 @@ std::vector<int> generateFlattenedArray(const std::initializer_list<int>& sizes)
     return result;
 }
 template<typename T, int DIM>
-void passFailCheck(std::stringstream& passfail, const Image<T, DIM>& image, const std::vector<int>& refVec, const std::string testName) {
+void passFailCheck(std::stringstream& passfail, const ndl::Image<T, DIM>& image, const std::vector<int>& refVec, const std::string testName) {
     bool testPassed = true;
     int total = 0;
     for (const auto &index : image.coordinates())
@@ -94,7 +102,7 @@ void passFailCheck(std::stringstream& passfail, const Image<T, DIM>& image, cons
 		}
 	}
 }
-void displayBorderTests(Image<unsigned short, 3>& image3D) {
+inline void displayBorderTests(ndl::Image<unsigned short, 3>& image3D) {
 	std::cout << "value: " << std::endl;
 	std::cout << "-2 x clamp: " << image3D.begin().clamp(-2, 0);
 	std::cout << "-2 x wrap: " << image3D.begin().wrap(-2, 0);

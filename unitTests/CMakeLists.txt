@@ -1,15 +1,22 @@
 # GoogleTest, fetched and built alongside the project rather than requiring
 # a system package -- reproducible across machines/CI without an extra
 # install step, the approach Google's own docs recommend for CMake.
+# GIT_SHALLOW avoids pulling the repo's full history for a single pinned tag.
 include(FetchContent)
 FetchContent_Declare(
     googletest
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_TAG v1.15.2
+    GIT_SHALLOW TRUE
 )
 # Windows-only knob (keeps gtest's runtime library choice in sync with the
 # rest of the build); harmless to set unconditionally on other platforms.
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+# Only GTest::gtest_main is used below (no mocking) -- skip building gmock
+# and skip generating install rules for a dependency this project doesn't
+# ship or install itself.
+set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 include(GoogleTest)

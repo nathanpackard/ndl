@@ -1,21 +1,13 @@
 #include <gtest/gtest.h>
 #include <vector>
+#include <array>
 #include <algorithm>
-#include <iostream>
-#include <sstream>
-#include <cstdint>
-#include <type_traits>
-#include <initializer_list>
 #include <cmath>
-#include <set>
-#include <functional>
-#include <filesystem>
+#include <complex>
+#include <sstream>
+#include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/imageIO.h>
-#include <ndl/utility.h>
-#include <ndl/mathHelpers.h>
-#include <ndl/matrix.h>
 #include <ndl/fft.h>
 
 #include "testHelpers.h"
@@ -132,7 +124,7 @@ TEST(FFT, FFTImageRoundTrip) {
 		std::vector<std::complex<double>> inData((size_t)W * H);
 		Image<std::complex<double>, 2> in(inData.data(), { W, H });
 		int i = 0;
-		for (auto it = in.begin(); it != in.end(); ++it) *it = std::complex<double>((++i) * 0.37, i * -0.11);
+		for (auto it = in.begin(); it != in.end(); ++it) { ++i; *it = std::complex<double>(i * 0.37, i * -0.11); }
 
 		std::vector<std::complex<double>> freqData((size_t)W * H), backData((size_t)W * H);
 		Image<std::complex<double>, 2> freq(freqData.data(), { W, H }), back(backData.data(), { W, H });

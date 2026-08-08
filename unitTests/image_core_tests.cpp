@@ -1,21 +1,13 @@
 #include <gtest/gtest.h>
 #include <vector>
+#include <array>
 #include <algorithm>
-#include <iostream>
-#include <sstream>
-#include <cstdint>
-#include <type_traits>
-#include <initializer_list>
-#include <cmath>
 #include <set>
-#include <functional>
-#include <filesystem>
+#include <sstream>
+#include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/imageIO.h>
 #include <ndl/utility.h>
-#include <ndl/mathHelpers.h>
-#include <ndl/matrix.h>
 
 #include "testHelpers.h"
 
@@ -223,7 +215,7 @@ TEST(ImageCore, ImageLibraryAccuracy) {
 
 	std::cout << std::endl;
 	Image<double, 3> result(roi1);
-	double basetime = code_timer("roi1 convolution", [&]() -> void
+	code_timer("roi1 convolution", [&]() -> void
 	{
 		auto resultit = result.begin();
 		for (auto it = roi1.begin(); it != roi1.end(); ++it)

@@ -66,7 +66,11 @@ if(NDL_BUILD_DEMOS)
     if(NDL_BUILD_TESTS)
         foreach(demo_target multiview convolution morphology)
             add_test(NAME demo_${demo_target} COMMAND ${demo_target} WORKING_DIRECTORY $<TARGET_FILE_DIR:${demo_target}>)
-            set_tests_properties(demo_${demo_target} PROPERTIES LABELS "smoke")
+            # TIMEOUT is a safety net, not a tuned budget: convolution (the
+            # slowest) takes ~10s on a throttled CPU, so 120s leaves ample
+            # headroom while still failing a future hang (e.g. an infinite
+            # loop regression) instead of blocking ctest indefinitely.
+            set_tests_properties(demo_${demo_target} PROPERTIES LABELS "smoke" TIMEOUT 120)
         endforeach()
     endif()
 endif()
