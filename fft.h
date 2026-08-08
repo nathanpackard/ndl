@@ -341,6 +341,7 @@ namespace ndl
 		namespace detail
 		{
 			inline bool isPowerOfTwo(int n) { return n > 0 && (n & (n - 1)) == 0; }
+			inline int nextPowerOfTwo(int n) { int p = 1; while (p < n) p <<= 1; return p; }
 
 			// One representative coordinate per "fiber" along `axis`: every
 			// other dimension enumerated over its full range, with `axis`
@@ -376,11 +377,123 @@ namespace ndl
 			}
 		}
 
+		// Bluestein's algorithm (the chirp-z transform): computes a complex
+		// DFT of ANY size N -- not just a power of two -- by rewriting the
+		// DFT sum via the identity 2kn = k^2 + n^2 - (k-n)^2:
+		//
+		//   e^{-i2*pi*kn/N} = w[k] * w[n] * conj(w[k-n]),  w[m] = e^{-i*pi*m^2/N}
+		//
+		// which turns X[k] = sum_n x[n]*e^{-i2*pi*kn/N} into
+		// X[k] = w[k] * sum_n (x[n]*w[n]) * conj(w[k-n]) -- a single LINEAR
+		// convolution of an N-point sequence against a symmetric 2N-1-point
+		// chirp kernel, evaluated at k=0..N-1. A linear convolution is
+		// exactly what a zero-padded CIRCULAR convolution computes (as long
+		// as the padded length M >= 2N-1, so the wraparound never aliases
+		// into the range being read), and a circular convolution is just
+		// IFFT(FFT(a) .* FFT(b)) -- so this reduces an arbitrary-size DFT to
+		// one padded power-of-two-size DFT, reusing FFT<Real,MaxPo2Size>
+		// above rather than needing a second transform implementation. M
+		// still has to be a power of two <= MaxPo2Size, so an N whose
+		// padded size 2N-1 rounds up past MaxPo2Size needs a larger
+		// MaxPo2Size passed to fftn()/ifftn(), same as an oversized
+		// power-of-two N already would.
+		//
+		// The inverse transform is derived from the forward one via the
+		// standard conjugate identity (ifft_N(x)[k] = conj(fft_N(conj(x)))[k]
+		// / N) rather than a second, separately-derived chirp construction
+		// -- one code path to get right and cross-check against a
+		// brute-force reference DFT, not two.
+		//
+		// Unlike FFT<Real,MaxPo2Size> above (which takes a caller-owned
+		// scratch buffer, this library's usual convention), this class owns
+		// its own scratch via plain std::vectors, resized only when N
+		// changes: Bluestein's several differently-sized intermediate
+		// buffers (the padded FFT engine's own scratch, the N-point chirp
+		// table, the M-point padded kernel's own transform) make
+		// hand-computed raw-pointer offsets significantly more error-prone
+		// than the simpler classes above, and fftn() below already manages
+		// its own thread_local buffers rather than exposing every byte to
+		// its caller -- so this doesn't introduce a new convention at that
+		// level, just at this one, more complex, class.
+		template<class Real, int MaxPo2Size>
+		class FFTBluestein
+		{
+		public:
+			FFTBluestein() : engineScratch(MaxPo2Size * 4), engine(engineScratch.data()) { }
+
+			void fft(int n, std::complex<Real>* input, std::complex<Real>* output)
+			{
+				ensure(n);
+				for (int i = 0; i < n; i++) a[i] = input[i] * w[i];
+				for (int i = n; i < M; i++) a[i] = std::complex<Real>(0, 0);
+				engine.fft(M, a.data(), A.data());
+				for (int i = 0; i < M; i++) A[i] *= Bfreq[i];
+				engine.ifft(M, A.data(), c.data());
+				for (int k = 0; k < n; k++) output[k] = w[k] * c[k];
+			}
+			void ifft(int n, std::complex<Real>* input, std::complex<Real>* output)
+			{
+				conjBuf.resize(n);
+				for (int i = 0; i < n; i++) conjBuf[i] = std::conj(input[i]);
+				fft(n, conjBuf.data(), output);
+				Real invN = Real(1) / n;
+				for (int k = 0; k < n; k++) output[k] = std::conj(output[k]) * invN;
+			}
+
+		private:
+			// Recomputes the chirp table w[], the padded convolution kernel
+			// bpad, and its transform Bfreq -- everything that depends on N
+			// but not on the actual sample values -- only when N changes,
+			// the same "skip recompute on repeat calls" pattern
+			// FFT::update_complex_twiddles() above uses for its own
+			// twiddle factors.
+			void ensure(int n)
+			{
+				if (n == N) return;
+				N = n;
+				M = detail::nextPowerOfTwo(2 * n - 1);
+				if (M > MaxPo2Size)
+					throw std::invalid_argument("FFTBluestein: size " + std::to_string(n) + " needs a padded transform of " + std::to_string(M) + " points, which exceeds MaxPo2Size=" + std::to_string(MaxPo2Size) + " -- pass a larger MaxPo2Size to fftn()/ifftn()");
+
+				w.resize(n);
+				for (int k = 0; k < n; k++)
+				{
+					double angle = -M_PI * double(k) * double(k) / double(n);
+					w[k] = std::complex<Real>((Real)cos(angle), (Real)sin(angle));
+				}
+
+				std::vector<std::complex<Real>> bpad(M, std::complex<Real>(0, 0));
+				bpad[0] = std::complex<Real>(1, 0);
+				for (int k = 1; k < n; k++)
+				{
+					double angle = M_PI * double(k) * double(k) / double(n);
+					std::complex<Real> bv((Real)cos(angle), (Real)sin(angle));
+					bpad[k] = bv;
+					bpad[M - k] = bv;
+				}
+				Bfreq.resize(M);
+				engine.fft(M, bpad.data(), Bfreq.data());
+
+				a.resize(M);
+				A.resize(M);
+				c.resize(M);
+			}
+
+			std::vector<Real> engineScratch;
+			FFT<Real, MaxPo2Size> engine;
+			int N = 0, M = 0;
+			std::vector<std::complex<Real>> w, Bfreq, a, A, c, conjBuf;
+		};
+
 		// Separable N-dimensional FFT/IFFT on an Image: transforms along every
 		// axis in turn, one full 1D FFT per fiber of that axis (the standard
 		// row/column/etc. decomposition of an ND DFT into independent 1D
-		// DFTs) -- output must already exist with input's own extent, and
-		// every dimension's extent must be a power of two (asserted).
+		// DFTs) -- output must already exist with input's own extent. Any
+		// dimension's extent works (via FFTBluestein above for non-power-of-
+		// two sizes), though a power of two is faster; a size whose padded
+		// Bluestein transform would exceed MaxPo2Size throws
+		// std::invalid_argument (see FFTBluestein::ensure()) naming the
+		// offending size, rather than silently producing wrong output.
 		//
 		// The 1D transform itself (FFT<Real,MaxPo2Size>::fft/ifft) is
 		// deliberately NOT parallelized internally -- it's the *fibers* that
@@ -405,30 +518,59 @@ namespace ndl
 			for (int axis = 0; axis < DIM; axis++)
 			{
 				int n = output.extent()[axis];
-				// A real, always-on check, not assert(): FFTPowerOfTwo<Real,MaxPo2Size>
-				// recurses by repeatedly halving MaxPo2Size looking for an exact match
-				// to n, and silently falls through to its N=0 base case (a no-op) if
-				// n never divides down to a power of two -- so a non-power-of-two n
-				// doesn't crash or corrupt memory, it just leaves `output` filled with
-				// whatever std::vector<complex> value-initialized to (all-zero),
-				// silently, with no error at all in a Release build where assert() is
-				// compiled out. Confirmed empirically before fixing: fftn() on a
-				// 100-element input returns a silently all-zero spectrum under -DNDEBUG.
-				if (!detail::isPowerOfTwo(n))
-					throw std::invalid_argument("fftn: dimension " + std::to_string(axis) + " has extent " + std::to_string(n) + ", which is not a power of two -- every dimension's extent must be a power of two");
+				// Every dimension's extent used to have to be an exact power
+				// of two -- FFTPowerOfTwo<Real,MaxPo2Size> recurses by
+				// repeatedly halving MaxPo2Size looking for an exact match to
+				// n, and silently falls through to its N=0 base case (a
+				// no-op) for anything else, so a non-power-of-two n used to
+				// silently leave `output` all-zero with no error at all in a
+				// Release build (confirmed empirically: fftn() on a
+				// 100-element input returned a silently all-zero spectrum
+				// under -DNDEBUG, before this was fixed). Now, non-power-of-
+				// two dimensions go through FFTBluestein above instead --
+				// still correct, just several times more work than the direct
+				// power-of-two path (one padded FFT/IFFT pair plus the O(n)
+				// chirp setup, versus one direct FFT/IFFT), so the fast path
+				// stays the default for the common case and this is strictly
+				// additive.
+				bool po2 = detail::isPowerOfTwo(n);
+				// Checked here, sequentially, rather than left to
+				// FFTBluestein::ensure()'s own throw when the first fiber
+				// below hits it: an exception thrown from inside a
+				// std::execution::par callable doesn't propagate to the
+				// caller at all -- the standard mandates std::terminate()
+				// instead (confirmed empirically: this exact
+				// invalid_argument, thrown from inside the parallel
+				// for_each, aborted the whole process instead of being
+				// catchable). FFTBluestein keeps its own check too, for
+				// when it's used directly outside a parallel context.
+				if (!po2 && detail::nextPowerOfTwo(2 * n - 1) > MaxPo2Size)
+				{
+					int neededM = detail::nextPowerOfTwo(2 * n - 1);
+					throw std::invalid_argument("fftn: dimension " + std::to_string(axis) + " has extent " + std::to_string(n) + ", whose Bluestein-padded transform needs " + std::to_string(neededM) + " points, which exceeds MaxPo2Size=" + std::to_string(MaxPo2Size) + " -- pass a larger MaxPo2Size to fftn()/ifftn()");
+				}
 
 				auto origins = detail::fiberOrigins<DIM>(output.extent(), axis);
 				std::for_each(std::execution::par, origins.begin(), origins.end(), [&](const std::array<int, DIM>& origin)
 				{
 					thread_local std::vector<Real> engineScratch(MaxPo2Size * 4);
 					thread_local FFT<Real, MaxPo2Size> engine(engineScratch.data());
+					thread_local FFTBluestein<Real, MaxPo2Size> bluesteinEngine;
 
 					std::vector<std::complex<Real>> fiber(n), transformed(n);
 					std::array<int, DIM> coord = origin;
 					for (int i = 0; i < n; i++) { coord[axis] = i; fiber[i] = output.at(coord); }
 
-					if (inverse) engine.ifft(n, fiber.data(), transformed.data());
-					else engine.fft(n, fiber.data(), transformed.data());
+					if (po2)
+					{
+						if (inverse) engine.ifft(n, fiber.data(), transformed.data());
+						else engine.fft(n, fiber.data(), transformed.data());
+					}
+					else
+					{
+						if (inverse) bluesteinEngine.ifft(n, fiber.data(), transformed.data());
+						else bluesteinEngine.fft(n, fiber.data(), transformed.data());
+					}
 
 					for (int i = 0; i < n; i++) { coord[axis] = i; output.at(coord) = transformed[i]; }
 				});

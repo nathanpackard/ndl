@@ -221,29 +221,94 @@ TEST(FFT, FFTMatchesSpatialConvolution) {
 	reportPassFail(passfail);
 }
 
-TEST(FFT, NonPowerOfTwoSizeThrows) {
-	// fftn()/ifftn() require every dimension's extent to be a power of two
-	// (the Cooley-Tukey decomposition in FFTPowerOfTwo below has no path
-	// for anything else). This used to be an assert() -- compiled out in a
-	// Release build, silently leaving `output` all-zero instead of erroring
-	// (confirmed empirically before fixing: a 100-element fftn() call
-	// returned a silently all-zero spectrum under -DNDEBUG). Now it's an
-	// always-on check that throws regardless of NDEBUG.
-	// Wrapped in lambdas below: EXPECT_THROW/EXPECT_NO_THROW are macros, and
-	// the comma inside fftn<double, 1>(...)'s template argument list would
-	// otherwise be parsed as an extra macro argument.
-	const int N = 100; // not a power of two
+TEST(FFT, NonPowerOfTwoSizeComputesCorrectly) {
+	// fftn()/ifftn() no longer require a power-of-two extent -- non-power-
+	// of-two dimensions now go through FFTBluestein (fft.h) instead of the
+	// direct Cooley-Tukey path. This used to be a debug-only assert() that
+	// left a silently all-zero `output` in a Release build for a
+	// non-power-of-two size (confirmed empirically before it was fixed: a
+	// 100-element fftn() call returned an all-zero spectrum under -DNDEBUG)
+	// -- first fixed to throw a clear error, and now to actually compute
+	// the right answer instead, cross-checked here against the same
+	// brute-force reference DFT the power-of-two tests above use.
+	std::stringstream passfail;
+	for (int N : {3, 5, 6, 7, 12, 13, 100, 101}) {
+		std::vector<std::complex<double>> time(N);
+		for (int i = 0; i < N; i++) time[i] = std::complex<double>(std::sin(i * 0.7) + 1.3, std::cos(i * 0.3) - 0.4);
+
+		std::vector<std::complex<double>> freqData(N);
+		Image<std::complex<double>, 1> timeImg(time.data(), { N });
+		Image<std::complex<double>, 1> freqImg(freqData.data(), { N });
+		fftn<double, 1>(timeImg, freqImg);
+
+		auto expected = bruteForceDFT(time, false);
+		double err = maxAbsDiff(freqData, expected);
+		passfail << "fftn() on non-power-of-two N=" << N << " matches brute-force DFT: " << (err < 1e-9 ? "Pass" : "Fail") << std::endl;
+
+		std::vector<std::complex<double>> roundTripData(N);
+		Image<std::complex<double>, 1> roundTripImg(roundTripData.data(), { N });
+		ifftn<double, 1>(freqImg, roundTripImg);
+		double rtErr = maxAbsDiff(roundTripData, time);
+		passfail << "fftn/ifftn round trips non-power-of-two N=" << N << ": " << (rtErr < 1e-9 ? "Pass" : "Fail") << std::endl;
+	}
+	reportPassFail(passfail);
+}
+
+TEST(FFT, NonPowerOfTwoMixedWithPowerOfTwoAxis) {
+	// fftn() is separable -- one independent 1D transform per axis -- so a
+	// 2D image with one power-of-two axis (the fast Cooley-Tukey path) and
+	// one non-power-of-two axis (Bluestein) needs its own cross-check: nothing
+	// above exercises both paths within a single multi-dimensional transform.
+	const int W = 6, H = 8; // W non-power-of-two, H power-of-two
+	std::vector<std::complex<double>> time(W * H);
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++)
+			time[y * W + x] = std::complex<double>(std::sin(x * 0.5 + y * 0.2), std::cos(x * 0.3 - y * 0.4));
+
+	Image<std::complex<double>, 2> timeImg(time.data(), { W, H });
+	std::vector<std::complex<double>> freqData(W * H);
+	Image<std::complex<double>, 2> freqImg(freqData.data(), { W, H });
+	fftn<double, 2>(timeImg, freqImg);
+
+	// Direct 2D DFT reference (separate from fftn()'s own separable
+	// row/column implementation, same spirit as bruteForceDFT() above).
+	double maxErr = 0;
+	for (int ky = 0; ky < H; ky++)
+		for (int kx = 0; kx < W; kx++)
+		{
+			std::complex<double> sum(0, 0);
+			for (int y = 0; y < H; y++)
+				for (int x = 0; x < W; x++)
+				{
+					double angle = -2.0 * M_PI * (double(kx) * x / W + double(ky) * y / H);
+					sum += time[y * W + x] * std::complex<double>(cos(angle), sin(angle));
+				}
+			maxErr = std::max(maxErr, std::abs(sum - freqData[ky * W + kx]));
+		}
+	EXPECT_LT(maxErr, 1e-9);
+
+	std::vector<std::complex<double>> roundTripData(W * H);
+	Image<std::complex<double>, 2> roundTripImg(roundTripData.data(), { W, H });
+	ifftn<double, 2>(freqImg, roundTripImg);
+	double rtErr = maxAbsDiff(roundTripData, time);
+	EXPECT_LT(rtErr, 1e-9);
+}
+
+TEST(FFT, OversizedNonPowerOfTwoThrows) {
+	// The one case that still throws: a non-power-of-two N whose padded
+	// Bluestein transform (the next power of two >= 2N-1) would exceed
+	// fftn()'s MaxPo2Size -- explicitly requesting a tiny MaxPo2Size here
+	// (rather than the 8192 default) makes an otherwise-ordinary N trigger
+	// it, without needing an impractically large test array. N=3 needs a
+	// padded size of nextPowerOfTwo(2*3-1)=nextPowerOfTwo(5)=8 exactly.
+	const int N = 3;
 	std::vector<std::complex<double>> inData(N), outData(N);
 	Image<std::complex<double>, 1> in(inData.data(), { N });
 	Image<std::complex<double>, 1> out(outData.data(), { N });
-	auto callNonPowerOfTwo = [&]() { fftn<double, 1>(in, out); };
-	EXPECT_THROW(callNonPowerOfTwo(), std::invalid_argument);
+	auto callTooSmallBound = [&]() { fftn<double, 1, 4>(in, out); }; // MaxPo2Size=4 < needed 8
+	EXPECT_THROW(callTooSmallBound(), std::invalid_argument);
 
-	const int N2 = 128; // a power of two -- should NOT throw
-	std::vector<std::complex<double>> inData2(N2), outData2(N2);
-	Image<std::complex<double>, 1> in2(inData2.data(), { N2 });
-	Image<std::complex<double>, 1> out2(outData2.data(), { N2 });
-	auto callPowerOfTwo = [&]() { fftn<double, 1>(in2, out2); };
-	EXPECT_NO_THROW(callPowerOfTwo());
+	auto callSufficientBound = [&]() { fftn<double, 1, 8>(in, out); }; // MaxPo2Size=8, exactly enough
+	EXPECT_NO_THROW(callSufficientBound());
 }
 
