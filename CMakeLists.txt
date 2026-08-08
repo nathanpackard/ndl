@@ -47,4 +47,26 @@ if(NDL_BUILD_DEMOS)
     add_subdirectory(demo/multiview)
     add_subdirectory(demo/convolution)
     add_subdirectory(demo/morphology)
+
+    # Smoke tests: each demo is a real, multi-step pipeline (image I/O,
+    # convolution, FFT, morphology) the unit tests don't exercise end-to-end
+    # -- e.g. the OwnedImage/is_image_like overload-resolution bug found
+    # earlier this project only surfaced when the convolution demo failed to
+    # *compile*, not from any unit test. These don't check the demos'
+    # output values -- that's the demos' own job, meant for a human to
+    # read/view the printed explanations and saved PNGs -- just that each
+    # one runs to completion without crashing or throwing (nonzero exit).
+    #
+    # Labeled "smoke" rather than left unlabeled alongside the unit tests:
+    # each takes several seconds and writes real PNG files, so a plain
+    # `ctest` (which runs every registered test regardless of label --
+    # labels only ever *filter*, they don't opt a test out of the default
+    # run) would still include them. Use `ctest -LE smoke` for the fast,
+    # unit-tests-only loop, and `ctest -L smoke` to run just these.
+    if(NDL_BUILD_TESTS)
+        foreach(demo_target multiview convolution morphology)
+            add_test(NAME demo_${demo_target} COMMAND ${demo_target} WORKING_DIRECTORY $<TARGET_FILE_DIR:${demo_target}>)
+            set_tests_properties(demo_${demo_target} PROPERTIES LABELS "smoke")
+        endforeach()
+    endif()
 endif()
