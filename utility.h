@@ -61,29 +61,29 @@ namespace ndl
 	public:
 		explicit Timer(bool run = false)
 		{
-			if (run) Reset();
+			if (run) reset();
 		}
-		void Reset()
+		void reset()
 		{
 			_start = high_resolution_clock::now();
 		}
-		milliseconds Elapsed() const
+		milliseconds elapsed() const
 		{
 			return std::chrono::duration_cast<milliseconds>(high_resolution_clock::now() - _start);
 		}
 		template <typename T, typename Traits>
 		friend std::basic_ostream<T, Traits>& operator<<(std::basic_ostream<T, Traits>& out, const Timer& timer)
 		{
-			return out << timer.Elapsed().count();
+			return out << timer.elapsed().count();
 		}
 	private:
 		high_resolution_clock::time_point _start;
 	};
-	double codeTimer(std::string text, std::function<void()> func_obj, int iterations = 1)
+	double code_timer(std::string text, std::function<void()> func_obj, int iterations = 1)
 	{
 		Timer timer(true);
 		for (int i = 0; i < iterations; i++) func_obj();
-		double time = timer.Elapsed().count();
+		double time = timer.elapsed().count();
 		if (iterations == 1) std::cout << text << " took " << timer << " milliseconds." << std::endl;
 		else std::cout << iterations << " iterations of " << text << " took " << timer << " milliseconds." << std::endl;
 		return time;

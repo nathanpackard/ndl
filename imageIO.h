@@ -10,9 +10,9 @@
 
 namespace ndl
 {
-	namespace ImageIO
+	namespace image_io
 	{
-		std::vector<uint8_t> Load(std::string fileName, std::array<int, 3>& extent)
+		std::vector<uint8_t> load(std::string fileName, std::array<int, 3>& extent)
 		{
 			extent = { 0, 0, 0 };
 			std::string extension = "";
@@ -34,10 +34,7 @@ namespace ndl
 				FILE *f;
 				printf("Opening the input file: %s.\n", fileName.c_str());
 				f = fopen(fileName.c_str(), "rb");
-				if (!f) {
-					printf("Error opening the input file.\n");
-					return std::vector<uint8_t>();
-				}
+				if (!f) throw std::runtime_error("failed to open input file: " + fileName);
 				fseek(f, 0, SEEK_END);
 				size = ftell(f);
 				buf = (unsigned char*)malloc(size);
@@ -46,16 +43,14 @@ namespace ndl
 				fclose(f);
 				if (bytesRead != size)
 				{
-					printf("Error reading the input file\n");
 					free(buf);
-					return std::vector<uint8_t>();
+					throw std::runtime_error("failed to read input file: " + fileName);
 				}
 				Decoder decoder(buf, size);
 				if (decoder.GetResult() != Decoder::OK)
 				{
-					printf("Error decoding the input file\n");
 					free(buf);
-					return std::vector<uint8_t>();
+					throw std::runtime_error("failed to decode jpeg: " + fileName);
 				}
 				printf("width: %d\r\n", decoder.GetWidth());
 				printf("height: %d\r\n", decoder.GetHeight());
@@ -82,7 +77,7 @@ namespace ndl
 				Image<uint8_t, 3> result(resultData.data(), extent);
 				int x = 0;
 				auto i = bmp.data.begin();
-				Image<uint8_t, 3> flipped = result({}, {}, {1, 1, -1});
+				Image<uint8_t, 3> flipped = result.view({}, {}, {1, 1, -1});
 				for (auto r = flipped.begin(); r != flipped.end(); ++r)
 				{
 					*r = *i;
@@ -101,7 +96,7 @@ namespace ndl
 		}
 
 		template<class T, int DIM>
-		std::vector<T> LoadRaw(std::string rawFileName, std::array<int, DIM> extent, int offsetBytes)
+		std::vector<T> load_raw(std::string rawFileName, std::array<int, DIM> extent, int offsetBytes)
 		{
 			std::vector<T> result(std::accumulate(extent.begin(), extent.end(), 1, std::multiplies<int>()));
 			std::ifstream is;
@@ -114,16 +109,16 @@ namespace ndl
 		}
 
 		template<class T, int DIM>
-		void SaveRaw(Image<T, DIM> source, std::string rawFileName)
+		void save_raw(const Image<T, DIM>& source, std::string rawFileName)
 		{
 			std::cout << "saving output file: " << rawFileName << std::endl;
 			std::ofstream ofile(rawFileName, std::ios::binary);
-			for (auto it = source.begin(); it != source.end(); ++it) ofile.write((char*)it.Pointer(), sizeof(T));
+			for (auto it = source.begin(); it != source.end(); ++it) ofile.write((const char*)it.get(), sizeof(T));
 			ofile.close();
 		}
 
-		template<class T> 
-		std::vector<T> LoadDicom(std::string filename, std::array<int, 3>& extent, bool openAllInFolder = false)
+		template<class T>
+		std::vector<T> load_dicom(std::string filename, std::array<int, 3>& extent, bool openAllInFolder = false)
 		{
 			dicom image;
 			std::replace(filename.begin(), filename.end(), '\\', '/'); // replace all 'x' to 'y'
@@ -189,7 +184,7 @@ namespace ndl
 		}
 
 		template<class T, int DIM>
-		void Save(Image<T, DIM>& image, std::string fileName)
+		void save(const Image<T, DIM>& image, std::string fileName)
 		{
 			std::string extension = "";
 			size_t pos = fileName.find_last_of(".");
@@ -211,31 +206,31 @@ namespace ndl
 			if (extension == "nrrd")
 			{
 				std::cout << "saving output file: " << fileName << std::endl;
-				NRRD::save(fileName, data.data(), DIM, image.Extent.data());
-			} 
+				NRRD::save(fileName, data.data(), DIM, image.extent().data());
+			}
 			else if (extension == "bmp")
 			{
 				std::cout << "saving output file: " << fileName << std::endl;
 				bitmap bmp;
-				if (DIM == 3) 
+				if (DIM == 3)
 				{
-					bmp.bmih.biWidth = image.Extent[1];
-					bmp.bmih.biHeight = image.Extent[2];
-					if (image.Extent[0] == 3) bmp.bmih.biBitCount = 24;
-					else if (image.Extent[0] == 4) bmp.bmih.biBitCount = 32;
-					else if (image.Extent[0] == 1) bmp.bmih.biBitCount = 8;
+					bmp.bmih.biWidth = image.extent()[1];
+					bmp.bmih.biHeight = image.extent()[2];
+					if (image.extent()[0] == 3) bmp.bmih.biBitCount = 24;
+					else if (image.extent()[0] == 4) bmp.bmih.biBitCount = 32;
+					else if (image.extent()[0] == 1) bmp.bmih.biBitCount = 8;
 					else throw std::runtime_error("the first dimensions for 3D represents color, an unsupported number of colors was selected");
-					auto flipped = image({}, {}, {1, 1, -1});
-					int padding = (4 - ((bmp.bmih.biWidth * image.Extent[0]) % 4)) % 4;
+					auto flipped = image.view({}, {}, {1, 1, -1});
+					int padding = (4 - ((bmp.bmih.biWidth * image.extent()[0]) % 4)) % 4;
 					int x = 0;
-					bmp.data = std::vector<unsigned char>((bmp.bmih.biWidth + padding) * bmp.bmih.biHeight * (image.Extent[0]));
+					bmp.data = std::vector<unsigned char>((bmp.bmih.biWidth + padding) * bmp.bmih.biHeight * (image.extent()[0]));
 					auto i = bmp.data.begin();
 					for (auto r = flipped.begin(); r != flipped.end(); ++r)
 					{
 						*i = *r;
 						++i;
 						++x;
-						if (x >= bmp.bmih.biWidth * image.Extent[0])
+						if (x >= bmp.bmih.biWidth * image.extent()[0])
 						{
 							x = 0;
 							i += padding;
@@ -245,10 +240,10 @@ namespace ndl
 				}
 				else if (DIM == 2)
 				{
-					bmp.bmih.biWidth = image.Extent[0];
-					bmp.bmih.biHeight = image.Extent[1];
+					bmp.bmih.biWidth = image.extent()[0];
+					bmp.bmih.biHeight = image.extent()[1];
 					bmp.bmih.biBitCount = 8;
-					auto flipped = image({}, {}, {1, -1});
+					auto flipped = image.view({}, {}, {1, -1});
 					int padding = (4 - (bmp.bmih.biWidth % 4)) % 4;
 					int x = 0;
 					bmp.data = std::vector<unsigned char>((bmp.bmih.biWidth + padding) * bmp.bmih.biHeight);
@@ -269,14 +264,14 @@ namespace ndl
 				else throw std::runtime_error("unsupported dimension");
 				bmp.save_to_file(fileName.c_str());
 			}
-			else 
+			else
 			{
 				std::cerr << "couldn't save: " << fileName << "\n";
 			}
 		}
 
 		template<class T, int DIM>
-		std::vector<T> LoadNrrd(std::array<int, DIM>& extent, std::string fileName)
+		std::vector<T> load_nrrd(std::array<int, DIM>& extent, std::string fileName)
 		{
 			T* data;
 			std::vector<int> extentVector(DIM);

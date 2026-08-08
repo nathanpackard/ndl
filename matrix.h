@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
+#include <stdexcept>
 
 namespace ndl
 {
@@ -33,126 +34,130 @@ class SVD;
 //This class handles NxN matricies where N is specified at compile time,
 // This allows the compiler to optimize and speed up computation
 */
-template<class Real, int N> 
+template<class Real, int N>
 class Matrix {
-    public:    
+    public:
         //Constructors
-        Matrix(){ SetIdentity(); };
-        Matrix(Real *values){ memcpy(m_data, values, N*N*sizeof(Real)); };
-        
+        Matrix(){ set_identity(); };
+        explicit Matrix(const Real *values){ memcpy(data_, values, N*N*sizeof(Real)); };
+
         //Methods
         bool operator==(const Matrix<Real,N> &m) const {
             bool result = true;
-            for (unsigned int i=0; i<N*N && result; i++) result = (m_data[i]==m.m_data[i]);
+            for (unsigned int i=0; i<N*N && result; i++) result = (data_[i]==m.data_[i]);
             return result;
         };
-        
+
         bool operator!=(const Matrix<Real,N> &m) const {
             bool result = false;
-            for (unsigned int i=0; i<N*N && !result; i++) result = (m_data[i]!=m.m_data[i]);
+            for (unsigned int i=0; i<N*N && !result; i++) result = (data_[i]!=m.data_[i]);
             return result;
         };
 
-        inline Real& ElementAt(unsigned int i, unsigned int j){
-            return m_data[i*N+j];
-        };
+        // element access, matching the operator()(i,j) convention typical
+        // matrix libraries (Eigen, Armadillo, etc.) use
+        inline Real& operator()(unsigned int i, unsigned int j) { return data_[i*N+j]; }
+        inline const Real& operator()(unsigned int i, unsigned int j) const { return data_[i*N+j]; }
 
-        //Calculate the Determinant (Also allows for computation 
+        //Calculate the determinant (also allows for computation
         //of the determinant of a submatrix)
-        Real Determinant(unsigned int subsize=N) const {
+        Real determinant(unsigned int subsize=N) const {
             switch (subsize){
                 case 2: {
-                    return m_data[0]*m_data[N+1]-m_data[1]*m_data[N];
+                    return data_[0]*data_[N+1]-data_[1]*data_[N];
                     break;
                 };
                 case 3: {
-                    return	(m_data[0]*(m_data[N+1]*m_data[2*N+2]-m_data[N+2]*m_data[2*N+1]))
-                          - (m_data[1]*(m_data[N]*m_data[2*N+2]-m_data[N+2]*m_data[2*N]))
-                          + (m_data[2]*(m_data[N]*m_data[2*N+1]-m_data[N+1]*m_data[2*N]));
+                    return	(data_[0]*(data_[N+1]*data_[2*N+2]-data_[N+2]*data_[2*N+1]))
+                          - (data_[1]*(data_[N]*data_[2*N+2]-data_[N+2]*data_[2*N]))
+                          + (data_[2]*(data_[N]*data_[2*N+1]-data_[N+1]*data_[2*N]));
                 };
                 case 4: {
-                    return m_data[3] * m_data[N+2] * m_data[2*N+1] * m_data[3*N] - m_data[2] * m_data[N+3] * m_data[2*N+1] * m_data[3*N]-
-                    m_data[3] * m_data[N+1] * m_data[2*N+2] * m_data[3*N]+m_data[1] * m_data[N+3] * m_data[2*N+2] * m_data[3*N]+
-                    m_data[2] * m_data[N+1] * m_data[2*N+3] * m_data[3*N]-m_data[1] * m_data[N+2] * m_data[2*N+3] * m_data[3*N]-
-                    m_data[3] * m_data[N+2] * m_data[2*N] * m_data[3*N+1]+m_data[2] * m_data[N+3] * m_data[2*N] * m_data[3*N+1]+
-                    m_data[3] * m_data[N] * m_data[2*N+2] * m_data[3*N+1]-m_data[0] * m_data[N+3] * m_data[2*N+2] * m_data[3*N+1]-
-                    m_data[2] * m_data[N] * m_data[2*N+3] * m_data[3*N+1]+m_data[0] * m_data[N+2] * m_data[2*N+3] * m_data[3*N+1]+
-                    m_data[3] * m_data[N+1] * m_data[2*N] * m_data[3*N+2]-m_data[1] * m_data[N+3] * m_data[2*N] * m_data[3*N+2]-
-                    m_data[3] * m_data[N] * m_data[2*N+1] * m_data[3*N+2]+m_data[0] * m_data[N+3] * m_data[2*N+1] * m_data[3*N+2]+
-                    m_data[1] * m_data[N] * m_data[2*N+3] * m_data[3*N+2]-m_data[0] * m_data[N+1] * m_data[2*N+3] * m_data[3*N+2]-
-                    m_data[2] * m_data[N+1] * m_data[2*N] * m_data[3*N+3]+m_data[1] * m_data[N+2] * m_data[2*N] * m_data[3*N+3]+
-                    m_data[2] * m_data[N] * m_data[2*N+1] * m_data[3*N+3]-m_data[0] * m_data[N+2] * m_data[2*N+1] * m_data[3*N+3]-
-                    m_data[1] * m_data[N] * m_data[2*N+2] * m_data[3*N+3]+m_data[0] * m_data[N+1] * m_data[2*N+2] * m_data[3*N+3];
+                    return data_[3] * data_[N+2] * data_[2*N+1] * data_[3*N] - data_[2] * data_[N+3] * data_[2*N+1] * data_[3*N]-
+                    data_[3] * data_[N+1] * data_[2*N+2] * data_[3*N]+data_[1] * data_[N+3] * data_[2*N+2] * data_[3*N]+
+                    data_[2] * data_[N+1] * data_[2*N+3] * data_[3*N]-data_[1] * data_[N+2] * data_[2*N+3] * data_[3*N]-
+                    data_[3] * data_[N+2] * data_[2*N] * data_[3*N+1]+data_[2] * data_[N+3] * data_[2*N] * data_[3*N+1]+
+                    data_[3] * data_[N] * data_[2*N+2] * data_[3*N+1]-data_[0] * data_[N+3] * data_[2*N+2] * data_[3*N+1]-
+                    data_[2] * data_[N] * data_[2*N+3] * data_[3*N+1]+data_[0] * data_[N+2] * data_[2*N+3] * data_[3*N+1]+
+                    data_[3] * data_[N+1] * data_[2*N] * data_[3*N+2]-data_[1] * data_[N+3] * data_[2*N] * data_[3*N+2]-
+                    data_[3] * data_[N] * data_[2*N+1] * data_[3*N+2]+data_[0] * data_[N+3] * data_[2*N+1] * data_[3*N+2]+
+                    data_[1] * data_[N] * data_[2*N+3] * data_[3*N+2]-data_[0] * data_[N+1] * data_[2*N+3] * data_[3*N+2]-
+                    data_[2] * data_[N+1] * data_[2*N] * data_[3*N+3]+data_[1] * data_[N+2] * data_[2*N] * data_[3*N+3]+
+                    data_[2] * data_[N] * data_[2*N+1] * data_[3*N+3]-data_[0] * data_[N+2] * data_[2*N+1] * data_[3*N+3]-
+                    data_[1] * data_[N] * data_[2*N+2] * data_[3*N+3]+data_[0] * data_[N+1] * data_[2*N+2] * data_[3*N+3];
                 };
                 default: {
                     Real det = 0;
                     for (unsigned int j=0; j<subsize; j++){
-                        if (m_data[j]!=0) det += m_data[j]*this->Cofactor(0, j,subsize);
+                        if (data_[j]!=0) det += data_[j]*this->cofactor(0, j,subsize);
                     }
                     return det;
                 }
             };
         };
-        
-        Real Cofactor(unsigned int i, unsigned int j,unsigned int subsize=N) const {
+
+        Real cofactor(unsigned int i, unsigned int j,unsigned int subsize=N) const {
             Real values[N*N];
             memset(values,0,N*N*sizeof(Real));
-            int ac=0;
-            for (int a=0;a<subsize;a++){
+            unsigned int ac=0;
+            for (unsigned int a=0;a<subsize;a++){
                 if (a==i) continue;
-                int bc=0;
-                for (int b=0;b<subsize;b++){
+                unsigned int bc=0;
+                for (unsigned int b=0;b<subsize;b++){
                     if (b==j) continue;
-                    values[ac*N+bc] = m_data[a*N+b];
+                    values[ac*N+bc] = data_[a*N+b];
                     bc++;
                 }
                 ac++;
             }
             Matrix<Real,N> temp(values);
-            return (pow(Real(-1), Real(i+j))*temp.Determinant(subsize-1));
+            return (pow(Real(-1), Real(i+j))*temp.determinant(subsize-1));
         };
-        
+
         inline Real* operator[](const unsigned int i){
-            return m_data + i*N;
+            return data_ + i*N;
+        };
+        inline const Real* operator[](const unsigned int i) const {
+            return data_ + i*N;
         };
 
         Matrix<Real,N>& operator=(const Matrix<Real,N> &m){
-            for (unsigned int i=0; i<N*N; i++) m_data[i] = m.m_data[i];
+            for (unsigned int i=0; i<N*N; i++) data_[i] = m.data_[i];
             return *this;
         };
 
         Matrix<Real,N>& operator=(Real s){
-            for (unsigned int i=0; i<N*N; i++) m_data[i] = s;
+            for (unsigned int i=0; i<N*N; i++) data_[i] = s;
             return *this;
         };
-        
+
         Matrix<Real,N>& operator+=(const Matrix<Real,N> &m){
-            for (unsigned int i=0; i<N*N; i++) m_data[i] += m.m_data[i];
+            for (unsigned int i=0; i<N*N; i++) data_[i] += m.data_[i];
             return *this;
         };
 
         Matrix<Real,N>& operator-=(const Matrix<Real,N> &m){
-            for (unsigned int i=0; i<N*N; i++) m_data[i] -= m.m_data[i];
+            for (unsigned int i=0; i<N*N; i++) data_[i] -= m.data_[i];
             return *this;
         };
 
         Matrix<Real,N>& operator+=(const Real k){
-            for (unsigned int i=0; i<N*N; i++) m_data[i] += k;
+            for (unsigned int i=0; i<N*N; i++) data_[i] += k;
             return *this;
         };
 
         Matrix<Real,N>& operator-=(const Real k){
-            for (unsigned int i=0; i<N*N; i++) m_data[i] -= k;
+            for (unsigned int i=0; i<N*N; i++) data_[i] -= k;
             return *this;
         };
 
         Matrix<Real,N>& operator*=(const Real k){
-            for (unsigned int i=0; i<N*N; i++) m_data[i] *= k;
+            for (unsigned int i=0; i<N*N; i++) data_[i] *= k;
             return *this;
         };
 
         Matrix<Real,N>& operator/=(const Real k){
-            for (unsigned int i=0; i<N*N; i++) m_data[i] /= k;
+            for (unsigned int i=0; i<N*N; i++) data_[i] /= k;
             return *this;
         };
 
@@ -164,42 +169,42 @@ class Matrix {
                     Real temp = 0;
                     int q=0;
                     for (int k=0; k<N; k++){
-                        temp+=(m_data[p+k]*m.m_data[q+j]);
+                        temp+=(data_[p+k]*m.data_[q+j]);
                         q+=N;
                     }
-                    result.m_data[p+j] = temp;
+                    result.data_[p+j] = temp;
                 }
                 p+=N;
             }
             return result;
         };
-        
+
        std::array<Real,N> operator*(const std::array<Real,N>& p) const {
 		   std::array<Real,N> result{};
             int i=0;
             for (int r=0; r<N; ++r){
             for (int c=0; c<N; ++c){
-                result[r] += m_data[i]*p[c];
+                result[r] += data_[i]*p[c];
                 ++i;
             }}
             return result;
         };
 
-      void transformpoint(Real* p) {
+      void transform_point(Real* p) const {
             Real result[N];
             Real t=0;
             int i=N*N-1;
             for (int c=N-1; c>=0; --c){
-                t += m_data[i]*p[c];
+                t += data_[i]*p[c];
                 --i;
             }
             t=1/t;
-            
+
             result[N-1]=1;
             for (int r=N-2; r>=0; --r){
                 Real t2=0;
                 for (int c=N-1; c>=0; --c){
-                    t2 += m_data[i]*p[c];
+                    t2 += data_[i]*p[c];
                     --i;
                 }
                 result[r]=t2*t;
@@ -207,208 +212,206 @@ class Matrix {
             for(int i=0;i<N;++i) p[i]=result[i];
       };
 
-        void DotProduct(const std::array<Real,N> &m, std::array<Real,N> &result){
-            unsigned int i, j,  p,  r;
-            for (i=0, p=0, r=0; i<N; i++){ 
+        void dot_product(const std::array<Real,N> &m, std::array<Real,N> &result) const {
+            unsigned int i, j;
+            for (i=0; i<N; i++){
                 result[i]=0;
                 for (j=0; j<N; j++) result[i]+=(*this)[i][j]*m[j];
             }
         };
 
-        void OuterProduct(std::array<Real,N> a, std::array<Real,N> b){
-            Matrix<Real,N> result;
+        void outer_product(std::array<Real,N> a, std::array<Real,N> b){
             for (int i=0; i<N; i++){
             for (int j=0; j<N; j++){
                 (*this)[i][j] = a[i] * b[j];
             }}
         };
 
-        Matrix<Real,N> operator+(const Real k){
+        Matrix<Real,N> operator+(const Real k) const {
             Matrix<Real,N> result;
-            for (unsigned int i=0; i<N*N; i++) result.m_data[i] =  m_data[i]+k;
+            for (unsigned int i=0; i<N*N; i++) result.data_[i] =  data_[i]+k;
             return result;
         };
 
-        Matrix<Real,N> operator-(const Real k){
+        Matrix<Real,N> operator-(const Real k) const {
             Matrix<Real,N> result;
-            for (unsigned int i=0; i<N*N; i++) result.m_data[i] =  m_data[i]-k;
+            for (unsigned int i=0; i<N*N; i++) result.data_[i] =  data_[i]-k;
             return result;
         };
 
         Matrix<Real,N> operator-() const {
-            Matrix<Real,N> result(m_data);
-            for (unsigned int i=0; i<N*N; i++) result.m_data[i] = -1*m_data[i];
+            Matrix<Real,N> result(data_);
+            for (unsigned int i=0; i<N*N; i++) result.data_[i] = -1*data_[i];
             return result;
         };
 
         Matrix<Real,N> operator*(const Real k) const {
             Matrix<Real,N> result;
-            for (unsigned int i=0; i<N*N; i++) result.m_data[i] =  m_data[i]*k;
+            for (unsigned int i=0; i<N*N; i++) result.data_[i] =  data_[i]*k;
             return result;
         };
 
-        Matrix<Real,N> operator/(const Real k){
+        Matrix<Real,N> operator/(const Real k) const {
             Matrix<Real,N> result;
-            for (unsigned int i=0; i<N*N; i++) result.m_data[i] =  m_data[i]/k;
+            for (unsigned int i=0; i<N*N; i++) result.data_[i] =  data_[i]/k;
             return result;
         };
 
-        void SetZero(){
-            for (unsigned int i=0; i<N*N; i++) m_data[i] = Real(0.0);
+        void set_zero(){
+            for (unsigned int i=0; i<N*N; i++) data_[i] = Real(0.0);
         };
 
-        void SetIdentity(){
-            SetZero();
-            for (unsigned int i=0, p=0; i<N; i++, p+=N) m_data[p+i] = Real(1.0);
+        void set_identity(){
+            set_zero();
+            for (unsigned int i=0, p=0; i<N; i++, p+=N) data_[p+i] = Real(1.0);
         };
 
-        void SetColumn(const unsigned int j, Real* v){
+        void set_column(const unsigned int j, Real* v){
             unsigned int i, p;
-            for (i=0, p=j; i<N; i++, p+=N) m_data[p] = v[i];
+            for (i=0, p=j; i<N; i++, p+=N) data_[p] = v[i];
         };
 
-        void SetRow(const unsigned int i, Real* v){
+        void set_row(const unsigned int i, Real* v){
             unsigned int j, p;
-            for (j=0, p=i*N; j<N; j++, p++) m_data[p] = v[j];
+            for (j=0, p=i*N; j<N; j++, p++) data_[p] = v[j];
         };
 
-        void SetDiagonal(Real *v){
-            for (unsigned int i=0, p=0; i<N; i++, p+=N) m_data[p+i] = v[i];
+        void set_diagonal(Real *v){
+            for (unsigned int i=0, p=0; i<N; i++, p+=N) data_[p+i] = v[i];
         };
-        
-        //transpose the matrix (must be square)
-        void Transpose(){
-            Real temp[N*N];
-            unsigned int i, j, p, q;
-            for (i=0, p=0; i<N; i++, p+=N){
-            for (j=0, q=0; j<N; j++, q+=N){
-                temp[q+i] = m_data[p+j];
-            }}
-            std::swap(m_data, temp);
-        };
-        
-        //return the transpose of the matrix
-        Matrix<Real,N> GetTranspose(){
+
+        //return the transpose of the matrix (does not mutate *this)
+        Matrix<Real,N> transpose() const {
             Matrix<Real,N> result;
             unsigned int i, j, p, q;
             for (i=0, p=0; i<N; i++, p+=N){
             for (j=0, q=0; j<N; j++, q+=N){
-                result.m_data[q+i] = m_data[p+j];
+                result.data_[q+i] = data_[p+j];
             }}
             return result;
         };
-        
-        //Invert the matrix (must be square)
-        void Invert(){
-            *this = GetInverse();
+
+        //transpose the matrix in place (must be square)
+        void transpose_in_place(){
+            *this = transpose();
+        };
+
+        //invert the matrix in place (must be square)
+        void invert(){
+            *this = inverse();
         }
-        
-        //Return the Inverse Matrix
-        Matrix<Real,N> GetInverse(){
+
+        //return the inverse matrix (does not mutate *this)
+        Matrix<Real,N> inverse() const {
             Matrix<Real,N> U;
             Matrix<Real,N> V;
 			std::array<Real,N> W;
 
             SVD<Real,N> svd(*this);
-            svd.getU(U);
-            svd.getV(V);
-            svd.getSingularValues(W);
-            
+            svd.u(U);
+            svd.v(V);
+            svd.singular_values(W);
+
             unsigned  int i,j;
             for (i=0; i<N; i++){
             for (j=0; j<N; j++){
                 V[i][j]/= W[j];
             }}
-            return V * U.GetTranspose();
+            return V * U.transpose();
         }
-        
+
         //Return the Eigenvalues and Eigenvectors of the matrix
-        int EigenDecomposition(std::array<Real,N>& eigenvalues,Matrix<Real,N>& eigenvectors){
-            Matrix<Real,N> W = (*this);
-            int nrot=0;
-            
-            //Jacobi(W,eigenvalues,eigenvectors,nrot);
-            
-            return nrot; //return the number of jacobi rotate operations
+        //NOTE: unimplemented -- the underlying Jacobi rotation routine was
+        //never ported. This throws rather than silently returning zeroed-out
+        //results, since a stub that looks like it succeeded is worse than one
+        //that visibly doesn't work.
+        int eigen_decomposition(std::array<Real,N>& eigenvalues, Matrix<Real,N>& eigenvectors) const {
+            throw std::logic_error("Matrix::eigen_decomposition is not implemented");
         }
-        
+
 
         //For Non-Homogeneous Coords
-        Matrix<Real,N> &SetScale(const std::array<Real,N> &t){
-            SetIdentity();
+        Matrix<Real,N> &set_scale(const std::array<Real,N> &t){
+            set_identity();
             for (int i=0;i<N;i++) (*this)[i][i] = t[i];
             return *this;
         }
 
         //For Homogeneous Coords
-        Matrix<Real,N> &SetScale(const std::array<Real,N-1> &t){
-            SetIdentity();
+        Matrix<Real,N> &set_scale(const std::array<Real,N-1> &t){
+            set_identity();
             for (int i=0;i<N-1;i++) (*this)[i][i] = t[i];
             return *this;
         }
 
         //For Homogeneous Coords
-        Matrix<Real,N> &SetTranslate(const std::array<Real,N-1> &t){
-            SetIdentity();
+        Matrix<Real,N> &set_translate(const std::array<Real,N-1> &t){
+            set_identity();
             for (int i=0;i<N-1;i++) (*this)[i][N-1] = t[i];
             return *this;
         }
 
         //For either Homogeneous Coords or Non-Homogeneous Coords
-        Matrix<Real,N> &SetRotate(Real AngleRad,int Axis1=0,int Axis2=1) {
-            //Does a main rotation from Axis1 to Axis2
+        Matrix<Real,N> &set_rotate(Real angleRad,int axis1=0,int axis2=1) {
+            //Does a main rotation from axis1 to axis2
             for (int i=0; i<N; i++){
             for (int j=0; j<N; j++){
                 if (i==j){
-                    if (i==Axis1) (*this)[i][j] = cos(AngleRad);
-                    else if (i==Axis2) (*this)[i][j] = cos(AngleRad);
+                    if (i==axis1) (*this)[i][j] = cos(angleRad);
+                    else if (i==axis2) (*this)[i][j] = cos(angleRad);
                     else (*this)[i][j]=1;
                 }
-                else if (i==Axis1 && j==Axis2)  (*this)[i][j] = -sin(AngleRad);
-                else if (i==Axis2 && j==Axis1)  (*this)[i][j] = sin(AngleRad);
+                else if (i==axis1 && j==axis2)  (*this)[i][j] = -sin(angleRad);
+                else if (i==axis2 && j==axis1)  (*this)[i][j] = sin(angleRad);
                 else (*this)[i][j] = 0;
             }}
             return *this;
         }
-        
-        Matrix<Real,N> &SetShear(Real amount,int Axis1=0,int Axis2=1){
-            SetIdentity();
-            if (Axis1!=Axis2) (*this)[Axis1][Axis2]=amount;
-            return *this;
-        }
-        
-        //For Homogeneous Coords
-        Matrix<Real,N> &SetProjection(Real Dist,int Axis=0){
-            //Perspective projection from the orgin along the specified 
-            //axis onto a hyperplane at a distance Dist away
-            SetZero();
-            for (int i=0; i<N-1; i++) (*this)[i][i] = Dist;
-            (*this)[N-1][Axis] = 1;
+
+        Matrix<Real,N> &set_shear(Real amount,int axis1=0,int axis2=1){
+            set_identity();
+            if (axis1!=axis2) (*this)[axis1][axis2]=amount;
             return *this;
         }
 
         //For Homogeneous Coords
-        Matrix<Real,N> &SetOrthoProjection(Real Dist,int Axis=0){
-            //Perspective projection from the orgin along the specified 
-            //axis onto a hyperplane at a distance Dist away
-            SetIdentity();
-            (*this)[Axis][Axis] = 0;
-            (*this)[Axis][N-1] = Dist;
+        Matrix<Real,N> &set_projection(Real dist,int axis=0){
+            //Perspective projection from the origin along the specified
+            //axis onto a hyperplane at a distance dist away
+            set_zero();
+            for (int i=0; i<N-1; i++) (*this)[i][i] = dist;
+            (*this)[N-1][axis] = 1;
             return *this;
         }
-        
+
+        //For Homogeneous Coords
+        Matrix<Real,N> &set_ortho_projection(Real dist,int axis=0){
+            //Perspective projection from the origin along the specified
+            //axis onto a hyperplane at a distance dist away
+            set_identity();
+            (*this)[axis][axis] = 0;
+            (*this)[axis][N-1] = dist;
+            return *this;
+        }
+
         //Print the Matrix
-        void print(char* msg=0){
+        void print(const char* msg=0) const {
             if (msg) printf("****************\n%s\n****************\n",msg);
             for (int j=0; j<N; j++){
-                for (int i=0; i<N; i++) printf("% .4f ",(float)m_data[j*N+i]);
+                for (int i=0; i<N; i++) printf("% .4f ",(float)data_[j*N+i]);
                 std::cout << std::endl;
             }
             std::cout << "\n\n";
         };
 
-        Real m_data[N*N];
-    };    
+        // raw access to the underlying row-major storage, matching the
+        // std::vector/std::array convention
+        Real* data() { return data_; }
+        const Real* data() const { return data_; }
+
+    private:
+        Real data_[N*N];
+    };
 
     
     
@@ -437,8 +440,8 @@ class SVD {
 	std::array<Real,N> s;
   public:
    SVD (const Matrix<Real,N> &Arg) {
-      U.SetZero();
-      V.SetZero();
+      U.set_zero();
+      V.set_zero();
        
 	  std::array<Real,N> e;
 	  std::array<Real,N> work;
@@ -750,8 +753,8 @@ class SVD {
       }
    }
 
-   //Get U
-   void getU(Matrix<Real,N> &A){
+   //left singular vectors
+   void u(Matrix<Real,N> &A) const {
         int minm = N;
         for (int i=0; i<N; i++){
         for (int j=0; j<minm; j++){
@@ -759,32 +762,32 @@ class SVD {
         }}
    }
 
-   //Return the right singular vectors
-   void getV(Matrix<Real,N> &A){ A = V; }
+   //right singular vectors
+   void v(Matrix<Real,N> &A) const { A = V; }
 
-   //Return the one-dimensional array of singular values
-   void getSingularValues(std::array<Real,N> &x){ x = s; }
+   //one-dimensional array of singular values
+   void singular_values(std::array<Real,N> &x) const { x = s; }
 
-   //Return the diagonal matrix of singular values
-   void getS(Matrix<Real,N> &A) {
+   //diagonal matrix of singular values
+   void singular_value_matrix(Matrix<Real,N> &A) const {
       for (int i = 0; i < N; i++) {
          for (int j = 0; j < N; j++) A[i][j] = Real(0.0);
          A[i][i] = s[i];
       }
    }
 
-   //Two norm  (max(S))
-   double norm2() { return s[0]; }
+   //two norm (max(S))
+   double norm() const { return s[0]; }
 
-   //Two norm of condition number (max(S)/min(S))
-   double cond() { return s[0]/s[N-1]; }
+   //two norm of condition number (max(S)/min(S))
+   double cond() const { return s[0]/s[N-1]; }
 
-   //Effective numerical matrix rank
-   int rank(){
+   //effective numerical matrix rank
+   int rank() const {
       double eps = pow(2.0,-52.0);
       double tol = N*s[0]*eps;
       int r = 0;
-      for (int i = 0; i < s.dim(); i++) {
+      for (unsigned int i = 0; i < s.size(); i++) {
          if (s[i] > tol) r++;
       }
       return r;
