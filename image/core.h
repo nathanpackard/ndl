@@ -10,6 +10,7 @@
 #include <string>
 #include <cmath>
 #include <iterator>
+#include <type_traits>
 #include "border_mode.h"
 #include "detail.h"
 #include "algorithms.h"
@@ -261,13 +262,24 @@ namespace ndl
 			for (auto it = begin(); it != end(); ++it) if (*it != rhs) return false;
 			return true;
 		}
+		// Every ordering comparison below (<, <=, >, >=) requires T to support
+		// a real total order (<, >) -- e.g. std::complex has neither, so
+		// comparing an Image<std::complex<double>,DIM> would otherwise fail
+		// deep inside these loops with a cryptic "no match for operator<"
+		// several template-instantiation frames down. std::is_arithmetic_v
+		// covers exactly bool/integral/floating-point T -- the types C++
+		// itself guarantees a total order for -- and excludes std::complex
+		// and any other non-ordered element type, giving a single clear
+		// error at the actual call site instead.
 		template <class U> bool operator<  (const Image<U, DIM>& rhs) const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::operator< requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
 			assert(rhs.extent() == extent_);
 			auto rhsIt = rhs.begin();
 			for (auto it = begin(); it != end(); ++it, ++rhsIt) if (*it >= *rhsIt) return false;
 			return true;
 		}
 		template <class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> bool operator<  (const U& rhs) const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::operator< requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
 			for (auto it = begin(); it != end(); ++it) if (*it >= rhs) return false;
 			return true;
 		}
@@ -280,15 +292,25 @@ namespace ndl
 		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator*=(const U rhs) { return mutableBinaryScalarOp<std::multiplies<T>>(rhs); }
 		template<class U> Image& operator/=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::divides<T>>(rhs); }
 		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator/=(const U rhs) { return mutableBinaryScalarOp<std::divides<T>>(rhs); }
-		template<class U> Image& operator%=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::modulus<T>>(rhs); }
-		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator%=(const U rhs) { return mutableBinaryScalarOp<std::modulus<T>>(rhs); }
-		template<class U> Image& operator|=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::bit_or<T>>(rhs); }
-		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator|=(const U rhs) { return mutableBinaryScalarOp<std::bit_or<T>>(rhs); }
-		template<class U> Image& operator&=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::bit_and<T>>(rhs); }
-		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator&=(const U rhs) { return mutableBinaryScalarOp<std::bit_and<T>>(rhs); }
-		template<class U> Image& operator^=(const Image<U, DIM>& rhs) { return mutableBinaryImageOp<std::bit_xor<T>>(rhs); }
-		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator^=(const U rhs) { return mutableBinaryScalarOp<std::bit_xor<T>>(rhs); }
-		void logical_not() { mutableUnaryOp<std::logical_not<T>>(); }
+		// %=/&=/|=/^= need an integral T -- modulus and bitwise ops aren't
+		// defined for float/double at all (this fails to compile today
+		// too, just from deep inside std::modulus<double>::operator() with
+		// no indication *why* -- this puts the real reason at the actual
+		// call site). is_integral_v<bool> is true, so these still work for
+		// a plain bool mask Image (AND/OR/XOR of two masks is meaningful);
+		// is_integral_v<float/double> is false.
+		template<class U> Image& operator%=(const Image<U, DIM>& rhs) { static_assert(std::is_integral_v<T>, "Image<T,DIM>::operator%= requires an integral T -- modulus isn't defined for floating-point types"); return mutableBinaryImageOp<std::modulus<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator%=(const U rhs) { static_assert(std::is_integral_v<T>, "Image<T,DIM>::operator%= requires an integral T -- modulus isn't defined for floating-point types"); return mutableBinaryScalarOp<std::modulus<T>>(rhs); }
+		template<class U> Image& operator|=(const Image<U, DIM>& rhs) { static_assert(std::is_integral_v<T>, "Image<T,DIM>::operator|= requires an integral T -- bitwise or isn't defined for floating-point types"); return mutableBinaryImageOp<std::bit_or<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator|=(const U rhs) { static_assert(std::is_integral_v<T>, "Image<T,DIM>::operator|= requires an integral T -- bitwise or isn't defined for floating-point types"); return mutableBinaryScalarOp<std::bit_or<T>>(rhs); }
+		template<class U> Image& operator&=(const Image<U, DIM>& rhs) { static_assert(std::is_integral_v<T>, "Image<T,DIM>::operator&= requires an integral T -- bitwise and isn't defined for floating-point types"); return mutableBinaryImageOp<std::bit_and<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator&=(const U rhs) { static_assert(std::is_integral_v<T>, "Image<T,DIM>::operator&= requires an integral T -- bitwise and isn't defined for floating-point types"); return mutableBinaryScalarOp<std::bit_and<T>>(rhs); }
+		template<class U> Image& operator^=(const Image<U, DIM>& rhs) { static_assert(std::is_integral_v<T>, "Image<T,DIM>::operator^= requires an integral T -- bitwise xor isn't defined for floating-point types"); return mutableBinaryImageOp<std::bit_xor<T>>(rhs); }
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> Image& operator^=(const U rhs) { static_assert(std::is_integral_v<T>, "Image<T,DIM>::operator^= requires an integral T -- bitwise xor isn't defined for floating-point types"); return mutableBinaryScalarOp<std::bit_xor<T>>(rhs); }
+		// logical_not() needs T contextually convertible to bool -- true for
+		// every arithmetic type (including bool itself) but not for
+		// std::complex, which has no operator bool().
+		void logical_not() { static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::logical_not() requires an arithmetic T -- std::complex has no contextual bool conversion"); mutableUnaryOp<std::logical_not<T>>(); }
 
 		// Non-mutating arithmetic: writes the result into a caller-provided
 		// output image instead of allocating one. A true operator+ returning
@@ -306,12 +328,57 @@ namespace ndl
 		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> void divide(const U rhs, Image<T, DIM>& output) const { binaryScalarOp<std::divides<T>>(rhs, output); }
 		template<class U> bool operator!= (const Image<U, DIM>& rhs) const { return !(*this == rhs); }
 		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> bool operator!= (const U& rhs) const { return !(*this == rhs); }
-		template<class U> bool operator<= (const Image<U, DIM>& rhs) const { return !(rhs < *this); }
-		template<class U> bool operator<= (const U& rhs) const { return !(rhs < *this); }
-		template<class U> bool operator>  (const Image<U, DIM>& rhs) const { return (rhs < *this); }
-		template<class U> bool operator>  (const U& rhs) const { return (rhs < *this); }
-		template<class U> bool operator>= (const Image<U, DIM>& rhs) const { return !(*this < rhs); }
-		template<class U> bool operator>= (const U& rhs) const { return !(*this < rhs); }
+		// <= and >= are deliberately NOT "!(the strict opposite)" (e.g. `<=`
+		// as `!(rhs < *this)`) the way a scalar total order would let you
+		// define them -- for an elementwise/array comparison, that De
+		// Morgan trick silently swaps "every element satisfies" for "at
+		// least one element satisfies", since negating an ALL-quantified
+		// relation doesn't give you the ALL-quantified relation of the
+		// opposite strictness (it gives you an EXISTS-quantified one). E.g.
+		// a=[1,5], b=[2,3]: a<=b should be false (a[1]=5 > b[1]=3), but
+		// !(b<a) evaluates to true, because b<a itself is already false (at
+		// index 0) and its negation says nothing about index 1. So each is
+		// spelled out directly below, same ALL-quantified shape as operator<
+		// above. (operator> above, by contrast, IS safe as `(rhs < *this)`:
+		// swapping operands and flipping strictness preserves ALL-
+		// quantification, unlike negating it.) The scalar overloads need
+		// the same is_image_like guard as operator< for the same reason:
+		// without it, an OwnedImage argument would prefer this "scalar"
+		// overload's now-direct-comparison body, which doesn't compile for
+		// an Image-shaped rhs, over the sibling Image-taking overload that
+		// would work fine.
+		template<class U> bool operator<= (const Image<U, DIM>& rhs) const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::operator<= requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
+			assert(rhs.extent() == extent_);
+			auto rhsIt = rhs.begin();
+			for (auto it = begin(); it != end(); ++it, ++rhsIt) if (*it > *rhsIt) return false;
+			return true;
+		}
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> bool operator<= (const U& rhs) const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::operator<= requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
+			for (auto it = begin(); it != end(); ++it) if (*it > rhs) return false;
+			return true;
+		}
+		template<class U> bool operator>  (const Image<U, DIM>& rhs) const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::operator> requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
+			return (rhs < *this);
+		}
+		template<class U> bool operator>  (const U& rhs) const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::operator> requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
+			return (rhs < *this);
+		}
+		template<class U> bool operator>= (const Image<U, DIM>& rhs) const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::operator>= requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
+			assert(rhs.extent() == extent_);
+			auto rhsIt = rhs.begin();
+			for (auto it = begin(); it != end(); ++it, ++rhsIt) if (*it < *rhsIt) return false;
+			return true;
+		}
+		template<class U, class = std::enable_if_t<!detail::is_image_like<U>::value>> bool operator>= (const U& rhs) const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::operator>= requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
+			for (auto it = begin(); it != end(); ++it) if (*it < rhs) return false;
+			return true;
+		}
 		std::size_t size() const { return std::accumulate(extent_.begin(), extent_.end(), std::size_t(1), std::multiplies<std::size_t>()); }
 
 		// Whole-image reductions: fold every element down to a single scalar.
@@ -323,7 +390,12 @@ namespace ndl
 			for (auto it = begin(); it != end(); ++it) total = static_cast<T>(total + *it);
 			return total;
 		}
+		// min()/max() need ordering; mean() converts through double. sum()
+		// (here and per-axis below) needs neither -- only +, which
+		// std::complex supports fine -- so it's deliberately left
+		// unrestricted, unlike its min/max/mean siblings.
 		T min() const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::min() requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
 			assert(size() > 0);
 			auto it = begin();
 			T result = *it;
@@ -331,6 +403,7 @@ namespace ndl
 			return result;
 		}
 		T max() const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::max() requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
 			assert(size() > 0);
 			auto it = begin();
 			T result = *it;
@@ -338,6 +411,7 @@ namespace ndl
 			return result;
 		}
 		double mean() const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::mean() requires a T convertible to double -- not valid for e.g. std::complex<T>; per-axis mean(axis,output) has no such restriction, since it stays in T throughout");
 			assert(size() > 0);
 			double total = 0;
 			for (auto it = begin(); it != end(); ++it) total += static_cast<double>(*it);
@@ -348,9 +422,20 @@ namespace ndl
 		// already exist with *this's own extent except extent 1 along `axis`,
 		// so the result can be broadcast back against *this without reshaping.
 		// Caller owns output's memory, same as every other operation here.
+		// min(axis,...)/max(axis,...) need ordering, same reasoning as the
+		// whole-image versions above; sum(axis,...)/mean(axis,...) don't
+		// (mean(axis,...) divides by a T-converted count and stays in T the
+		// whole way, unlike whole-image mean() above -- verified this
+		// actually compiles for std::complex before leaving it unrestricted).
 		void sum(int axis, Image<T, DIM>& output) const { axisReduceOp(axis, output, std::plus<T>{}); }
-		void min(int axis, Image<T, DIM>& output) const { axisReduceOp(axis, output, [](T a, T b) { return b < a ? b : a; }); }
-		void max(int axis, Image<T, DIM>& output) const { axisReduceOp(axis, output, [](T a, T b) { return b > a ? b : a; }); }
+		void min(int axis, Image<T, DIM>& output) const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::min(axis,output) requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
+			axisReduceOp(axis, output, [](T a, T b) { return b < a ? b : a; });
+		}
+		void max(int axis, Image<T, DIM>& output) const {
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::max(axis,output) requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
+			axisReduceOp(axis, output, [](T a, T b) { return b > a ? b : a; });
+		}
 
 			// A third min()/max() overload, alongside the whole-image and per-axis
 			// ones above: a *local* min/max, taken over the neighborhood `kernel`
@@ -578,6 +663,7 @@ namespace ndl
 		template<class K>
 		void convolve(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
 		{
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::convolve() requires a T convertible to double -- not valid for e.g. std::complex<T> (the weighted sum is accumulated in double)");
 			assert(output.extent() == extent_);
 			auto center = kernelCenter(kernel);
 			auto taps = kernelIncludedTaps(kernel); // zero-weight taps contribute nothing to the sum, so skipping them is free
@@ -658,6 +744,7 @@ namespace ndl
 		// split -- see demo/morphology.
 		T otsu_threshold(int bins = 256) const
 		{
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::otsu_threshold() requires an arithmetic T (needs a total order and a double conversion) -- not valid for e.g. std::complex<T>");
 			assert(bins > 1);
 			T lo = min();
 			T hi = max();
@@ -719,6 +806,7 @@ namespace ndl
 		// with the original and convolve() is dimension-agnostic.
 		void gaussian_blur(double sigma, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
 		{
+			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::gaussian_blur() requires a T convertible to double -- not valid for e.g. std::complex<T> (it calls convolve() internally)");
 			assert(sigma > 0);
 			int radius = _kernelSize(sigma);
 			std::array<int, DIM> kernelExtent;

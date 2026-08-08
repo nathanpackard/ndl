@@ -51,3 +51,30 @@ ndl_add_test_executable(image_io_tests          image_io_tests.cpp)
 ndl_add_test_executable(composite_tests         composite_tests.cpp)
 ndl_add_test_executable(matrix_tests            matrix_tests.cpp)
 ndl_add_test_executable(fft_tests               fft_tests.cpp)
+ndl_add_test_executable(type_coverage_tests     type_coverage_tests.cpp)
+
+# Negative-compilation regression tests: confirm the static_assert-based
+# type restrictions in image/core.h, image/algorithms.h, and image/owned.h
+# stay in place. A static_assert is a hard compile error, not a SFINAE
+# substitution failure (confirmed empirically -- even just asking
+# std::is_constructible_v<OwnedImage<bool,2>, ...> fails the whole
+# translation unit, since checking constructibility requires instantiating
+# the class, which is exactly where the static_assert lives), so this is
+# the only way to actually verify these restrictions still fire, short of
+# reading the source by eye. Each negative_compile/*.cpp is deliberately
+# written to fail to compile; WILL_FAIL inverts ctest's usual pass/fail so
+# the test PASSES exactly when the compiler invocation fails, and FAILS
+# (flagging a real regression -- the restriction silently stopped working)
+# if it ever unexpectedly succeeds.
+function(ndl_add_negative_compile_test name)
+    add_test(NAME negative_${name}
+        COMMAND ${CMAKE_CXX_COMPILER} -std=c++17 -I${CMAKE_CURRENT_SOURCE_DIR}/../..
+                -c ${CMAKE_CURRENT_SOURCE_DIR}/negative_compile/${name}.cpp
+                -o ${CMAKE_CURRENT_BINARY_DIR}/negative_compile_${name}.o
+    )
+    set_tests_properties(negative_${name} PROPERTIES WILL_FAIL TRUE LABELS "negative_compile")
+endfunction()
+
+ndl_add_negative_compile_test(owned_image_bool)
+ndl_add_negative_compile_test(complex_ordering)
+ndl_add_negative_compile_test(double_bitwise)

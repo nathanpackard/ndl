@@ -3,6 +3,7 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <type_traits>
 #include "border_mode.h"
 #include "detail.h"
 
@@ -28,10 +29,18 @@ namespace ndl
 	// (possibly different) minimal-interface type -- in practice always a
 	// small Image<K,DIM> of weights/tap-mask values, even when src/dst
 	// are a PackedBitImage.
+	// erode/dilate/percentile_filter (and median_filter, which is just
+	// percentile_filter at 50) all need to order ImageT::value_type values
+	// against each other -- gated on is_arithmetic_v rather than left to
+	// fail deep inside the comparison/std::nth_element, same reasoning as
+	// the ordering-dependent Image members in core.h. is_arithmetic_v<bool>
+	// is true, so these still work unmodified for a PackedBitImage (whose
+	// value_type is bool) -- erosion/dilation reduce to AND/OR there.
 	template<class ImageT, class KernelT>
 	void erode(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
 	{
 		using T = typename ImageT::value_type;
+		static_assert(std::is_arithmetic_v<T>, "ndl::erode() requires an arithmetic value_type (needs a total order) -- not valid for e.g. std::complex<T>");
 		assert(dst.extent() == src.extent());
 		auto extent = src.extent();
 		auto center = detail::kernelCenter(kernel);
@@ -53,6 +62,7 @@ namespace ndl
 	void dilate(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
 	{
 		using T = typename ImageT::value_type;
+		static_assert(std::is_arithmetic_v<T>, "ndl::dilate() requires an arithmetic value_type (needs a total order) -- not valid for e.g. std::complex<T>");
 		assert(dst.extent() == src.extent());
 		auto extent = src.extent();
 		auto center = detail::kernelCenter(kernel);
@@ -74,6 +84,7 @@ namespace ndl
 	void percentile_filter(const ImageT& src, ImageT& dst, const KernelT& kernel, double percentile, BorderMode border = BorderMode::Clamp)
 	{
 		using T = typename ImageT::value_type;
+		static_assert(std::is_arithmetic_v<T>, "ndl::percentile_filter() requires an arithmetic value_type (needs a total order for std::nth_element) -- not valid for e.g. std::complex<T>");
 		assert(dst.extent() == src.extent());
 		assert(percentile >= 0.0 && percentile <= 100.0);
 		auto extent = src.extent();
@@ -93,7 +104,10 @@ namespace ndl
 		}
 	}
 	template<class ImageT, class KernelT>
-	void median_filter(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp) { percentile_filter(src, dst, kernel, 50.0, border); }
+	void median_filter(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp) {
+		static_assert(std::is_arithmetic_v<typename ImageT::value_type>, "ndl::median_filter() requires an arithmetic value_type (needs a total order) -- not valid for e.g. std::complex<T>");
+		percentile_filter(src, dst, kernel, 50.0, border);
+	}
 
 	// Binarizes src into dst: onValue where src's value is greater than
 	// thresholdValue, offValue otherwise (strictly greater-than, matching
@@ -102,9 +116,15 @@ namespace ndl
 	// not be the same concrete type -- e.g. thresholding an
 	// Image<uint8_t,DIM> greyscale source directly into a compact
 	// PackedBitImage<DIM> mask is exactly the intended use.
+	// Only SrcImageT::value_type needs ordering (the > comparison below);
+	// DstImageT::value_type just needs to be assignable from onValue/
+	// offValue, which works for any type -- e.g. thresholding a
+	// std::complex source wouldn't make sense (no ordering) and is
+	// rejected below, but the *destination* type is never restricted.
 	template<class SrcImageT, class DstImageT>
 	void threshold(const SrcImageT& src, DstImageT& dst, typename SrcImageT::value_type thresholdValue, typename DstImageT::value_type onValue, typename DstImageT::value_type offValue)
 	{
+		static_assert(std::is_arithmetic_v<typename SrcImageT::value_type>, "ndl::threshold() requires an arithmetic source value_type (needs a total order) -- not valid for e.g. std::complex<T>");
 		assert(dst.extent() == src.extent());
 		for (const auto& coord : src.coordinates())
 			dst.at(coord) = (src.at(coord) > thresholdValue) ? onValue : offValue;

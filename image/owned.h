@@ -3,6 +3,7 @@
 #include <array>
 #include <cassert>
 #include <algorithm>
+#include <type_traits>
 #include "core.h"
 
 namespace ndl
@@ -67,6 +68,15 @@ namespace ndl
 	template<class T, int DIM>
 	class OwnedImage : private detail::OwnedImageStorage<T>, public Image<T, DIM>
 	{
+		// OwnedImageStorage<T>'s std::vector<T> data member is the whole
+		// reason this class works at all (see the comment above) -- except
+		// for T=bool, where std::vector<bool> is the infamous bit-packed
+		// specialization that has no .data() to capture in the first place.
+		// That already fails to compile (Storage::data.data() below simply
+		// doesn't exist for T=bool), just from deep inside the constructor
+		// initializer list; this puts the actual reason, and the fix, right
+		// at the point of use instead.
+		static_assert(!std::is_same_v<T, bool>, "OwnedImage<bool,DIM> doesn't work -- std::vector<bool> is bit-packed and has no .data() for Image to alias. Use PackedBitImage<DIM> instead for a compact owned boolean image.");
 		using Storage = detail::OwnedImageStorage<T>;
 	public:
 		explicit OwnedImage(std::array<int, DIM> extent)
