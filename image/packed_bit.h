@@ -6,7 +6,9 @@
 #include <numeric>
 #include <functional>
 #include <ostream>
+#include <cassert>
 #include "detail.h"
+#include "core.h"
 
 namespace ndl
 {
@@ -141,6 +143,41 @@ namespace ndl
 		std::array<std::size_t, DIM> stride_;
 		std::vector<std::uint64_t> words_;
 	};
+
+	// Converts any minimal-interface image (Image<bool,DIM>, Image<uint8_t,DIM>,
+	// an already-thresholded mask, ...) into a freshly-allocated PackedBitImage,
+	// nonzero -> true -- the "I have an ordinary image I want to shrink down"
+	// direction. DIM is read off src.extent()'s own std::array<int,DIM> return
+	// type, same trick detail::kernelCenter() uses, so it's never named
+	// explicitly at the call site. Not restricted to arithmetic src types the
+	// way the ordering-dependent operations are (image/core.h) -- != 0 alone
+	// is all this needs, and std::complex supports that natively -- but
+	// packing a complex image this way only tests "is it exactly zero", which
+	// is rarely the intent; more likely you want to threshold a derived
+	// magnitude/real-part image first and pack *that*.
+	template<class ImageT>
+	auto pack(const ImageT& src)
+	{
+		using T = typename ImageT::value_type;
+		auto extent = src.extent();
+		constexpr int DIM = std::tuple_size<decltype(extent)>::value;
+		PackedBitImage<DIM> dst(extent);
+		for (const auto& coord : src.coordinates())
+			dst.at(coord) = (src.at(coord) != T(0));
+		return dst;
+	}
+
+	// The other direction: expands a PackedBitImage back out into a real,
+	// caller-owned Image<T,DIM> (or OwnedImage<T,DIM>) -- onValue/offValue
+	// default to T(1)/T(0), the same "generic 0/1 mask" convention
+	// Image::threshold() itself defaults to.
+	template<class T, int DIM>
+	void unpack(const PackedBitImage<DIM>& src, Image<T, DIM>& dst, T onValue = T(1), T offValue = T(0))
+	{
+		assert(dst.extent() == src.extent());
+		for (const auto& coord : src.coordinates())
+			dst.at(coord) = src.at(coord) ? onValue : offValue;
+	}
 
 	// Prints a PackedBitImage as 0/1 per cell -- deliberately a separate,
 	// concrete overload rather than trying to generalize Image's own

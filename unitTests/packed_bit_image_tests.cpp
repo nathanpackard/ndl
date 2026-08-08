@@ -122,3 +122,46 @@ TEST(PackedBitImage, PackedBitImage) {
 	reportPassFail(passfail);
 }
 
+TEST(PackedBitImage, PackAndUnpack) {
+	// pack(): any minimal-interface image -> a freshly-allocated
+	// PackedBitImage, nonzero -> true.
+	std::array<int, 2> ext = { 4, 3 };
+	OwnedImage<int, 2> src(ext);
+	{ int i = 0; for (auto it = src.begin(); it != src.end(); ++it) *it = (i++ % 3 == 0) ? 0 : 5; } // 0,5,5,0,5,5,...
+
+	PackedBitImage<2> packed = pack(src);
+	EXPECT_EQ(packed.extent(), src.extent());
+	bool packMatches = true;
+	for (const auto& coord : src.coordinates())
+		if (bool(packed.at(coord)) != (src.at(coord) != 0)) packMatches = false;
+	EXPECT_TRUE(packMatches);
+
+	// unpack(): the reverse, into a caller-owned Image<T,DIM> -- round-trips
+	// back to the same 0/1 pattern (not the original 0/5 values, since
+	// pack() only preserves nonzero-ness, by design).
+	OwnedImage<int, 2> unpacked = OwnedImage<int, 2>::like(src);
+	unpack(packed, unpacked, 1, 0);
+	bool unpackMatches = true;
+	for (const auto& coord : src.coordinates())
+		if (unpacked.at(coord) != ((src.at(coord) != 0) ? 1 : 0)) unpackMatches = false;
+	EXPECT_TRUE(unpackMatches);
+
+	// Explicit onValue/offValue, matching threshold()'s own convention.
+	OwnedImage<uint8_t, 2> unpackedBytes(ext);
+	unpack<uint8_t>(packed, unpackedBytes, (uint8_t)255, (uint8_t)0);
+	bool bytesMatch = true;
+	for (const auto& coord : src.coordinates())
+		if (unpackedBytes.at(coord) != ((src.at(coord) != 0) ? 255 : 0)) bytesMatch = false;
+	EXPECT_TRUE(bytesMatch);
+
+	// pack() works directly on a real Image<bool,DIM> too (not just an
+	// arithmetic mask image), since bool != 0 is exactly "is it true".
+	std::array<bool, 12> boolData{};
+	boolData[0] = true; boolData[5] = true;
+	Image<bool, 2> boolImg(boolData.data(), ext);
+	PackedBitImage<2> packedFromBool = pack(boolImg);
+	EXPECT_TRUE(packedFromBool.at({ 0, 0 }));
+	EXPECT_TRUE(packedFromBool.at({ 1, 1 }));
+	EXPECT_EQ(packedFromBool.count(), 2u);
+}
+

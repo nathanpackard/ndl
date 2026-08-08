@@ -6,6 +6,7 @@
 #include <complex>
 #include <sstream>
 #include <iostream>
+#include <stdexcept>
 
 #include <ndl/image.h>
 #include <ndl/fft.h>
@@ -218,5 +219,31 @@ TEST(FFT, FFTMatchesSpatialConvolution) {
 	passfail << "FFT-based circular cross-correlation has ~0 imaginary part (as expected for real inputs): " << (maxImag < 1e-6 ? "Pass" : "Fail") << std::endl;
 	passfail << "FFT-based circular cross-correlation matches image.convolve(kernel, out, BorderMode::Wrap): " << (maxErr < 1e-6 ? "Pass" : "Fail") << std::endl;
 	reportPassFail(passfail);
+}
+
+TEST(FFT, NonPowerOfTwoSizeThrows) {
+	// fftn()/ifftn() require every dimension's extent to be a power of two
+	// (the Cooley-Tukey decomposition in FFTPowerOfTwo below has no path
+	// for anything else). This used to be an assert() -- compiled out in a
+	// Release build, silently leaving `output` all-zero instead of erroring
+	// (confirmed empirically before fixing: a 100-element fftn() call
+	// returned a silently all-zero spectrum under -DNDEBUG). Now it's an
+	// always-on check that throws regardless of NDEBUG.
+	// Wrapped in lambdas below: EXPECT_THROW/EXPECT_NO_THROW are macros, and
+	// the comma inside fftn<double, 1>(...)'s template argument list would
+	// otherwise be parsed as an extra macro argument.
+	const int N = 100; // not a power of two
+	std::vector<std::complex<double>> inData(N), outData(N);
+	Image<std::complex<double>, 1> in(inData.data(), { N });
+	Image<std::complex<double>, 1> out(outData.data(), { N });
+	auto callNonPowerOfTwo = [&]() { fftn<double, 1>(in, out); };
+	EXPECT_THROW(callNonPowerOfTwo(), std::invalid_argument);
+
+	const int N2 = 128; // a power of two -- should NOT throw
+	std::vector<std::complex<double>> inData2(N2), outData2(N2);
+	Image<std::complex<double>, 1> in2(inData2.data(), { N2 });
+	Image<std::complex<double>, 1> out2(outData2.data(), { N2 });
+	auto callPowerOfTwo = [&]() { fftn<double, 1>(in2, out2); };
+	EXPECT_NO_THROW(callPowerOfTwo());
 }
 

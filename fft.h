@@ -50,6 +50,8 @@ Retrieved from: http://en.literateprograms.org/Cooley-Tukey_FFT_algorithm_(C)?ol
 #include <algorithm>
 #include <execution>
 #include <cassert>
+#include <stdexcept>
+#include <string>
 #include "mathHelpers.h"
 #include "image.h"
 
@@ -403,7 +405,17 @@ namespace ndl
 			for (int axis = 0; axis < DIM; axis++)
 			{
 				int n = output.extent()[axis];
-				assert(detail::isPowerOfTwo(n) && "fftn: every dimension's extent must be a power of two");
+				// A real, always-on check, not assert(): FFTPowerOfTwo<Real,MaxPo2Size>
+				// recurses by repeatedly halving MaxPo2Size looking for an exact match
+				// to n, and silently falls through to its N=0 base case (a no-op) if
+				// n never divides down to a power of two -- so a non-power-of-two n
+				// doesn't crash or corrupt memory, it just leaves `output` filled with
+				// whatever std::vector<complex> value-initialized to (all-zero),
+				// silently, with no error at all in a Release build where assert() is
+				// compiled out. Confirmed empirically before fixing: fftn() on a
+				// 100-element input returns a silently all-zero spectrum under -DNDEBUG.
+				if (!detail::isPowerOfTwo(n))
+					throw std::invalid_argument("fftn: dimension " + std::to_string(axis) + " has extent " + std::to_string(n) + ", which is not a power of two -- every dimension's extent must be a power of two");
 
 				auto origins = detail::fiberOrigins<DIM>(output.extent(), axis);
 				std::for_each(std::execution::par, origins.begin(), origins.end(), [&](const std::array<int, DIM>& origin)
