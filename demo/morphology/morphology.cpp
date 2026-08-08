@@ -417,6 +417,45 @@ int main()
     closeStage2Channel.erode(box3, closed2Channel, BorderMode::Clamp);
     saveForInspection("binary closed", closed2Img, "19_binary_closed.png");
 
+    // ------------------------------------------------------------------
+    // PART 9: PackedBitImage -- the same processing, compact storage
+    // ------------------------------------------------------------------
+    std::cout << "\n\n=== PART 9: PackedBitImage ===\n";
+
+    step("PackedBitImage<2> packedDenoised(greyDenoised.extent()); ndl::threshold(greyDenoised, packedDenoised, tDenoised);",
+        "erode()/dilate()/median_filter()/threshold() are each implemented exactly once, as free functions\n"
+        "             (ndl::erode() etc., in image.h) written against any type exposing extent()/at()/coordinates() --\n"
+        "             Image satisfied that from the start, and PackedBitImage (1 bit of real storage per pixel,\n"
+        "             instead of a whole byte) is built to satisfy the same contract, so the exact same calls\n"
+        "             below run against it completely unmodified, no PackedBitImage-specific code needed.");
+    PackedBitImage<2> packedDenoised(greyDenoised.extent());
+    ndl::threshold(greyDenoised, packedDenoised, tDenoised);
+
+    step("ndl::erode(packedDenoised, packedEroded, box3); ndl::dilate(packedDenoised, packedDilated, box3);",
+        "The same box3 kernel and BorderMode::Clamp already used on binaryDenoisedChannel in Part 8 above --\n"
+        "             erosion/dilation of a bit image reduce to AND/OR of the neighborhood, the standard definition\n"
+        "             of binary morphology. Checked below bit-for-bit against Part 8's own erodedBinaryChannel/\n"
+        "             dilatedBinaryChannel: two independent storage representations (a byte per pixel vs. a bit\n"
+        "             per pixel), the same shared algorithm, and they should agree on every single pixel.");
+    PackedBitImage<2> packedEroded(greyDenoised.extent());
+    PackedBitImage<2> packedDilated(greyDenoised.extent());
+    ndl::erode(packedDenoised, packedEroded, box3, BorderMode::Clamp);
+    ndl::dilate(packedDenoised, packedDilated, box3, BorderMode::Clamp);
+
+    long erodeMismatch = 0, dilateMismatch = 0;
+    for (const auto& coord : erodedBinaryChannel.coordinates())
+    {
+        if (bool(packedEroded.at(coord)) != (erodedBinaryChannel.at(coord) != 0)) erodeMismatch++;
+        if (bool(packedDilated.at(coord)) != (dilatedBinaryChannel.at(coord) != 0)) dilateMismatch++;
+    }
+    showText("PackedBitImage erode() vs the byte-per-pixel Image result, mismatched pixels", std::to_string(erodeMismatch) + "  (expected 0)");
+    showText("PackedBitImage dilate() vs the byte-per-pixel Image result, mismatched pixels", std::to_string(dilateMismatch) + "  (expected 0)");
+
+    std::size_t byteImageBytes = greyDenoised.size();                       // 1 byte per pixel
+    std::size_t packedImageBytes = (greyDenoised.size() + 63) / 64 * 8;     // 1 bit per pixel, rounded up to whole 64-bit words
+    showText("memory: Image<uint8_t,2> mask", std::to_string(byteImageBytes) + " bytes");
+    showText("memory: PackedBitImage", std::to_string(packedImageBytes) + " bytes (" + std::to_string(byteImageBytes / (double)packedImageBytes) + "x smaller)");
+
     std::cout <<
         "\n\nAll outputs written to: " << outputDir << "\n"
         "Open 01_original.png alongside 02/03 to see bright regions shrink/grow. Open\n"
@@ -426,7 +465,9 @@ int main()
         "05_noisy.png but with most of the speckled noise gone. 13 (thresholded directly) should\n"
         "look visibly speckled compared to 15 (denoised first) -- open both alongside 14, the\n"
         "ground-truth threshold of the never-corrupted crop. 16-19 show binary\n"
-        "erode/dilate/opening/closing starting from 15, the cleaner of the two thresholded results.\n";
+        "erode/dilate/opening/closing starting from 15, the cleaner of the two thresholded results.\n"
+        "Part 9 has no new PNGs -- it reruns 16/17's erode/dilate through PackedBitImage instead and\n"
+        "confirms the result matches exactly, at a fraction of the memory.\n";
 
     return 0;
 }

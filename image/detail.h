@@ -1,0 +1,105 @@
+#pragma once
+#include <array>
+#include <vector>
+#include <cstddef>
+#include <type_traits>
+#include <utility>
+#include "border_mode.h"
+#include "../mathHelpers.h"
+
+namespace ndl
+{
+	namespace detail
+	{
+		// Detects "U is Image<X,D>, or publicly derives from it, for some X
+		// and D" -- used to keep the "scalar" overloads of
+		// operator=/+=/-=/etc. and add()/subtract()/multiply()/divide() from
+		// matching an Image (or Image-derived, e.g. OwnedImage) argument
+		// better than the sibling Image-taking overload does. Without this,
+		// passing an OwnedImage -- which IS-A Image, but is also its own
+		// concrete type -- prefers the "scalar" overload (an exact type
+		// match beats the derived-to-base conversion the Image overload
+		// needs), which then fails to compile for the by-value overloads
+		// (OwnedImage isn't copyable, and those take their argument by
+		// value) or would silently do the wrong thing for the by-reference
+		// ones (broadcasting/comparing against the whole object rather than
+		// treating it as another image).
+		template<class X, int D> std::true_type is_image_test(const Image<X, D>*);
+		std::false_type is_image_test(...);
+		template<class U> struct is_image_like : decltype(is_image_test(std::declval<std::remove_reference_t<U>*>())) {};
+		// Shared coordinate-list generator: every DIM-dimensional "visit
+		// every position" walk (Image::coordinates(), PackedBitImage::
+		// coordinates(), below) is this same recursion, so it lives once
+		// here rather than once per class.
+		template<std::size_t DIM>
+		void generateCoordinates(const std::array<int, DIM>& extents, std::array<int, DIM>& indices, std::vector<std::array<int, DIM>>& allIndices, std::size_t depth = 0)
+		{
+			if (depth == DIM) { allIndices.push_back(indices); return; }
+			for (int i = 0; i < extents[DIM - depth - 1]; ++i) {
+				indices[DIM - depth - 1] = i;
+				generateCoordinates(extents, indices, allIndices, depth + 1);
+			}
+		}
+		template<std::size_t DIM>
+		std::vector<std::array<int, DIM>> coordinatesOf(const std::array<int, DIM>& extent)
+		{
+			std::vector<std::array<int, DIM>> allIndices;
+			std::array<int, DIM> indices{};
+			generateCoordinates(extent, indices, allIndices);
+			return allIndices;
+		}
+
+		// Shared setup for every kernel-walking operation (erode/dilate/
+		// median_filter/percentile_filter/convolve, whether reached as an
+		// Image member or one of the free functions below): the kernel's
+		// center, and its nonzero ("included") taps, computed once per
+		// call rather than once per output pixel -- see the comment on
+		// the per-pixel-loop version this replaced in an earlier revision
+		// of this file. DIM is read off kernel.extent()'s own
+		// std::array<int,DIM> return type via std::tuple_size, rather
+		// than being named as a separate template parameter -- kernel
+		// only needs to expose extent()/at()/coordinates() (the same
+		// minimal interface described on the free functions below), not
+		// literally be an Image.
+		template<class KernelT>
+		auto kernelCenter(const KernelT& kernel)
+		{
+			auto extent = kernel.extent();
+			constexpr int DIM = std::tuple_size<decltype(extent)>::value;
+			std::array<int, DIM> center;
+			for (int i = 0; i < DIM; i++) center[i] = extent[i] / 2;
+			return center;
+		}
+		template<class KernelT>
+		auto kernelIncludedTaps(const KernelT& kernel)
+		{
+			auto extent = kernel.extent();
+			constexpr int DIM = std::tuple_size<decltype(extent)>::value;
+			using K = typename KernelT::value_type;
+			std::vector<std::array<int, DIM>> taps;
+			for (const auto& kCoord : kernel.coordinates())
+				if (kernel.at(kCoord) != K(0)) taps.push_back(kCoord);
+			return taps;
+		}
+		// Resolves the border-handled source coordinate for kernel tap
+		// `kCoord` (centered via `center`) when computing the value at
+		// `coord`, against an image of the given `extent`.
+		template<std::size_t DIM>
+		std::array<int, DIM> kernelTapCoord(const std::array<int, DIM>& coord, const std::array<int, DIM>& kCoord, const std::array<int, DIM>& center, const std::array<int, DIM>& extent, BorderMode border)
+		{
+			std::array<int, DIM> srcCoord;
+			for (std::size_t i = 0; i < DIM; i++)
+			{
+				int x = coord[i] + kCoord[i] - center[i];
+				switch (border)
+				{
+				case BorderMode::Wrap:    x = _wrap(extent[i], x); break;
+				case BorderMode::Reflect: x = _reflect(extent[i], x); break;
+				default:                  x = _clamp(extent[i], x); break;
+				}
+				srcCoord[i] = x;
+			}
+			return srcCoord;
+		}
+	}
+}
