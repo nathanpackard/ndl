@@ -54,14 +54,14 @@ namespace ndl
 				}
 				if (DIM > 1 && ++index[1] < _image.extent_[1])
 				{
-					index[0] = _image.start_[0];
+					index[0] = 0;
 					_ptr += _image.stride_[1];
 					return *this;
 				}
 				if (DIM > 2 && ++index[2] < _image.extent_[2])
 				{
-					index[0] = _image.start_[0];
-					index[1] = _image.start_[1];
+					index[0] = 0;
+					index[1] = 0;
 					_ptr += _image.stride_[2] - _image.stride_[1] * (_image.extent_[1] - 1);
 					return *this;
 				}
@@ -78,7 +78,7 @@ namespace ndl
 				{
 					if (++index[p] < _image.extent_[p])
 					{
-						for (int q = 0; q < p; q++) index[q] = _image.start_[q];
+						for (int q = 0; q < p; q++) index[q] = 0;
 						int delta = _image.stride_[p];
 						for (int k = 1; k < p; k++) delta -= _image.stride_[k] * (_image.extent_[k] - 1);
 						_ptr += delta;
@@ -208,7 +208,6 @@ namespace ndl
 			stride_{ makeStride(extent)},
 			end_{ makeEnd(extent_, stride_) },
 			offset_{ },
-			start_{ },
 			root_data_{ buffer },
 			data_{ buffer }
 		{ }
@@ -284,7 +283,6 @@ namespace ndl
 		{
 			std::ostringstream sb;
 			sb << "          data_ : " << long(data_ - root_data_) << std::endl;
-			for (int i = 0; i < DIM; i++) sb << "          start_" << i << " : " << start_[i] << std::endl;
 			for (int i = 0; i < DIM; i++) sb << "          offset_" << i << " : " << offset_[i] << std::endl;
 			for (int i = 0; i < DIM; i++) sb << "          end_" << i << " : " << end_[i] << std::endl;
 			for (int i = 0; i < DIM; i++) sb << "          stride_" << i << " : " << stride_[i] << std::endl;
@@ -337,18 +335,25 @@ namespace ndl
 		//     {5} on a dimension of extent 3, or an end before its start, like
 		//     {5},{2} -- throw std::out_of_range rather than silently reading
 		//     or writing past the buffer.
-		//   - step's magnitude decimates: |step| = 2 keeps every other element
-		//     of the [start, end] range (element start, start+2, start+4, ...,
-		//     stopping at or before end), so the resulting extent is
-		//     ceil((end - start + 1) / |step|), generally NOT end - start + 1.
-		//   - step's sign controls presentation order, independent of which
-		//     elements decimation picked: step < 0 mirrors the dimension, i.e.
-		//     the same elements chosen above are walked from last to first
-		//     instead of first to last. It does not change *which* elements
-		//     are included, only the order you iterate them in -- so e.g. for
-		//     view({1},{8},{-2}) on a 1D image, the elements at indices
-		//     1,3,5,7 are selected (start=1, step magnitude 2, up to end=8),
-		//     then presented in the order 7,5,3,1.
+		//   - step's magnitude decimates. A positive step walks forward from
+		//     start: |step| = 2 keeps every other element starting at start
+		//     (start, start+2, start+4, ..., stopping at or before end). A
+		//     negative step mirrors by walking backward from END instead:
+		//     end, end-2, end-4, ..., stopping at or before start. Either way
+		//     the resulting extent is ceil((end - start + 1) / |step|),
+		//     generally NOT end - start + 1, and the walk is guaranteed to
+		//     stay within [start, end] -- no wraparound is ever needed, since
+		//     that's exactly what the ceil'd element count guarantees.
+		//   - Because the two directions anchor at opposite ends of the range,
+		//     a negative step is NOT simply "the positive-step elements in
+		//     reverse order" once |step| > 1: it's a differently-anchored
+		//     decimation grid, so it generally selects different physical
+		//     elements. E.g. view({1},{8},{2}) (extent 8, magnitude 2) selects
+		//     1,3,5,7 (anchored at start=1); view({1},{8},{-2}) over the same
+		//     range selects 8,6,4,2 (anchored at end=8) -- a disjoint set, not
+		//     a reordering. At step magnitude 1 (no decimation) there's only
+		//     one element per position either way, so a negative step is
+		//     exactly a plain reverse, as you'd expect.
 		//   - step of 0 is invalid and throws.
 		//
 		// Any dimension omitted from a list (including entire trailing lists,
@@ -403,7 +408,18 @@ namespace ndl
 						"] is not a valid range for dimension " + std::to_string(i) +
 						" (extent " + std::to_string(extent_[i]) + "); views may not wrap around");
 
-				newOffset[i] = s;
+				// A negative step anchors the view at `end` and walks backward instead of
+				// picking a forward-stepped subset and reversing how it's presented. The
+				// element count (extent, computed below via ceil) is unchanged either way,
+				// and end - (count-1)*|step| is provably >= start (that's what ceil
+				// guarantees), so this never needs to wrap: e, e-|step|, e-2|step|, ...
+				// always stays inside [start, end]. At step magnitude 1 this lands on
+				// exactly the same elements as before (a plain reverse); decimated with a
+				// magnitude > 1, it anchors the decimation grid at `end` rather than
+				// `start`, so a mirrored decimation is generally a different set of
+				// elements than the non-mirrored decimation of the same range -- not just
+				// the same elements in reverse order.
+				newOffset[i] = (st < 0) ? e : s;
 				newExtent[i] = 1 + e - s;
 				newStride[i] = std::abs(st);
 
@@ -440,7 +456,9 @@ namespace ndl
 			// offset_/stride_ (this view's already-absolute bookkeeping) here was a
 			// bug: it double-applied the current offset and squared the stride for
 			// any dimension where stride_ != 1, corrupting the extent and stride of
-			// the mirrored view.
+			// the mirrored view. The mirrored dimension's offset is its last valid
+			// index (extent_[i]-1), matching view()'s "anchor at end" convention --
+			// this is a full-range mirror, so start=0, end=extent_[i]-1 always.
 			std::array<int, DIM> newExtent;
 			std::array<int, DIM> newOffset;
 			std::array<int, DIM> newStride;
@@ -448,7 +466,7 @@ namespace ndl
 			for (int i = 0; i < DIM; i++)
 			{
 				newMirror[i] = dimension == i;
-				newOffset[i] = 0;
+				newOffset[i] = (dimension == i) ? (extent_[i] - 1) : 0;
 				newExtent[i] = extent_[i];
 				newStride[i] = 1;
 			}
@@ -466,6 +484,19 @@ namespace ndl
 
 	protected:
 		// protected helper constructor. Construct from image, shares same memory
+		//
+		// data_ is computed by stepping off source's OWN already-resolved data_
+		// pointer, using source's OWN (signed) stride_ -- not by accumulating a
+		// running offset from root_data_. That distinction matters as soon as an
+		// intermediate view in the chain is mirrored (negative stride): "step
+		// offset_[i] units in source's local index direction" means something
+		// different depending on which way source's stride currently points,
+		// and only source.data_/source.stride_ (source's fully-resolved state)
+		// know that -- a cumulative offset_ measured against the root has no way
+		// to account for a sign flip partway through the chain. (Concretely:
+		// mirroring an already-mirrored view must land back on the original
+		// data_, and it only does if each step composes off the immediately
+		// preceding one rather than off a flattened root-relative offset.)
 		Image(const Image<T, DIM>& source,
 			  const std::array<int, DIM>& offset,
 			  const std::array<int, DIM>& extent,
@@ -476,50 +507,32 @@ namespace ndl
 			extent_{ makeExtent(extent, stride, swapDim1, swapDim2) },
 			stride_{ makeStride(source.stride_, mirror, stride, swapDim1, swapDim2) },
 			end_{ makeEnd(extent_, stride_) },
-			offset_{ makeOffset(source.offset_, offset, swapDim1, swapDim2) },
-			start_{ makeStart(stride_, extent_, swapDim1, swapDim2) },
+			offset_{ makeOffset(offset, swapDim1, swapDim2) },
 			root_data_{ source.root_data_ },
-			data_{ computeDataPtr(source.root_data_, source.stride_ ) }
+			data_{ computeDataPtr(source.data_, source.stride_ ) }
 		{ }
 
 		// protected helper constructor. Construct from image, shares same memory, reduces dimension
 		//
-		// The sliced-away dimension's offset is folded into root_data_ (rather than into
-		// offset_, which has no slot for it once that dimension is gone). This keeps the
-		// invariant "data_ is reachable from root_data_ via offset_/start_ alone" intact,
-		// which matters because further view operations (view()/mirror()/swap_axes()) rebuild
-		// data_ from root_data_ + offset_ and know nothing about slicing. Losing the slice
-		// offset there would make every further-derived view of a slice silently alias slice 0.
+		// Slicing introduces no displacement for the dimensions it doesn't touch --
+		// their indexing is untouched by fixing a different dimension to sliceIndex --
+		// so, per the comment above, this steps off source.data_ by exactly
+		// sliceIndex * source.stride_[sliceDimension] and nothing more.
 		Image(const Image<T, DIM + 1>& source, int sliceDimension, int sliceIndex) :
 			extent_{ makeExtentSlice(source.extent_, sliceDimension) },
 			stride_{ makeStrideSlice(source.stride_, sliceDimension) },
 			end_{ makeEnd(extent_, stride_) },
-			offset_{ makeOffsetSlice(source.offset_, sliceDimension) },
-			start_{ makeStart(stride_, extent_, 0, 0) },
-			root_data_{ source.root_data_ + sliceIndex * _abs(source.stride_[sliceDimension]) },
-			data_{ computeSliceDataPtr(sliceDimension, source.stride_) }
+			offset_{ },
+			root_data_{ source.root_data_ },
+			data_{ source.data_ + sliceIndex * source.stride_[sliceDimension] }
 		{ }
 
 		// protected helper methods
-		T* computeDataPtr(T* sourceRootData, const std::array<int,DIM>& sourceStride)
+		T* computeDataPtr(T* sourceData, const std::array<int,DIM>& sourceStride)
 		{
-			T* value = sourceRootData;
-			for (int i = 0; i < DIM; i++) value += start_[i] * _abs(stride_[i]) + offset_[i] * _abs(sourceStride[i]);
+			T* value = sourceData;
+			for (int i = 0; i < DIM; i++) value += offset_[i] * sourceStride[i];
 			return value;
-		}
-		T* computeSliceDataPtr(int sliceDimension, const std::array<int, DIM + 1>& sourceStride)
-		{
-			T* result = root_data_; // already includes the sliceIndex shift
-			int t = 0;
-			for (int i = 0; i < DIM + 1; i++)
-			{
-				if (i != sliceDimension)
-				{
-					result += start_[t] * _abs(stride_[t]) + offset_[t] * _abs(sourceStride[i]);
-					t++;
-				}
-			}
-			return result;
 		}
 		std::array<int, DIM> makeStride(const std::array<int, DIM>& sourceStride, const std::array<bool, DIM>& mirror, const std::array<int, DIM>& stride, int swapDim1, int swapDim2)
 		{
@@ -567,31 +580,11 @@ namespace ndl
 			}
 			return result;
 		}
-		std::array<int, DIM> makeOffset(const std::array<int, DIM>& sourceOffset, const std::array<int, DIM>& offset, int swapDim1, int swapDim2)
+		// offset_ is purely this construction step's own local displacement (see
+		// the constructor comment above) -- no accumulation from source needed.
+		std::array<int, DIM> makeOffset(const std::array<int, DIM>& offset, int swapDim1, int swapDim2)
 		{
-			std::array<int, DIM> result{};
-			for (int i = 0; i < DIM; i++)
-				result[i] = sourceOffset[i] + offset[i];
-			std::swap(result[swapDim1], result[swapDim2]);
-			return result;
-		}
-		std::array<int, DIM> makeOffsetSlice(const std::array<int, DIM + 1>& sourceOffset, int sliceDimension)
-		{
-			std::array<int, DIM> result{};
-			int t = 0;
-			for (int i = 0; i < DIM + 1; i++)
-			{
-				if (i == sliceDimension) continue;
-				result[t] = sourceOffset[i];
-				t++;
-			}
-			return result;
-		}
-		std::array<int, DIM> makeStart(const std::array<int, DIM>& newStride, const std::array<int, DIM>& newExtent, int swapDim1, int swapDim2)
-		{
-			std::array<int, DIM> result{};
-			for (int i = 0; i < DIM; i++)
-				result[i] = (newStride[i] < 0 ? newExtent[i] - 1 : 0);
+			std::array<int, DIM> result = offset;
 			std::swap(result[swapDim1], result[swapDim2]);
 			return result;
 		}
@@ -642,7 +635,6 @@ namespace ndl
 		const std::array<int, DIM> stride_;   // stride of each dimension (linear memory skip factor)
 		const std::array<int, DIM> end_;      // (one plus the last point for each dimension) * stride
 		const std::array<int, DIM> offset_;
-		const std::array<int, DIM> start_;
 		T* root_data_;
 		T* data_;
 	};

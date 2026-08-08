@@ -451,8 +451,10 @@ void testViewSemantics(std::stringstream& passfail) {
 		<< (toVector(img.view({ 3 }, { 7 }, { 2 })) == std::vector<int>{3, 5, 7} ? "Pass" : "Fail") << std::endl;
 	passfail << "view mirror step=-1: "
 		<< (toVector(img.view({ 3 }, { 7 }, { -1 })) == std::vector<int>{7, 6, 5, 4, 3} ? "Pass" : "Fail") << std::endl;
-	passfail << "view decimate-then-mirror step=-2: "
-		<< (toVector(img.view({ 1 }, { 8 }, { -2 })) == std::vector<int>{7, 5, 3, 1} ? "Pass" : "Fail") << std::endl;
+	passfail << "view decimate-then-mirror step=-2 anchors at end: "
+		<< (toVector(img.view({ 1 }, { 8 }, { -2 })) == std::vector<int>{8, 6, 4, 2} ? "Pass" : "Fail") << std::endl;
+	passfail << "mirroring an already-mirrored view returns to the original: "
+		<< (toVector(img.view({}, {}, { -1 }).view({}, {}, { -1 })) == std::vector<int>{0,1,2,3,4,5,6,7,8,9} ? "Pass" : "Fail") << std::endl;
 	passfail << "view negative start counts from end: "
 		<< (toVector(img.view({ -3 }, { -1 })) == std::vector<int>{7, 8, 9} ? "Pass" : "Fail") << std::endl;
 	passfail << "view full reverse: "

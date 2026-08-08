@@ -41,8 +41,10 @@ void step(const std::string& code, const std::string& explanation)
 // 48-element 4D array, a single scalar, or an exception, where printing the
 // whole thing isn't the clearest way to show it), and one pair that does
 // both -- a short note plus the actual array -- for e.g. "here's the extent,
-// and here's what it holds". Each step has exactly one input: and one
-// output: line no matter which of these it reaches for.
+// and here's what it holds". Most steps have exactly one input: and one
+// output: line; a step showing the same underlying memory through more than
+// one view (e.g. proving a write is visible through objects other than the
+// one written through) calls outputNoted() more than once instead.
 template<class ImageT>
 void input(const ImageT& img) { std::cout << "    input:\n" << img; }
 void inputText(const std::string& text) { std::cout << "    input:   " << text << "\n"; }
@@ -156,6 +158,14 @@ int main()
     input(referenceGrid);
     output(referenceGrid.mirror(0));
 
+    step("referenceGrid.mirror(0).mirror(0)",
+         "Mirroring an already-mirrored view returns to the original -- this only holds because each\n"
+         "             mirror composes off the PREVIOUS view's own resolved memory address, not off a running\n"
+         "             offset measured from referenceGrid. (A flattened/accumulated offset would double-apply\n"
+         "             the first mirror's correction and land somewhere else entirely.)");
+    input(referenceGrid.mirror(0));
+    output(referenceGrid.mirror(0).mirror(0));
+
     step("referenceGrid.view({}, {}, {2,1})",
          "A step MAGNITUDE > 1 decimates: keeps every 2nd element starting at the (default) start,\n"
          "             so only columns 0 and 2 of the reference grid survive.");
@@ -163,8 +173,10 @@ int main()
     output(referenceGrid.view({}, {}, {2, 1}));
 
     step("referenceGrid.view({}, {}, {-2,1})",
-         "Decimate AND mirror together: elements are first CHOSEN by stepping from start (columns\n"
-         "             0 and 2, same as step 10), then PRESENTED in reverse order -- so column 2 comes before column 0.");
+         "Decimate AND mirror together: a negative step decimates by walking backward from the END\n"
+         "             instead of forward from start, so this picks columns 3 and 1 (not 0 and 2, like step 11's positive\n"
+         "             decimation) -- a mirrored decimation is a DIFFERENT set of columns, not the same set reordered,\n"
+         "             whenever the step magnitude is more than 1.");
     input(referenceGrid);
     output(referenceGrid.view({}, {}, {-2, 1}));
 
@@ -189,10 +201,20 @@ int main()
     step("referenceGrid.view({0},{0})(0,0) = -1;",
          "Neither slice() nor view() ever copies -- both share the original memory. Writing through\n"
          "             any chain of them writes into ndImage's own backing array. (start and end both 0 here,\n"
-         "             so this view is a single column -- remember start/end are inclusive, view({0},{1}) would be two.)");
+         "             so this view is a single column -- remember start/end are inclusive, view({0},{1}) would be two.)\n"
+         "             To make the sharing concrete, below is the SAME underlying data shown three ways after the\n"
+         "             write: the narrow column view actually written through, referenceGrid (the object it was\n"
+         "             carved from), and a completely SEPARATE slice pulled fresh from ndImage afterward -- built\n"
+         "             from scratch, sharing no C++ object with the other two. All three show the -1, because\n"
+         "             there was only ever one array underneath any of them.");
     inputNoted("column 0 of referenceGrid, i.e. referenceGrid.view({0},{0}), before the write:", referenceGrid.view({0}, {0}));
+
     referenceGrid.view({0}, {0})(0, 0) = -1;
-    outputText("ndImage(0, 0, 0, 0) is now " + std::to_string(ndImage(0, 0, 0, 0)) + " (was 1) -- the write landed in ndImage's own array.");
+
+    outputNoted("1) the same column view, re-evaluated after the write:", referenceGrid.view({0}, {0}));
+    outputNoted("2) referenceGrid itself (the view was carved from this) -- note only element (0,0) changed:", referenceGrid);
+    outputNoted("3) ndImage.slice(3,0).slice(2,0), built fresh from ndImage just now -- a brand new object, same memory:",
+        ndImage.slice(3, 0).slice(2, 0));
 
     step("try { ndImage.view({0,0,0,3}, {-1,-1,-1,0}); } catch (const std::out_of_range& e) { ... }",
          "There is no wraparound: an invalid range (here, frame start=3 is out of bounds for an\n"
