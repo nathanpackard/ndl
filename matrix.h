@@ -20,6 +20,11 @@
 #include <cmath>
 #include <memory.h>
 #include <algorithm>
+#include <array>
+#include <iostream>
+
+namespace ndl
+{
 
 template <class Real,int N>
 class SVD;
@@ -151,7 +156,7 @@ class Matrix {
             return *this;
         };
 
-        Matrix<Real,N> operator*(Matrix<Real,N> &m) const {
+        Matrix<Real,N> operator*(const Matrix<Real,N> &m) const {
             Matrix<Real,N> result;
             int p=0;
             for (int i=0; i<N; i++){
@@ -169,8 +174,8 @@ class Matrix {
             return result;
         };
         
-       std::array<Real,N> operator*(std::array<Real,N>& p) const {
-		   std::array<Real,N> result;
+       std::array<Real,N> operator*(const std::array<Real,N>& p) const {
+		   std::array<Real,N> result{};
             int i=0;
             for (int r=0; r<N; ++r){
             for (int c=0; c<N; ++c){
@@ -202,7 +207,7 @@ class Matrix {
             for(int i=0;i<N;++i) p[i]=result[i];
       };
 
-        void DotProduct(std::array<Real,N> &m, std::array<Real,N> &result){
+        void DotProduct(const std::array<Real,N> &m, std::array<Real,N> &result){
             unsigned int i, j,  p,  r;
             for (i=0, p=0, r=0; i<N; i++){ 
                 result[i]=0;
@@ -329,21 +334,21 @@ class Matrix {
         
 
         //For Non-Homogeneous Coords
-        Matrix<Real,N> &SetScale(std::array<Real,N> &t){
+        Matrix<Real,N> &SetScale(const std::array<Real,N> &t){
             SetIdentity();
             for (int i=0;i<N;i++) (*this)[i][i] = t[i];
             return *this;
         }
 
         //For Homogeneous Coords
-        Matrix<Real,N> &SetScale(std::array<Real,N-1> &t){
+        Matrix<Real,N> &SetScale(const std::array<Real,N-1> &t){
             SetIdentity();
             for (int i=0;i<N-1;i++) (*this)[i][i] = t[i];
             return *this;
         }
 
         //For Homogeneous Coords
-        Matrix<Real,N> &SetTranslate(std::array<Real,N-1> &t){
+        Matrix<Real,N> &SetTranslate(const std::array<Real,N-1> &t){
             SetIdentity();
             for (int i=0;i<N-1;i++) (*this)[i][N-1] = t[i];
             return *this;
@@ -1806,3 +1811,5 @@ class SVD {
       //~ }
    //~ }
 //~ };
+
+} // namespace ndl

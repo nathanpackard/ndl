@@ -26,7 +26,7 @@ namespace ndl
 		public:
 			typedef iterator self_type;
 			typedef T value_type;
-			iterator(Image& parent, int last) : I{}, _Ptr(parent.DataArray), _myImage(parent) 
+			iterator(const Image& parent, int last) : I{}, _Ptr(parent.DataArray), _myImage(parent)
 			{ 
 				I.back() = last; 
 			}
@@ -152,11 +152,11 @@ namespace ndl
 
 		// construct from external memory, be sure you have enough space!!
 		Image(T* buffer, std::array<int, DIM> extent) :
-			Stride{ makeStride(extent)},
 			Extent(extent),
+			Stride{ makeStride(extent)},
+			End{ makeEnd(Extent, Stride) },
 			Offset{ },
 			Start{ },
-			End{ makeEnd(Extent, Stride) },
 			RootDataArray{ buffer },
 			DataArray{ buffer }
 		{ }
@@ -226,7 +226,7 @@ namespace ndl
 		template<class U> bool operator>= (const Image<U, DIM>& rhs) { return !(*this < rhs); }
 		template<class U> bool operator>= (const U& rhs) { return !(*this < rhs); }
 		long size() const { return std::accumulate(Extent.begin(), Extent.end(), 1, std::multiplies<int>()); }
-		std::string state()
+		std::string state() const
 		{
 			std::ostringstream sb;
 			sb << "          DataArray : " << long(DataArray - RootDataArray) << std::endl;
@@ -239,8 +239,8 @@ namespace ndl
 		}
 
 		//iterator methods
-		iterator begin() { return iterator(*this, 0); }
-		iterator end() { return iterator(*this, Extent.back()); }
+		iterator begin() const { return iterator(*this, 0); }
+		iterator end() const { return iterator(*this, Extent.back()); }
 
 		//basic accessors
 		T& at(const std::array<int, DIM>& index) { return DataArray[std::inner_product(index.begin(), index.end(), Stride.begin(), 0)]; }
@@ -338,7 +338,7 @@ namespace ndl
 			}
 			return Image<T, DIM>(*this, newOffset, newExtent, newStride, newMirror);
 		}
-		std::vector<std::array<int, DIM>> getCoordinates() {
+		std::vector<std::array<int, DIM>> getCoordinates() const {
 			std::vector<std::array<int, DIM>> allIndices;
 			std::array<int, DIM> indices = {};
 			generateCoordinates(Extent, indices, allIndices);
@@ -359,24 +359,31 @@ namespace ndl
 			  const std::array<bool, DIM>& mirror,
 			  int swapDim1 = 0,
 			  int swapDim2 = 0) :
-			Stride{ makeStride(source.Stride, mirror, stride, swapDim1, swapDim2) },
 			Extent{ makeExtent(extent, stride, swapDim1, swapDim2) },
+			Stride{ makeStride(source.Stride, mirror, stride, swapDim1, swapDim2) },
+			End{ makeEnd(Extent, Stride) },
 			Offset{ makeOffset(source.Offset, offset, swapDim1, swapDim2) },
 			Start{ makeStart(Stride, Extent, swapDim1, swapDim2) },
-			End{ makeEnd(Extent, Stride) },
 			RootDataArray{ source.RootDataArray },
 			DataArray{ computeDataArrayPtr(source.RootDataArray, source.Stride ) }
 		{ }
 
 		// protected helper constructor. Construct from image, shares same memory, reduces dimension
+		//
+		// The sliced-away dimension's offset is folded into RootDataArray (rather than into
+		// Offset, which has no slot for it once that dimension is gone). This keeps the
+		// invariant "DataArray is reachable from RootDataArray via Offset/Start alone" intact,
+		// which matters because further view operations (roi/mirror/swap via operator()) rebuild
+		// DataArray from RootDataArray + Offset and know nothing about slicing. Losing the slice
+		// offset there would make every further-derived view of a slice silently alias slice 0.
 		Image(const Image<T, DIM + 1>& source, int sliceDimension, int sliceIndex) :
-			Stride{ makeStrideSlice(source.Stride, sliceDimension) },
 			Extent{ makeExtentSlice(source.Extent, sliceDimension) },
+			Stride{ makeStrideSlice(source.Stride, sliceDimension) },
+			End{ makeEnd(Extent, Stride) },
 			Offset{ makeOffsetSlice(source.Offset, sliceDimension) },
 			Start{ makeStart(Stride, Extent, 0, 0) },
-			End{ makeEnd(Extent, Stride) },
-			RootDataArray { source.RootDataArray },
-			DataArray { computeDataArraySlicePtr(sliceDimension, sliceIndex, source.Stride) }
+			RootDataArray { source.RootDataArray + sliceIndex * _abs(source.Stride[sliceDimension]) },
+			DataArray { computeDataArraySlicePtr(sliceDimension, source.Stride) }
 		{ }
 
 		// protected helper methods
@@ -386,15 +393,13 @@ namespace ndl
 			for (int i = 0; i < DIM; i++) value += Start[i] * _abs(Stride[i]) + Offset[i] * _abs(sourceStride[i]);
 			return value;
 		}
-		T* computeDataArraySlicePtr(int sliceDimension, int sliceIndex, const std::array<int, DIM + 1>& sourceStride)
+		T* computeDataArraySlicePtr(int sliceDimension, const std::array<int, DIM + 1>& sourceStride)
 		{
-			T* result = RootDataArray;
+			T* result = RootDataArray; // already includes the sliceIndex shift
 			int t = 0;
 			for (int i = 0; i < DIM + 1; i++)
 			{
-				if (i == sliceDimension)
-					result += sliceIndex * _abs(sourceStride[i]);
-				else
+				if (i != sliceDimension)
 				{
 					result += Start[t] * _abs(Stride[t]) + Offset[t] * _abs(sourceStride[i]);
 					t++;
@@ -497,7 +502,7 @@ namespace ndl
 		}
 
 		// Generates multiple dimensional indices in order
-		void generateCoordinates(const std::array<int, DIM>& extents, std::array<int, DIM>& indices, std::vector<std::array<int, DIM>>& allIndices, std::size_t depth = 0) {
+		void generateCoordinates(const std::array<int, DIM>& extents, std::array<int, DIM>& indices, std::vector<std::array<int, DIM>>& allIndices, std::size_t depth = 0) const {
 			if (depth == DIM) {  // Reached the deepest level
 				allIndices.push_back(indices);
 				return;

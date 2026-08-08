@@ -1,8 +1,8 @@
 #pragma once
-#include "imageIO/bitmap.h";
-#include "imageIO/jpeg_decoder.h";
-#include "imageIO/avi.h";
-#include "imageIO/dicom.h";
+#include "imageIO/bitmap.h"
+#include "imageIO/jpeg_decoder.h"
+#include "imageIO/avi.h"
+#include "imageIO/dicom.h"
 #include "imageIO/NRRD/nrrd.h"
 #include <algorithm>
 #include <array>
@@ -42,22 +42,31 @@ namespace ndl
 				size = ftell(f);
 				buf = (unsigned char*)malloc(size);
 				fseek(f, 0, SEEK_SET);
-				size_t read = fread(buf, 1, size, f);
+				size_t bytesRead = fread(buf, 1, size, f);
 				fclose(f);
+				if (bytesRead != size)
+				{
+					printf("Error reading the input file\n");
+					free(buf);
+					return std::vector<uint8_t>();
+				}
 				Decoder decoder(buf, size);
 				if (decoder.GetResult() != Decoder::OK)
 				{
 					printf("Error decoding the input file\n");
+					free(buf);
 					return std::vector<uint8_t>();
 				}
 				printf("width: %d\r\n", decoder.GetWidth());
 				printf("height: %d\r\n", decoder.GetHeight());
 				printf("width * height: %d\r\n", decoder.GetWidth() * decoder.GetHeight());
-				printf("size: %d\r\n", decoder.GetImageSize());
+				printf("size: %zu\r\n", decoder.GetImageSize());
 
 				extent = { 3, decoder.GetWidth(), decoder.GetHeight() };
 				unsigned char* data = (unsigned char*)decoder.GetImage();
-				return std::vector<uint8_t>(data, data + std::accumulate(extent.begin(), extent.end(), 1, std::multiplies<int>()));
+				std::vector<uint8_t> result(data, data + std::accumulate(extent.begin(), extent.end(), 1, std::multiplies<int>()));
+				free(buf);
+				return result;
 			}
 			if (extension == "bmp")
 			{

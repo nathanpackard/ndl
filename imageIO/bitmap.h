@@ -92,16 +92,48 @@ public:
     bool save_to_file(const char_type* file_name)
     {
         bmih.biPlanes = bmih.biPlanes > 0 ? bmih.biPlanes : 1;
-        bmih.biSizeImage = data.size();
 
-        std::cout << this->state() << std::endl;
+        std::vector<unsigned char> writeData;
+
+        // If 8-bit, replicate grayscale to RGB and save as 24-bit. This avoids
+        // needing a color palette, which an 8bpp BMP requires to display correctly.
+        if (bmih.biBitCount == 8)
+        {
+            int width = bmih.biWidth;
+            int height = bmih.biHeight;
+            int oldRowBytes = width + ((4 - (width % 4)) % 4);
+            int newRowBytes = width * 3 + ((4 - ((width * 3) % 4)) % 4);
+
+            bmih.biBitCount = 24; // save as 24-bit
+            writeData.assign(newRowBytes * height, 0);
+
+            for (int y = 0; y < height; ++y)
+            {
+                for (int x = 0; x < width; ++x)
+                {
+                    unsigned char v = data[y * oldRowBytes + x];
+                    unsigned char* out = &writeData[y * newRowBytes + x * 3];
+                    out[0] = v; // R
+                    out[1] = v; // G
+                    out[2] = v; // B
+                }
+            }
+        }
+        else
+        {
+            writeData = data; // already 24/32-bit
+        }
+
+        bmih.biSizeImage = writeData.size();
+
         std::ofstream out(file_name, std::ios::binary);
         if (!bmfh.write(out))
             return false;
         out.write((const char*)&bmih, sizeof(bitmap_info_header));
-        out.write((const char*)&*data.begin(), data.size());
+        out.write((const char*)&*writeData.begin(), writeData.size());
         return true;
     }
+
 
     bool load_from_file(const std::string &file_name)
     {

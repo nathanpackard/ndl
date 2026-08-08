@@ -351,7 +351,7 @@ namespace ndl
 		}
 	public:
 		unsigned int image_size;
-		std::auto_ptr<std::ifstream> input_io;
+		std::unique_ptr<std::ifstream> input_io;
 		transfer_syntax_type transfer_syntax;
 
 		dicom(void) :transfer_syntax(lee) {}
@@ -392,7 +392,7 @@ namespace ndl
 			}
 			while (*input_io)
 			{
-				std::auto_ptr<dicom_group_element> ge(new dicom_group_element);
+				std::unique_ptr<dicom_group_element> ge(new dicom_group_element);
 				if (!ge->read(*input_io, transfer_syntax))
 				{
 					if (!(*input_io)) return false;

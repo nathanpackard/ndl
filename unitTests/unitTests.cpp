@@ -15,6 +15,7 @@
 #include <ndl/utility.h>
 #include <ndl/mathHelpers.h>
 #include <ndl/fft.h>
+#include <ndl/matrix.h>
 
 
 using namespace ndl;
@@ -446,12 +447,15 @@ void TestImages(std::stringstream& passfail, std::string inputFolder, std::strin
 	std::vector<uint8_t> bmpImageData = ImageIO::Load(inputFolder + "/marbles.bmp", bmpImageExtent);
 	Image<uint8_t, 3> bmpImage(bmpImageData.data(), bmpImageExtent);
 	ImageIO::Save(bmpImage, outputFolder + "/marbles_output.bmp");
+
 	Image<uint8_t, 2> red2 = bmpImage.slice(0, 0);
 	Image<uint8_t, 2> green2 = bmpImage.slice(0, 1);
 	Image<uint8_t, 2> blue2 = bmpImage.slice(0, 2);
+
 	ImageIO::Save(red2, outputFolder + "/marbles_red2_output.bmp");
 	ImageIO::Save(green2, outputFolder + "/marbles_green2_output.bmp");
 	ImageIO::Save(blue2, outputFolder + "/marbles_blue2_output.bmp");
+
 	ImageIO::SaveRaw(red2, outputFolder + std::string("/red2_") + std::to_string(red2.Extent[0]) + "x" + std::to_string(red2.Extent[1]) + ".raw");
 	ImageIO::SaveRaw(green2, outputFolder + std::string("/green2_") + std::to_string(green2.Extent[0]) + "x" + std::to_string(green2.Extent[1]) + ".raw");
 	ImageIO::SaveRaw(blue2, outputFolder + std::string("/blue2_") + std::to_string(blue2.Extent[0]) + "x" + std::to_string(blue2.Extent[1]) + ".raw");
@@ -527,28 +531,98 @@ void testreal(std::stringstream& passfail) {
 }
 
 
-#include <unistd.h>
-#include <limits.h>
+void testMatrixLibrary(std::stringstream& passfail) {
+	std::cout << std::endl << "MATRIX" << std::endl;
+
+	Matrix<double, 3> diag3;
+	diag3.ElementAt(0, 0) = 2; diag3.ElementAt(1, 1) = 3; diag3.ElementAt(2, 2) = 4;
+	passfail << "Matrix Determinant (3x3): " << (std::abs(diag3.Determinant() - 24.0) < 1e-9 ? "Pass" : "Fail") << std::endl;
+
+	Matrix<double, 5> diag5;
+	for (int i = 0; i < 5; i++) diag5.ElementAt(i, i) = i + 1;
+	passfail << "Matrix Determinant (5x5, Laplace expansion): " << (std::abs(diag5.Determinant() - 120.0) < 1e-9 ? "Pass" : "Fail") << std::endl;
+
+	// SVD-based inverse should satisfy A * inverse(A) == identity
+	Matrix<double, 3> rot;
+	rot.SetRotate(M_PI / 4, 0, 1);
+	Matrix<double, 3> inv = rot.GetInverse();
+	Matrix<double, 3> product = rot * inv;
+	Matrix<double, 3> identity;
+	bool isIdentity = true;
+	for (int i = 0; i < 3 && isIdentity; i++)
+		for (int j = 0; j < 3 && isIdentity; j++)
+			if (std::abs(product.ElementAt(i, j) - identity.ElementAt(i, j)) > 1e-9) isIdentity = false;
+	passfail << "Matrix GetInverse (A * inverse(A) == I): " << (isIdentity ? "Pass" : "Fail") << std::endl;
+
+	// a rotation matrix is orthogonal: its inverse equals its transpose
+	Matrix<double, 3> transpose = rot.GetTranspose();
+	bool matchesTranspose = true;
+	for (int i = 0; i < 3 && matchesTranspose; i++)
+		for (int j = 0; j < 3 && matchesTranspose; j++)
+			if (std::abs(inv.ElementAt(i, j) - transpose.ElementAt(i, j)) > 1e-9) matchesTranspose = false;
+	passfail << "Matrix rotation inverse == transpose: " << (matchesTranspose ? "Pass" : "Fail") << std::endl;
+}
+
+// Regression test for a bug where composing a further view (roi/mirror/swap via
+// operator()) on top of a slice()-derived image silently lost the slice's
+// channel offset, making every channel of a sliced-then-viewed image alias
+// channel 0. See the RootDataArray comment on the slice constructor in image.h.
+void testSliceComposition(std::stringstream& passfail) {
+	std::cout << std::endl << "SLICE COMPOSITION" << std::endl;
+
+	int w = 4, h = 3, channels = 3;
+	std::vector<int> data(channels * w * h);
+	// Extent = {channels, w, h} means the channel dimension is fastest-varying
+	// (stride 1), i.e. per-pixel interleaved storage -- matching how a loaded
+	// color image (e.g. from bitmap.h) is laid out.
+	for (int y = 0; y < h; y++)
+		for (int x = 0; x < w; x++)
+			for (int c = 0; c < channels; c++)
+				data[(y * w + x) * channels + c] = c * 1000 + y * 10 + x;
+	Image<int, 3> img(data.data(), { channels, w, h });
+
+	bool allMatch = true;
+	for (int c = 0; c < channels; c++)
+	{
+		Image<int, 2> channelSlice = img.slice(0, c);
+		Image<int, 2> mirroredY = channelSlice({}, {}, { 1, -1 });
+		for (int y = 0; y < h && allMatch; y++)
+			for (int x = 0; x < w && allMatch; x++)
+			{
+				int expected = c * 1000 + (h - 1 - y) * 10 + x;
+				if (mirroredY.at({ x, y }) != expected) allMatch = false;
+			}
+	}
+	passfail << "Slice then mirror reads correct channel: " << (allMatch ? "Pass" : "Fail") << std::endl;
+}
+
 #include <filesystem>
 namespace fs = std::filesystem;
+
+#ifndef NDL_TEST_DATA_DIR
+#define NDL_TEST_DATA_DIR "."
+#endif
+
+#ifndef NDL_TEST_OUTPUT_DIR
+#define NDL_TEST_OUTPUT_DIR "output"
+#endif
 
 int main()
 {
     std::stringstream passfail;
 
-    // Get path to current executable
-    char result[PATH_MAX];
-    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
-    fs::path exePath = fs::path(std::string(result, (count > 0) ? count : 0)).parent_path();
-
-    // Build relative paths (assumes executable is in subfolder)
-    fs::path dataPath = exePath / ".." / "unitTests" / "data";
-    fs::path tmpPath  = "/tmp";
+    // Both directories are baked in at configure time (see CMakeLists.txt) so this
+    // works regardless of where the build directory lives relative to the source tree.
+    fs::path dataPath = NDL_TEST_DATA_DIR;
+    fs::path tmpPath  = NDL_TEST_OUTPUT_DIR;
+    fs::create_directories(tmpPath);
 
     testImageLibraryDimensions(passfail);
     testImageLibraryAccuracy(passfail);
     ImageLibrarySpeedTest(passfail);
     testImageLibraryBorders(passfail);
+    testSliceComposition(passfail);
+    testMatrixLibrary(passfail);
     TestImages(passfail, dataPath.string(), tmpPath.string());
     testreal(passfail);
     testcomplex(passfail);

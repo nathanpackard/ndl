@@ -1,6 +1,9 @@
 #pragma once
 #include <chrono>
 #include <utility>
+#include <functional>
+#include <iostream>
+#include <string>
 namespace ndl
 {
 	template<typename type>
