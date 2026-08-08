@@ -3,8 +3,8 @@
 // Copyright (C) 2009   Nathan Packard   <nathanpackard@gmail.com>
 //
 // This program is free software; you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as 
-// published by the Free Software Foundation; either version 3 of the 
+// it under the terms of the GNU Lesser General Public License as
+// published by the Free Software Foundation; either version 3 of the
 // License, or (at your option) any later version.
 //
 // This program is distributed in the hope that it will be useful,
@@ -12,8 +12,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Lesser General Public License for more details.
 //
-// You should have received a copy of the GNU Lesser General Public 
-// License along with this program; if not, see 
+// You should have received a copy of the GNU Lesser General Public
+// License along with this program; if not, see
 // <http://www.gnu.org/licenses/>.
 
 /* Copyright (c) 2009 the authors listed at the following URL, and/or
@@ -45,61 +45,18 @@ Retrieved from: http://en.literateprograms.org/Cooley-Tukey_FFT_algorithm_(C)?ol
 #include <math.h>
 #include <cstdlib>
 #include <complex>
+#include <vector>
+#include <array>
+#include <algorithm>
+#include <execution>
+#include <cassert>
 #include "mathHelpers.h"
+#include "image.h"
 
 namespace ndl
 {
 	namespace fft
 	{
-		//template based loop unroller
-		template <class Real, int N, int NOVER2> struct unroll {
-			static inline void apply_forward_twiddles(Real* D) {
-				constexpr int k = NOVER2 - 1;
-				unroll<Real, N, k>::apply_forward_twiddles(D);
-				Real Rre = D[k * 2];
-				D[k * 2] = ndl::Cos<N, k * 2, Real>::value() * D[k * 2] + ndl::Sin<N, k * 2, Real>::value() * D[k * 2 + 1];
-				D[k * 2 + 1] = ndl::Cos<N, k * 2, Real>::value() * D[k * 2 + 1] - ndl::Sin<N, k * 2, Real>::value() * Rre;
-			}
-			static inline void apply_reverse_twiddles(Real* D) {
-				constexpr int k = NOVER2 - 1;
-				unroll<Real, N, k>::apply_reverse_twiddles(D);
-				Real Rre = D[k * 2];
-				D[k * 2] = ndl::Cos<N, k * 2, Real>::value() * D[k * 2] - ndl::Sin<N, k * 2, Real>::value() * D[k * 2 + 1];
-				D[k * 2 + 1] = ndl::Cos<N, k * 2, Real>::value() * D[k * 2 + 1] + ndl::Sin<N, k * 2, Real>::value() * Rre;
-			}
-			static inline void apply_real_forward_twiddles(Real* D) {
-				constexpr int k = NOVER2 - 1;
-				unroll<Real, N, k>::apply_forward_twiddles(D);
-				Real Rre = D[k * 2];
-				//TODO: finish this!!
-				//D[k * 2] = ndl::Cos<N, k * 2, Real>::value() * D[k * 2] + ndl::Sin<N, k * 2, Real>::value() * D[k * 2 + 1];
-				//D[k * 2 + 1] = ndl::Cos<N, k * 2, Real>::value() * D[k * 2 + 1] - ndl::Sin<N, k * 2, Real>::value() * Rre;
-			}
-			static inline void apply_real_reverse_twiddles(Real* D) {
-				constexpr int k = NOVER2 - 1;
-				unroll<Real, N, k>::apply_reverse_twiddles(D);
-				Real Rre = D[k * 2];
-				//TODO: finish this!!
-				//D[k * 2] = ndl::Cos<N, k * 2, Real>::value() * D[k * 2] - ndl::Sin<N, k * 2, Real>::value() * D[k * 2 + 1];
-				//D[k * 2 + 1] = ndl::Cos<N, k * 2, Real>::value() * D[k * 2 + 1] + ndl::Sin<N, k * 2, Real>::value() * Rre;
-			}
-			static inline void assign_output(Real* D, Real* output) {
-				constexpr int k = NOVER2 - 1;
-				unroll<Real, N, k>::assign_output(D, output);
-				output[k * 2] = D[k * 2 + N] + D[k * 2];
-				output[k * 2 + 1] = D[k * 2 + 1 + N] + D[k * 2 + 1];
-				output[k * 2 + N] = D[k * 2 + N] - D[k * 2];
-				output[k * 2 + 1 + N] = D[k * 2 + 1 + N] - D[k * 2 + 1];
-			}
-		};
-		template <class Real, int N> struct unroll<Real, N, 0> {
-			static inline void apply_forward_twiddles(Real*) {}
-			static inline void apply_reverse_twiddles(Real*) {}
-			static inline void apply_real_forward_twiddles(Real*) {}
-			static inline void apply_real_reverse_twiddles(Real*) {}
-			static inline void assign_output(Real*, Real*) {}
-		};
-
 		//compute fft for size N (power of 2)
 		template<class Real, int N, int SKIP=1>
 		struct FFT_calculate {
@@ -124,30 +81,6 @@ namespace ndl
 					output[k1 + N] = D[k1 + N] - D[k1];
 				}
 			}
-			static inline void evaluate_forward(Real* input, Real* output, Real* D) {
-				FFT_calculate<Real, N / 2, SKIP * 2>::evaluate_forward(input, D + N, output);
-				FFT_calculate<Real, N / 2, SKIP * 2>::evaluate_forward(input + SKIP * 2, D, output);
-				unroll<Real, N, N / 2>::apply_forward_twiddles(D);
-				unroll<Real, N, N / 2>::assign_output(D, output);
-			}
-			static inline void evaluate_reverse(Real* input, Real* output, Real* D) {
-				FFT_calculate<Real, N / 2, SKIP * 2>::evaluate_reverse(input, D + N, output);
-				FFT_calculate<Real, N / 2, SKIP * 2>::evaluate_reverse(input + SKIP * 2, D, output);
-				unroll<Real, N, N / 2>::apply_reverse_twiddles(D);
-				unroll<Real, N, N / 2>::assign_output(D, output);
-			}
-			static inline void evaluate_real_forward(Real* input, Real* output, Real* D) {
-				FFT_calculate<Real, N / 2, SKIP * 2>::evaluate_real_forward(input, D + N, output);
-				FFT_calculate<Real, N / 2, SKIP * 2>::evaluate_real_forward(input + SKIP * 2, D, output);
-				unroll<Real, N, N / 2>::apply_real_forward_twiddles(D);
-				unroll<Real, N, N / 2>::assign_output(D, output);
-			}
-			static inline void evaluate_real_reverse(Real* input, Real* output, Real* D) {
-				FFT_calculate<Real, N / 2, SKIP * 2>::evaluate_real_reverse(input, D + N, output);
-				FFT_calculate<Real, N / 2, SKIP * 2>::evaluate_real_reverse(input + SKIP * 2, D, output);
-				unroll<Real, N, N / 2>::apply_real_reverse_twiddles(D);
-				unroll<Real, N, N / 2>::assign_output(D, output);
-			}
 		};
 
 		//compute fft for size 4
@@ -168,92 +101,12 @@ namespace ndl
 				output[6] = D[6] - D[2];
 				output[7] = D[7] - D[3];
 			}
-			static inline void evaluate_forward(Real* input, Real* output, Real* D) {
-				FFT_calculate<Real, 2, SKIP * 2>::evaluate_forward(input, D + 4, output);
-				FFT_calculate<Real, 2, SKIP * 2>::evaluate_forward(input + SKIP * 2, D, output);
-				output[0] = D[4] + D[0];
-				output[1] = D[5] + D[1];
-				output[2] = D[6] + D[3];
-				output[3] = D[7] - D[3];
-				output[4] = D[4] - D[0];
-				output[5] = D[5] - D[1];
-				output[6] = D[6] - D[3];
-				output[7] = D[7] + D[3];
-			}
-			static inline void evaluate_reverse(Real* input, Real* output, Real* D) {
-				FFT_calculate<Real, 2, SKIP * 2>::evaluate_reverse(input, D + 4, output);
-				FFT_calculate<Real, 2, SKIP * 2>::evaluate_reverse(input + SKIP * 2, D, output);
-				output[0] = D[4] + D[0];
-				output[1] = D[5] + D[1];
-				output[4] = D[4] - D[0];
-				output[5] = D[5] - D[1];
-				output[2] = D[6] - D[3];
-				output[3] = D[7] + D[2];
-				output[6] = D[6] + D[3];
-				output[7] = D[7] - D[2];
-			}
-			static inline void evaluate_real_forward(Real* input, Real* output, Real* D) {
-				FFT_calculate<Real, 2, SKIP * 2>::evaluate_forward(input, D + 4, output);
-				FFT_calculate<Real, 2, SKIP * 2>::evaluate_forward(input + SKIP * 2, D, output);
-				Real Rre2 = D[2];
-				//not needed?? double check...
-				//D[2] = D[3];
-				//D[3] = - Rre2;
-				output[0] = D[4] + D[0];
-				output[1] = D[5] + D[1];
-				output[4] = D[4] - D[0];
-				output[5] = D[5] - D[1];
-				output[2] = D[6] + D[2];
-				output[3] = D[7] + D[3];
-				output[6] = D[6] - D[2];
-				output[7] = D[7] - D[3];
-			}
-			static inline void evaluate_real_reverse(Real* input, Real* output, Real* D) {
-				FFT_calculate<Real, 2, SKIP * 2>::evaluate_reverse(input, D + 4, output);
-				FFT_calculate<Real, 2, SKIP * 2>::evaluate_reverse(input + SKIP * 2, D, output);
-				Real Rre2 = D[2];
-				//not needed?? double check...
-				//D[2] = - D[3];
-				//D[3] = Rre2;
-				output[0] = D[4] + D[0];
-				output[1] = D[5] + D[1];
-				output[4] = D[4] - D[0];
-				output[5] = D[5] - D[1];
-				output[2] = D[6] + D[2];
-				output[3] = D[7] + D[3];
-				output[6] = D[6] - D[2];
-				output[7] = D[7] - D[3];
-			}
 		};
 
 		//compute fft for size 2
 		template<class Real, int SKIP>
 		struct FFT_calculate<Real, 2, SKIP> {
 			static void evaluate(Real* input, Real* output, Real* D, Real* twiddles) {
-				output[0] = input[0] + input[SKIP * 2];
-				output[1] = input[1] + input[SKIP * 2 + 1];
-				output[2] = input[0] - input[SKIP * 2];
-				output[3] = input[1] - input[SKIP * 2 + 1];
-			}
-			static inline void evaluate_forward(Real* input, Real* output, Real* D) {
-				output[0] = input[0] + input[SKIP * 2];
-				output[1] = input[1] + input[SKIP * 2 + 1];
-				output[2] = input[0] - input[SKIP * 2];
-				output[3] = input[1] - input[SKIP * 2 + 1];
-			}
-			static inline void evaluate_reverse(Real* input, Real* output, Real* D) {
-				output[0] = input[0] + input[SKIP * 2];
-				output[1] = input[1] + input[SKIP * 2 + 1];
-				output[2] = input[0] - input[SKIP * 2];
-				output[3] = input[1] - input[SKIP * 2 + 1];
-			}
-			static inline void evaluate_real_forward(Real* input, Real* output, Real* D) {
-				output[0] = input[0] + input[SKIP * 2];
-				output[1] = input[1] + input[SKIP * 2 + 1];
-				output[2] = input[0] - input[SKIP * 2];
-				output[3] = input[1] - input[SKIP * 2 + 1];
-			}
-			static inline void evaluate_real_reverse(Real* input, Real* output, Real* D) {
 				output[0] = input[0] + input[SKIP * 2];
 				output[1] = input[1] + input[SKIP * 2 + 1];
 				output[2] = input[0] - input[SKIP * 2];
@@ -268,22 +121,6 @@ namespace ndl
 				output[0] = input[0];
 				output[1] = input[1];
 			}
-			static inline void evaluate_forward(Real* input, Real* output, Real* D) {
-				output[0] = input[0];
-				output[1] = input[1];
-			}
-			static inline void evaluate_reverse(Real* input, Real* output, Real* D) {
-				output[0] = input[0];
-				output[1] = input[1];
-			}
-			static inline void evaluate_real_forward(Real* input, Real* output, Real* D) {
-				output[0] = input[0];
-				output[1] = input[1];
-			}
-			static inline void evaluate_real_reverse(Real* input, Real* output, Real* D) {
-				output[0] = input[0];
-				output[1] = input[1];
-			}
 		};
 
 		//compute fft for any power of 2 (<=MaxPo2Size)
@@ -295,24 +132,6 @@ namespace ndl
 				if (n == MaxPo2Size) { return FFT_calculate<Real, MaxPo2Size, 1>::evaluate(input, output, scratch, twiddles); }
 				else { return FFTPowerOfTwo<Real, MaxPo2Size / 2>::compute(n, input, output, scratch, twiddles); }
 			}
-			static void compute_forward(int n, Real* input, Real* output, Real* scratch)
-			{
-				if (n == MaxPo2Size) { return FFT_calculate<Real, MaxPo2Size, 1>::evaluate_forward(input, output, scratch); }
-				else { return FFTPowerOfTwo<Real, MaxPo2Size / 2>::compute_forward(n, input, output, scratch); }
-			}
-			static void compute_reverse(int n, Real* input, Real* output, Real* scratch)
-			{
-				if (n == MaxPo2Size) { return FFT_calculate<Real, MaxPo2Size, 1>::evaluate_reverse(input, output, scratch); }
-				else { return FFTPowerOfTwo<Real, MaxPo2Size / 2>::compute_reverse(n, input, output, scratch); }
-			}
-			static void compute_real_forward(int n, Real* input, Real* output, Real* scratch) {
-				if (n == MaxPo2Size) { return FFT_calculate<Real, MaxPo2Size, 1>::evaluate_real_forward(input, output, scratch); }
-				else { return FFTPowerOfTwo<Real, MaxPo2Size / 2>::compute_real_forward(n, input, output, scratch); }
-			}
-			static void compute_real_reverse(int n, Real* input, Real* output, Real* scratch) {
-				if (n == MaxPo2Size) { return FFT_calculate<Real, MaxPo2Size, 1>::evaluate_real_reverse(input, output, scratch); }
-				else { return FFTPowerOfTwo<Real, MaxPo2Size / 2>::compute_real_reverse(n, input, output, scratch); }
-			}
 		};
 
 		//base case for computing fft for any power of 2
@@ -320,13 +139,16 @@ namespace ndl
 		struct FFTPowerOfTwo<Real, 0>
 		{
 			static void compute(int n, Real* input, Real* output, Real* scratch, Real* twiddles) { }
-			static void compute_forward(int n, Real* input, Real* output, Real* scratch) { }
-			static void compute_reverse(int n, Real* input, Real* output, Real* scratch) { }
-			static void compute_real_forward(int n, Real* input, Real* output, Real* scratch) { }
-			static void compute_real_reverse(int n, Real* input, Real* output, Real* scratch) { }
 		};
 
-		//main class
+		// Complex-to-complex FFT/IFFT for any power-of-two size up to MaxPo2Size
+		// (checked at runtime via the `n` argument to fft()/ifft() -- MaxPo2Size
+		// is just the upper bound the caller-provided scratch buffer was sized
+		// for, not a fixed transform size). Caller owns all memory, per this
+		// library's usual convention: ScratchBufferOfSizeNTimesFour must have
+		// room for MaxPo2Size*4 Reals and stays owned by the FFT instance for
+		// its lifetime, reused across calls (recomputing the twiddle factors is
+		// skipped whenever consecutive calls use the same n).
 		template<class Real, int MaxPo2Size>
 		class FFT {
 		public:
@@ -342,14 +164,12 @@ namespace ndl
 				Real* fft_output = reinterpret_cast<Real*>(output);
 				if (N != n) update_complex_twiddles(n);
 				FFTPowerOfTwo<Real, MaxPo2Size>::compute(N, fft_input, fft_output, scratch, fft_twiddles);
-				//FFTPowerOfTwo<Real, MaxPo2Size>::compute_forward(N, fft_input, fft_output, scratch);
 			}
 			void ifft(int n, std::complex<Real>* input, std::complex<Real>* output) {
 				Real* fft_input = reinterpret_cast<Real*>(input);
 				Real* fft_output = reinterpret_cast<Real*>(output);
 				if (N != n) update_complex_twiddles(n);
 				FFTPowerOfTwo<Real, MaxPo2Size>::compute(N, fft_input, fft_output, scratch, fft_twiddles2);
-				//FFTPowerOfTwo<Real, MaxPo2Size>::compute_reverse(N, fft_input, fft_output, scratch);
 				int n2 = n * 2;
 				Real inv = 1.0 / n;
 				for (int k = 0; k < n2; ++k) fft_output[k] *= inv;
@@ -374,6 +194,13 @@ namespace ndl
 			}
 		};
 
+		// Real-to-complex FFT/IFFT: packs N real samples into an N/2-point
+		// complex FFT (the standard trick, roughly half the work of promoting
+		// the input to complex with a zero imaginary part and running the
+		// general FFT) with a pre/post-processing pass to unpack the true
+		// N-point real spectrum. Same memory convention as FFT above, just a
+		// bigger scratch requirement (room for MaxPo2Size*5 Reals) for the
+		// extra unpacking buffer.
 		template<class Real, int MaxPo2Size>
 		class FFTReal {
 		public:
@@ -393,7 +220,6 @@ namespace ndl
 					int nover2 = n / 2;
 					if (RealN != nover2) update_real_ftwiddles(nover2);
 					FFTPowerOfTwo<Real, MaxPo2Size>::compute(nover2, fft_input, fft_output, scratch, fft_twiddles);
-					//FFTPowerOfTwo<Real, MaxPo2Size>::compute_real_forward(nover2, fft_input, fft_output, scratch);
 
 					//move to later half
 					for (int i = 0; i < n; i++) {
@@ -436,12 +262,12 @@ namespace ndl
 
 					for (int k = 0; k < nover2; k++) {
 						int k2 = k * 2; //0 to n-2
-						float real = 0.5*(fft_input[k2] + fft_input[n - k2]
+						Real real = 0.5*(fft_input[k2] + fft_input[n - k2]
 							- (fft_input[k2 + 1] + fft_input[1 + n - k2])*fft_twiddles2[k2]
 							+ (-fft_input[k2] + fft_input[n - k2])*fft_twiddles2[k2 + 1]
 							);
 
-						float imag = 0.5*(fft_input[k2 + 1] - fft_input[1 + n - k2]
+						Real imag = 0.5*(fft_input[k2 + 1] - fft_input[1 + n - k2]
 							+ (fft_input[k2] - fft_input[n - k2])*fft_twiddles2[k2]
 							- (fft_input[k2 + 1] + fft_input[1 + n - k2])*fft_twiddles2[k2 + 1]
 							);
@@ -450,13 +276,12 @@ namespace ndl
 						scratch2[k2 + 1] = imag;
 					}
 					FFTPowerOfTwo<Real, MaxPo2Size>::compute(nover2, scratch2, fft_output, scratch, fft_twiddles);
-					//FFTPowerOfTwo<Real, MaxPo2Size>::compute_real_reverse(nover2, scratch2, fft_output, scratch);
 
 					//post process
 					Real inv = 2.0 / n;
 					for (int k = 0; k < n; ++k) fft_output[k] *= inv;
 				}
-				else if (n == 1) 
+				else if (n == 1)
 					fft_output[0] = fft_input[0];
 			}
 		protected:
@@ -510,5 +335,129 @@ namespace ndl
 				iRealN /= 2;
 			}
 		};
+
+		namespace detail
+		{
+			inline bool isPowerOfTwo(int n) { return n > 0 && (n & (n - 1)) == 0; }
+
+			// One representative coordinate per "fiber" along `axis`: every
+			// other dimension enumerated over its full range, with `axis`
+			// itself fixed at 0 (the caller sweeps just that component from
+			// 0..extent[axis]-1 to walk the fiber). This is how an N-dimensional
+			// FFT decomposes into independent 1D FFTs -- one per fiber, for
+			// each axis in turn -- and it's exactly the independence
+			// std::execution::par needs: two different fibers for the same
+			// axis never touch the same element, so they're safe to transform
+			// concurrently.
+			template<int DIM>
+			std::vector<std::array<int, DIM>> fiberOrigins(const std::array<int, DIM>& extent, int axis)
+			{
+				std::size_t count = 1;
+				for (int d = 0; d < DIM; d++) if (d != axis) count *= extent[d];
+
+				std::vector<std::array<int, DIM>> origins;
+				origins.reserve(count);
+
+				std::array<int, DIM> coord{};
+				coord[axis] = 0;
+				for (std::size_t i = 0; i < count; i++)
+				{
+					origins.push_back(coord);
+					for (int d = 0; d < DIM; d++)
+					{
+						if (d == axis) continue;
+						if (++coord[d] < extent[d]) break;
+						coord[d] = 0;
+					}
+				}
+				return origins;
+			}
+		}
+
+		// Separable N-dimensional FFT/IFFT on an Image: transforms along every
+		// axis in turn, one full 1D FFT per fiber of that axis (the standard
+		// row/column/etc. decomposition of an ND DFT into independent 1D
+		// DFTs) -- output must already exist with input's own extent, and
+		// every dimension's extent must be a power of two (asserted).
+		//
+		// The 1D transform itself (FFT<Real,MaxPo2Size>::fft/ifft) is
+		// deliberately NOT parallelized internally -- it's the *fibers* that
+		// are independent of each other, so it's the loop over fibers that
+		// runs concurrently, via std::execution::par, one axis-pass at a
+		// time. Passes across different axes stay sequential: axis 1's
+		// fibers read values axis 0's pass wrote, so the whole image has to
+		// finish axis 0 before axis 1 can start -- that barrier is why this
+		// is a loop of parallel passes rather than one single parallel loop
+		// over every fiber of every axis at once.
+		//
+		// Each parallel task gets its own FFT engine and scratch buffer via
+		// thread_local, allocated once per worker thread on first use and
+		// reused for every fiber that thread goes on to handle, rather than
+		// once per fiber.
+		template<class Real, int DIM, int MaxPo2Size = 8192>
+		void fftn(const Image<std::complex<Real>, DIM>& input, Image<std::complex<Real>, DIM>& output, bool inverse = false)
+		{
+			assert(output.extent() == input.extent());
+			output = input; // deep, elementwise copy-through -- output is the working buffer for every axis pass
+
+			for (int axis = 0; axis < DIM; axis++)
+			{
+				int n = output.extent()[axis];
+				assert(detail::isPowerOfTwo(n) && "fftn: every dimension's extent must be a power of two");
+
+				auto origins = detail::fiberOrigins<DIM>(output.extent(), axis);
+				std::for_each(std::execution::par, origins.begin(), origins.end(), [&](const std::array<int, DIM>& origin)
+				{
+					thread_local std::vector<Real> engineScratch(MaxPo2Size * 4);
+					thread_local FFT<Real, MaxPo2Size> engine(engineScratch.data());
+
+					std::vector<std::complex<Real>> fiber(n), transformed(n);
+					std::array<int, DIM> coord = origin;
+					for (int i = 0; i < n; i++) { coord[axis] = i; fiber[i] = output.at(coord); }
+
+					if (inverse) engine.ifft(n, fiber.data(), transformed.data());
+					else engine.fft(n, fiber.data(), transformed.data());
+
+					for (int i = 0; i < n; i++) { coord[axis] = i; output.at(coord) = transformed[i]; }
+				});
+			}
+		}
+
+		template<class Real, int DIM, int MaxPo2Size = 8192>
+		void ifftn(const Image<std::complex<Real>, DIM>& input, Image<std::complex<Real>, DIM>& output)
+		{
+			fftn<Real, DIM, MaxPo2Size>(input, output, true);
+		}
+
+		// Convenience for a real-valued input image: promotes to complex
+		// (imaginary part zero) and runs the same separable ND transform --
+		// simpler and more robust than replicating FFTReal's real-input
+		// packing trick in a strided, parallel, N-dimensional setting, at the
+		// cost of the arithmetic FFTReal saves by working on half-length
+		// complex data. FFTReal itself is still available directly above for
+		// the 1D real<->complex case.
+		template<class Real, int DIM, int MaxPo2Size = 8192>
+		void fftn(const Image<Real, DIM>& input, Image<std::complex<Real>, DIM>& output)
+		{
+			assert(output.extent() == input.extent());
+			auto sourceIt = input.begin();
+			for (auto it = output.begin(); it != output.end(); ++it, ++sourceIt) *it = std::complex<Real>(*sourceIt, Real(0));
+			fftn<Real, DIM, MaxPo2Size>(output, output, false);
+		}
+
+		// Convenience for reconstructing a real-valued image from a complex
+		// spectrum: inverse-transforms and keeps just the real part (the
+		// imaginary part is expected to be ~0 already, up to floating-point
+		// error, whenever the spectrum came from a real-valued image in the
+		// first place).
+		template<class Real, int DIM, int MaxPo2Size = 8192>
+		void ifftn(const Image<std::complex<Real>, DIM>& input, Image<Real, DIM>& output)
+		{
+			std::vector<std::complex<Real>> complexData(output.size());
+			Image<std::complex<Real>, DIM> complexOut(complexData.data(), output.extent());
+			fftn<Real, DIM, MaxPo2Size>(input, complexOut, true);
+			auto cIt = complexOut.begin();
+			for (auto it = output.begin(); it != output.end(); ++it, ++cIt) *it = cIt->real();
+		}
 	}
 }

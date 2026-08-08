@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <cmath>
 #include "mathHelpers.h"
 
 namespace ndl
@@ -221,6 +222,20 @@ namespace ndl
 			return std::accumulate(extent.begin(), extent.end(), std::size_t(1), std::multiplies<std::size_t>());
 		}
 
+		// An explicit same-type overload is required alongside the templated
+		// one below, not just style: extent_/stride_/etc. are const members,
+		// so the compiler-generated copy-assignment operator is implicitly
+		// deleted -- and for T==U, that non-template deleted operator beats
+		// the template in overload resolution (a non-template candidate wins
+		// ties against a template), so without this, `Image<T,DIM> a = b;`
+		// (same T on both sides) would select the deleted one and fail to
+		// compile, even though the template below does exactly what's needed.
+		Image& operator=(const Image& rhs) {
+			assert(rhs.extent() == extent_);
+			auto rhsIt = rhs.begin();
+			for (auto it = begin(); it != end(); ++it, ++rhsIt) *it = *rhsIt;
+			return *this;
+		}
 		template<class U>
 		Image& operator=(const Image<U,DIM> &rhs) {
 			assert(rhs.extent() == extent_);
@@ -574,6 +589,43 @@ namespace ndl
 			}
 		}
 
+		// Gaussian blur: builds a normalized (weights sum to 1) Gaussian
+		// kernel and hands it to convolve() above. Kernel radius follows the
+		// standard 3-sigma rule (_kernelSize in mathHelpers.h), so larger
+		// sigma automatically gets a wider kernel; the same sigma and radius
+		// apply along every dimension. Blurring a color image channel-by-
+		// channel (so colors don't bleed into each other) is a matter of
+		// calling this on each channel's 2D slice rather than the 3D whole --
+		// no special-casing needed here, since slice() already shares memory
+		// with the original and convolve() is dimension-agnostic.
+		void gaussian_blur(double sigma, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
+		{
+			assert(sigma > 0);
+			int radius = _kernelSize(sigma);
+			std::array<int, DIM> kernelExtent;
+			for (int i = 0; i < DIM; i++) kernelExtent[i] = 2 * radius + 1;
+
+			std::vector<double> kernelData(Image<double, DIM>::size(kernelExtent));
+			Image<double, DIM> kernel(kernelData.data(), kernelExtent);
+
+			double total = 0;
+			for (const auto& coord : kernel.coordinates())
+			{
+				double distSq = 0;
+				for (int i = 0; i < DIM; i++)
+				{
+					double d = coord[i] - radius;
+					distSq += d * d;
+				}
+				double w = std::exp(-distSq / (2 * sigma * sigma));
+				kernel.at(coord) = w;
+				total += w;
+			}
+			for (auto it = kernel.begin(); it != kernel.end(); ++it) *it /= total;
+
+			convolve(kernel, output, border);
+		}
+
 		std::vector<std::array<int, DIM>> coordinates() const {
 			std::vector<std::array<int, DIM>> allIndices;
 			std::array<int, DIM> indices = {};
@@ -797,6 +849,22 @@ namespace ndl
 	std::ostream& operator<<(std::ostream& sb, const Image<T, N>& r)
 	{
 		sb << std::fixed << std::setprecision(2);
+
+		// A fixed field width, wide enough for every element, keeps columns
+		// aligned down the grid regardless of how many digits or a minus sign
+		// any individual value needs -- without it, a single wider number
+		// (e.g. 100.00 next to 1.00) staggers every column after it. Measured
+		// by actually formatting each element to a scratch stream rather than
+		// guessing from min/max, so precision rounding (e.g. -0.00) can't
+		// throw the width off.
+		std::size_t width = 0;
+		for (const auto& coord : r.coordinates())
+		{
+			std::ostringstream probe;
+			probe << std::fixed << std::setprecision(2) << static_cast<double>(r.at(coord));
+			width = std::max(width, probe.str().size());
+		}
+
 		std::array<int, N> indices = {0}; // Initialize index array
 
 		// Lambda to handle recursion within the same function
@@ -807,7 +875,7 @@ namespace ndl
 				for (int i = 0; i < r.extent()[dim]; i++)
 				{
 					indices[dim] = i;
-					sb << static_cast<double>(r.at(indices));
+					sb << std::setw(width) << static_cast<double>(r.at(indices));
 					sb << ", ";
 				}
 				sb << std::endl;

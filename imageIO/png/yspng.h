@@ -343,12 +343,6 @@ inline void YsPngHeader::Decode(unsigned char dat[])
 
 	if(YsGenericPngDecoder::verboseMode==YSTRUE)
 	{
-		printf("Width=%d Height=%d\n",width,height);
-		printf("bitDepth=%d\n",bitDepth);
-		printf("colorType=%d\n",colorType);
-		printf("compressionMethod=%d\n",compressionMethod);
-		printf("filterMethod=%d\n",filterMethod);
-		printf("interlaceMethod=%d\n",interlaceMethod);
 	}
 }
 
@@ -390,7 +384,6 @@ inline int YsPngPalette::Decode(unsigned length,unsigned char dat[])
 
 			if(YsGenericPngDecoder::verboseMode==YSTRUE)
 			{
-				printf("%d palette entries\n",nEntry);
 			}
 
 			for(i=0; i<length; i++)
@@ -528,7 +521,6 @@ inline int YsGenericPngDecoder::ReadChunk(unsigned &length,unsigned char *&buf,u
 
 	if(YsGenericPngDecoder::verboseMode==YSTRUE)
 	{
-		printf("Chunk name=%c%c%c%c\n",dwBuf[0],dwBuf[1],dwBuf[2],dwBuf[3]);
 	}
 
 	if(length>0)
@@ -692,7 +684,6 @@ inline int YsPngUncompressor::DecodeDynamicHuffmanCode
 
 	if(YsGenericPngDecoder::verboseMode==YSTRUE)
 	{
-		printf("hLit=%d hDist=%d hCLen=%d\n",hLit,hDist,hCLen);
 	}
 
 	const unsigned int codeLengthLen=19;
@@ -719,7 +710,6 @@ inline int YsPngUncompressor::DecodeDynamicHuffmanCode
 	{
 		for(i=0; i<hCLen+4; i++)
 		{
-			printf("CodeLengthLen[%3d]=%d  HuffmanCode=%08x\n",i,codeLengthCode[i],hCodeCode[i]);
 		}
 	}
 
@@ -802,17 +792,14 @@ inline int YsPngUncompressor::DecodeDynamicHuffmanCode
 	{
 		for(i=0; i<hLit+257; i++)
 		{
-			printf("LiteralLength[%3d]=%d\n",i,hLengthLiteral[i]);
 		}
 		for(i=0; i<hDist+1; i++)
 		{
-			printf("Dist [%d] Length %d\n",i,hLengthDist[i]);
 		}
 	}
 
 	if(YsGenericPngDecoder::verboseMode==YSTRUE)
 	{
-		printf("Making Huffman Code from Code Lengths\n");
 	}
 	MakeDynamicHuffmanCode(hLengthLiteral,hCodeLiteral,hLit+257,hLengthLiteral);
 	MakeDynamicHuffmanCode(hLengthDist,hCodeDist,hDist+1,hLengthDist);
@@ -937,7 +924,6 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 
 	if(YsGenericPngDecoder::verboseMode==YSTRUE)
 	{
-		printf("Begin zLib block length=%d bytePtr=%d bitPtr=0x%02x\n",length,bytePtr,bitPtr);
 	}
 
 	unsigned char cmf,flg;
@@ -948,7 +934,6 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 	cm=cmf&0x0f;
 	if(cm!=8)
 	{
-		printf("Unsupported compression method! (%d)\n",cm);
 		goto ERREND;
 	}
 
@@ -957,7 +942,6 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 
 	if(YsGenericPngDecoder::verboseMode==YSTRUE)
 	{
-		printf("cInfo=%d, Window Size=%d\n",cInfo,windowSize);
 	}
 
 	windowBuf=new unsigned char [windowSize];
@@ -972,13 +956,11 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 
 	if(YsGenericPngDecoder::verboseMode==YSTRUE)
 	{
-		printf("fCheck=%d fDict=%d fLevel=%d\n",fCheck,fDict,fLevel);
 	}
 
 
 	if(fDict!=0)
 	{
-		printf("PNG is not supposed to have a preset dictionary.\n");
 		goto ERREND;
 	}
 
@@ -995,13 +977,11 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 
 		if(bytePtr>=length)
 		{
-			printf("Buffer overflow\n");
 			goto ERREND;
 		}
 
 		if(YsGenericPngDecoder::verboseMode==YSTRUE)
 		{
-			printf("bFinal=%d bType=%d\n",bFinal,bType);
 		}
 
 		if(bType==0) // No Compression
@@ -1014,7 +994,6 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 			}
 			if(bytePtr>=length)
 			{
-				printf("Buffer overflow\n");
 				goto ERREND;
 			}
 
@@ -1057,7 +1036,6 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 
 				if(YsGenericPngDecoder::verboseMode==YSTRUE)
 				{
-					printf("Making Huffman Tree\n");
 				}
 				codeTree=MakeHuffmanTree(hLit+257,hLengthLiteral,hCodeLiteral);
 				distTree=MakeHuffmanTree(hDist+1,hLengthDist,hCodeDist);
@@ -1066,7 +1044,6 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 
 			if(YsGenericPngDecoder::verboseMode==YSTRUE)
 			{
-				printf("Huffman table paprared\n");
 			}
 
 
@@ -1086,7 +1063,6 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 
 					if(codeTreePtr==NULL)
 					{
-						printf("Huffman Decompression: Reached NULL node.\n");
 						goto ERREND;
 					}
 
@@ -1177,7 +1153,6 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 		}
 		else
 		{
-			printf("Unknown compression type (bType=3)\n");
 			goto ERREND;
 		}
 
@@ -1195,9 +1170,6 @@ inline int YsPngUncompressor::Uncompress(unsigned length,unsigned char dat[])
 
 	if(YsGenericPngDecoder::verboseMode==YSTRUE)
 	{
-		printf("End zLib block length=%d bytePtr=%d bitPtr=0x%02x\n",length,bytePtr,bitPtr);
-		printf("Huffman Tree Leak Tracker = %d\n",YsPngHuffmanTree::leakTracker);
-		printf("Output %d bytes.\n",nByteExtracted);
 	}
 
 	return YSOK;
@@ -1249,7 +1221,6 @@ inline int YsGenericPngDecoder::Decode(YsPngGenericBinaryStream &binStream)
 
 	if(CheckSignature(binStream)!=YSOK)
 	{
-		printf("The file does not have PNG signature.\n");
 		return YSERR;
 	}
 
@@ -1307,7 +1278,6 @@ inline int YsGenericPngDecoder::Decode(YsPngGenericBinaryStream &binStream)
 				gamma=PngGetUnsignedInt(buf);
 				if(YsGenericPngDecoder::verboseMode==YSTRUE)
 				{
-					printf("Gamma %d (default=%d)\n",gamma,gamma_default);
 				}
 				delete [] buf;
 			}
@@ -1534,9 +1504,6 @@ inline int YsRawPngDecoder::PrepareOutput(void)
 
 	if(supported==0)
 	{
-		printf("Unsupported colorType-bitDepth combination.\n");
-		printf("  Color type=%d\n",hdr.colorType);
-		printf("  Bit deptch=%d\n",hdr.bitDepth);
 		return YSERR;
 	}
 
@@ -1571,7 +1538,6 @@ inline int YsRawPngDecoder::PrepareOutput(void)
 	switch(hdr.colorType)
 	{
 	default:
-		printf("Internal error!  Color type was supposed to be checked in the previous switch/case statement!\n");
 		return YSERR;
 	case 0:   // Greyscale
 		switch(hdr.bitDepth)
@@ -1819,7 +1785,6 @@ inline int YsRawPngDecoder::Output(unsigned char dat)
 						}
 						else
 						{
-							printf("Not enough palette entry! (%d)\n",plt.nEntry);
 						}
 						x++;
 						index+=4;
@@ -2224,14 +2189,12 @@ inline int YsRawPngDecoder::Output(unsigned char dat)
 
 					if(YsGenericPngDecoder::verboseMode==YSTRUE)
 					{
-						printf("Interlace Pass %d\n",interlacePass);
 					}
 				}
 			}
 
 			return YSOK;
 		default:
-			printf("Unsupported interlace method.\n");
 			return YSERR;
 		}
 	}
@@ -2242,7 +2205,6 @@ inline int YsRawPngDecoder::EndOutput(void)
 {
 	if(YsGenericPngDecoder::verboseMode==YSTRUE)
 	{
-		printf("Final Position (%d,%d)\n",x,y);
 	}
 	return YSOK;
 }

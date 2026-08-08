@@ -10,53 +10,6 @@
 
 namespace ndl
 {
-	template<unsigned M, unsigned N, unsigned B, unsigned A>
-	struct SinCosSeries {
-		static double value() {
-			return 1 - (A*M_PI / B)*(A*M_PI / B) / M / (M + 1)
-				*SinCosSeries<M + 2, N, B, A>::value();
-		}
-	};
-
-	template<unsigned N, unsigned B, unsigned A>
-	struct SinCosSeries<N, N, B, A> {
-		static double value() { return 1.; }
-	};
-
-	template<unsigned B, unsigned A, typename T = double>
-	struct Sin;
-
-	template<unsigned B, unsigned A>
-	struct Sin<B, A, float> {
-		static float value() {
-			return (A*M_PI / B)*SinCosSeries<2, 24, B, A>::value();
-		}
-	};
-
-	template<unsigned B, unsigned A>
-	struct Sin<B, A, double> {
-		static double value() {
-			return (A*M_PI / B)*SinCosSeries<2, 34, B, A>::value();
-		}
-	};
-
-	template<unsigned B, unsigned A, typename T = double>
-	struct Cos;
-
-	template<unsigned B, unsigned A>
-	struct Cos<B, A, float> {
-		static float value() {
-			return SinCosSeries<1, 23, B, A>::value();
-		}
-	};
-
-	template<unsigned B, unsigned A>
-	struct Cos<B, A, double> {
-		static double value() {
-			return SinCosSeries<1, 33, B, A>::value();
-		}
-	};
-
 	static constexpr double _pow(double x, int y) { return y == 0 ? 1.0 : x * _pow(x, y - 1); }
 	static constexpr int _factorial(int x) { return x == 0 ? 1 : x * _factorial(x - 1); }
 	static constexpr double _exp(double x) { return 1.0 + x + _pow(x, 2) / _factorial(2) + _pow(x, 3) / _factorial(3) + _pow(x, 4) / _factorial(4) + _pow(x, 5) / _factorial(5) + _pow(x, 6) / _factorial(6) + _pow(x, 7) / _factorial(7) + _pow(x, 8) / _factorial(8) + _pow(x, 9) / _factorial(9); }

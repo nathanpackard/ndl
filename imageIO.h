@@ -4,8 +4,8 @@
 #include "imageIO/avi.h"
 #include "imageIO/dicom.h"
 #include "imageIO/NRRD/nrrd.h"
-#include "imageIO/png/src/yspng.h"
-#include "imageIO/png/src/yspngenc.h"
+#include "imageIO/png/yspng.h"
+#include "imageIO/png/yspngenc.h"
 #include <algorithm>
 #include <array>
 #include <exception>
