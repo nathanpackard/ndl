@@ -30,18 +30,33 @@ namespace ndl
 template <class Real,int N>
 class SVD;
 
-/*! 
+/*!
 //This class handles NxN matricies where N is specified at compile time,
 // This allows the compiler to optimize and speed up computation
 */
+/// A fixed-size, compile-time-dimensioned NxN matrix. Independent of Image<T,DIM> --
+/// used for the geometric transforms (scale/translate/rotate/project) that operate on
+/// individual points, not per-pixel over a whole Image.
+///
+/// @tparam Real Element type (float or double).
+/// @tparam N    Matrix dimension (NxN); also the coordinate dimension for the
+///              set_scale()/set_translate()/etc. homogeneous-coordinate helpers,
+///              where an N-dimensional Matrix transforms (N-1)-dimensional points.
+/// @ingroup matrix
 template<class Real, int N>
 class Matrix {
     public:
         //Constructors
+        /// Constructs an identity matrix.
         Matrix(){ set_identity(); };
+        /// Constructs from a row-major array of N*N values.
+        /// @param values Row-major array of exactly N*N elements, copied in.
         explicit Matrix(const Real *values){ memcpy(data_, values, N*N*sizeof(Real)); };
 
         //Methods
+        /// Element-wise equality.
+        /// @param m Matrix to compare against.
+        /// @return True if every element matches exactly (no tolerance).
         bool operator==(const Matrix<Real,N> &m) const {
             bool result = true;
             for (unsigned int i=0; i<N*N && result; i++) result = (data_[i]==m.data_[i]);
@@ -61,6 +76,9 @@ class Matrix {
 
         //Calculate the determinant (also allows for computation
         //of the determinant of a submatrix)
+        /// Determinant of the leading `subsize`x`subsize` submatrix (the whole matrix by default).
+        /// @param subsize Submatrix size to compute the determinant of; defaults to the full N.
+        /// @return The determinant.
         Real determinant(unsigned int subsize=N) const {
             switch (subsize){
                 case 2: {
@@ -161,6 +179,9 @@ class Matrix {
             return *this;
         };
 
+        /// Matrix product.
+        /// @param m Matrix to multiply by (this * m).
+        /// @return The product.
         Matrix<Real,N> operator*(const Matrix<Real,N> &m) const {
             Matrix<Real,N> result;
             int p=0;
@@ -179,6 +200,9 @@ class Matrix {
             return result;
         };
 
+       /// Matrix-vector product.
+       /// @param p N-element vector.
+       /// @return this * p.
        std::array<Real,N> operator*(const std::array<Real,N>& p) const {
 		   std::array<Real,N> result{};
             int i=0;
@@ -190,6 +214,9 @@ class Matrix {
             return result;
         };
 
+      /// Transforms the N-element point `p` in place by this matrix, treating it as a
+      /// homogeneous coordinate (perspective divide included -- see set_projection()).
+      /// @param p N-element point, overwritten with the transformed result.
       void transform_point(Real* p) const {
             Real result[N];
             Real t=0;
@@ -220,6 +247,9 @@ class Matrix {
             }
         };
 
+        /// Sets this matrix to the outer product a * b^T.
+        /// @param a Column vector (left factor).
+        /// @param b Row vector, used transposed (right factor).
         void outer_product(std::array<Real,N> a, std::array<Real,N> b){
             for (int i=0; i<N; i++){
             for (int j=0; j<N; j++){
@@ -245,6 +275,9 @@ class Matrix {
             return result;
         };
 
+        /// Scalar multiplication.
+        /// @param k Factor applied to every element.
+        /// @return A new, scaled matrix.
         Matrix<Real,N> operator*(const Real k) const {
             Matrix<Real,N> result;
             for (unsigned int i=0; i<N*N; i++) result.data_[i] =  data_[i]*k;
@@ -261,6 +294,7 @@ class Matrix {
             for (unsigned int i=0; i<N*N; i++) data_[i] = Real(0.0);
         };
 
+        /// Resets to the identity matrix.
         void set_identity(){
             set_zero();
             for (unsigned int i=0, p=0; i<N; i++, p+=N) data_[p+i] = Real(1.0);
@@ -281,6 +315,8 @@ class Matrix {
         };
 
         //return the transpose of the matrix (does not mutate *this)
+        /// Returns the transpose.
+        /// @return A new matrix; this one is unchanged (see transpose_in_place() to mutate instead).
         Matrix<Real,N> transpose() const {
             Matrix<Real,N> result;
             unsigned int i, j, p, q;
@@ -302,6 +338,8 @@ class Matrix {
         }
 
         //return the inverse matrix (does not mutate *this)
+        /// Returns the matrix inverse, computed via SVD.
+        /// @return A new matrix; this one is unchanged (see invert() to mutate instead).
         Matrix<Real,N> inverse() const {
             Matrix<Real,N> U;
             Matrix<Real,N> V;
@@ -325,12 +363,20 @@ class Matrix {
         //never ported. This throws rather than silently returning zeroed-out
         //results, since a stub that looks like it succeeded is worse than one
         //that visibly doesn't work.
+        /// Not implemented -- throws std::logic_error. The underlying Jacobi rotation routine
+        /// was never ported; this throws rather than silently returning zeroed-out results.
+        /// @param eigenvalues  Unused.
+        /// @param eigenvectors Unused.
+        /// @throws std::logic_error always.
         int eigen_decomposition(std::array<Real,N>& eigenvalues, Matrix<Real,N>& eigenvectors) const {
             throw std::logic_error("Matrix::eigen_decomposition is not implemented");
         }
 
 
         //For Non-Homogeneous Coords
+        /// Sets this to a scale matrix with per-axis factors `t` (N components, homogeneous scale included).
+        /// @param t Per-axis scale factors, N components (including the homogeneous component).
+        /// @return `*this`, for chaining.
         Matrix<Real,N> &set_scale(const std::array<Real,N> &t){
             set_identity();
             for (int i=0;i<N;i++) (*this)[i][i] = t[i];
@@ -338,6 +384,9 @@ class Matrix {
         }
 
         //For Homogeneous Coords
+        /// Sets this to a scale matrix with per-axis factors `t` (N-1 components; the homogeneous component is left at 1).
+        /// @param t Per-axis scale factors, N-1 components.
+        /// @return `*this`, for chaining.
         Matrix<Real,N> &set_scale(const std::array<Real,N-1> &t){
             set_identity();
             for (int i=0;i<N-1;i++) (*this)[i][i] = t[i];
@@ -345,6 +394,9 @@ class Matrix {
         }
 
         //For Homogeneous Coords
+        /// Sets this to a translation matrix by `t` (N-1 components, for an N-dimensional homogeneous matrix).
+        /// @param t Per-axis translation offsets, N-1 components.
+        /// @return `*this`, for chaining.
         Matrix<Real,N> &set_translate(const std::array<Real,N-1> &t){
             set_identity();
             for (int i=0;i<N-1;i++) (*this)[i][N-1] = t[i];
@@ -352,6 +404,11 @@ class Matrix {
         }
 
         //For either Homogeneous Coords or Non-Homogeneous Coords
+        /// Sets this to a rotation by `angleRad` in the plane spanned by `axis1`/`axis2`.
+        /// @param angleRad Rotation angle, in radians.
+        /// @param axis1    First axis of the rotation plane. Defaults to 0.
+        /// @param axis2    Second axis of the rotation plane. Defaults to 1.
+        /// @return `*this`, for chaining.
         Matrix<Real,N> &set_rotate(Real angleRad,int axis1=0,int axis2=1) {
             //Does a main rotation from axis1 to axis2
             for (int i=0; i<N; i++){
@@ -368,6 +425,11 @@ class Matrix {
             return *this;
         }
 
+        /// Sets this to a shear matrix.
+        /// @param amount Shear factor.
+        /// @param axis1  Axis whose value is offset by the shear. Defaults to 0.
+        /// @param axis2  Axis the shear amount is proportional to. Defaults to 1.
+        /// @return `*this`, for chaining.
         Matrix<Real,N> &set_shear(Real amount,int axis1=0,int axis2=1){
             set_identity();
             if (axis1!=axis2) (*this)[axis1][axis2]=amount;
@@ -375,6 +437,11 @@ class Matrix {
         }
 
         //For Homogeneous Coords
+        /// Sets this to a perspective projection matrix: projects from the origin along
+        /// `axis` onto a hyperplane at distance `dist`.
+        /// @param dist Distance from the origin to the projection hyperplane.
+        /// @param axis Axis the projection is along. Defaults to 0.
+        /// @return `*this`, for chaining.
         Matrix<Real,N> &set_projection(Real dist,int axis=0){
             //Perspective projection from the origin along the specified
             //axis onto a hyperplane at a distance dist away
@@ -385,6 +452,10 @@ class Matrix {
         }
 
         //For Homogeneous Coords
+        /// Sets this to an orthographic projection matrix along `axis`, at distance `dist`.
+        /// @param dist Offset along `axis` in the resulting matrix.
+        /// @param axis Axis the projection flattens. Defaults to 0.
+        /// @return `*this`, for chaining.
         Matrix<Real,N> &set_ortho_projection(Real dist,int axis=0){
             //Perspective projection from the origin along the specified
             //axis onto a hyperplane at a distance dist away

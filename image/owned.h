@@ -65,6 +65,22 @@ namespace ndl
 	// would still be uninitialized when a base class constructor needed it,
 	// regardless of what order it's written in the initializer list -- base
 	// subobjects always finish first.
+	/// A move-only Image<T,DIM> subclass that allocates and owns its own backing
+	/// storage, instead of requiring a pre-existing buffer. Not valid for T=bool --
+	/// use PackedBitImage<DIM> for a compact owned boolean image instead.
+	///
+	/// Behaves exactly like an Image<T,DIM> in every other respect -- the full
+	/// interface (view()/slice()/convolve()/at()/...) is inherited, unchanged.
+	/// The only differences are lifetime-related: OwnedImage allocates its own
+	/// buffer at construction and frees it at destruction, and is move-only
+	/// (move-constructible but not move- or copy-assignable; see the file
+	/// comment above the class for why).
+	///
+	/// @tparam T   Element type; same restrictions as Image<T,DIM>'s own,
+	///             plus T=bool is rejected entirely (std::vector<bool> is
+	///             bit-packed and has no .data() for Image to alias).
+	/// @tparam DIM Number of dimensions (>= 1).
+	/// @ingroup core_image
 	template<class T, int DIM>
 	class OwnedImage : private detail::OwnedImageStorage<T>, public Image<T, DIM>
 	{
@@ -79,6 +95,8 @@ namespace ndl
 		static_assert(!std::is_same_v<T, bool>, "OwnedImage<bool,DIM> doesn't work -- std::vector<bool> is bit-packed and has no .data() for Image to alias. Use PackedBitImage<DIM> instead for a compact owned boolean image.");
 		using Storage = detail::OwnedImageStorage<T>;
 	public:
+		/// Allocates a fresh, zero-initialized buffer of the given shape.
+		/// @param extent Shape: element count along each dimension.
 		explicit OwnedImage(std::array<int, DIM> extent)
 			: Storage(Image<T, DIM>::size(extent)), Image<T, DIM>(Storage::data.data(), extent)
 		{ }
@@ -89,6 +107,9 @@ namespace ndl
 		// std::vector-then-Image pair it's meant to replace -- this makes
 		// it a single line instead: OwnedImage<double,2> sobelX({3,3},
 		// {-1,0,1, -2,0,2, -1,0,1});
+		/// Allocates a fresh buffer of the given shape, filled from `values` (row-major order).
+		/// @param extent Shape: element count along each dimension.
+		/// @param values Initial contents, in row-major (dimension 0 fastest) order; must have exactly `size(extent)` elements.
 		OwnedImage(std::array<int, DIM> extent, std::initializer_list<T> values)
 			: Storage(Image<T, DIM>::size(extent)), Image<T, DIM>(Storage::data.data(), extent)
 		{
@@ -100,6 +121,9 @@ namespace ndl
 		// owned equivalent of Image's own T*+source constructor, minus the
 		// caller having to allocate a buffer for it first.
 		template<class U>
+		/// Deep-copies `source` into a freshly allocated buffer, converting element type if needed.
+		/// @tparam U      source's element type (converted to T element-by-element).
+		/// @param  source Image to copy from; this OwnedImage is allocated with its extent.
 		explicit OwnedImage(const Image<U, DIM>& source)
 			: Storage(source.size()), Image<T, DIM>(Storage::data.data(), source)
 		{ }
@@ -119,6 +143,10 @@ namespace ndl
 		// A fresh, uninitialized buffer with the same extent as `source` --
 		// the owned equivalent of numpy's empty_like().
 		template<class U>
+		/// A fresh, uninitialized buffer with the same extent as `source` (numpy's empty_like()).
+		/// @tparam U      source's element type (need not match T).
+		/// @param  source Image whose extent (not contents) is copied.
+		/// @return A new OwnedImage<T,DIM> with `source`'s shape and unspecified initial contents.
 		static OwnedImage like(const Image<U, DIM>& source) { return OwnedImage(source.extent()); }
 	};
 }

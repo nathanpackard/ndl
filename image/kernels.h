@@ -14,6 +14,11 @@ namespace ndl
 	//
 	// make_box_kernel(): every tap set to 1 -- the full rectangular
 	// neighborhood, no shape restriction beyond the kernel's own extent.
+	/// Fills `kernel` with a full rectangular (box) structuring element -- every tap set to 1.
+	/// @tparam T   Kernel element type.
+	/// @tparam DIM Number of dimensions.
+	/// @param  kernel Kernel to fill in place; its own extent picks the radius (e.g. a {5,5} kernel is a radius-2 box).
+	/// @ingroup morphology_filtering
 	template<class T, int DIM>
 	void make_box_kernel(Image<T, DIM>& kernel) { kernel = T(1); }
 
@@ -30,6 +35,11 @@ namespace ndl
 	// taps instead of (2r+1)^DIM. Note this is a thin cross, not a filled
 	// diamond (L1 ball) -- dilating a single point with it reproduces the
 	// cross shape exactly (see demo/morphology Part 2), not a solid region.
+	/// Fills `kernel` with a plus-sign (4-connected) structuring element: center and one arm per axis.
+	/// @tparam T      Kernel element type.
+	/// @tparam DIM    Number of dimensions.
+	/// @param  kernel Kernel to fill in place; its own extent picks the arm length per axis.
+	/// @ingroup morphology_filtering
 	template<class T, int DIM>
 	void make_cross_kernel(Image<T, DIM>& kernel)
 	{
@@ -56,6 +66,15 @@ namespace ndl
 	// write dstChannel however it likes (e.g. `s.gaussian_blur(2.0, d,
 	// BorderMode::Clamp)`). Since slice() shares memory rather than copying,
 	// this costs nothing beyond the operation `fn` itself performs.
+	/// Applies `fn(srcChannel, dstChannel)` independently to each index along `channelAxis` (e.g. running a filter per color channel).
+	/// @tparam T           Element type.
+	/// @tparam DIM         Number of dimensions.
+	/// @tparam Fn          Callable as `fn(srcChannel, dstChannel)`, both `Image<T,DIM-1>`; expected to write dstChannel.
+	/// @param  src         Source image.
+	/// @param  dst         Destination image; must already exist with `src`'s own extent.
+	/// @param  channelAxis Dimension to iterate over, calling `fn` once per index with a slice()'d (DIM-1)-dimensional view.
+	/// @param  fn          Per-channel operation, e.g. `[](auto s, auto d){ s.gaussian_blur(2.0, d, BorderMode::Clamp); }`.
+	/// @ingroup morphology_filtering
 	template<class T, int DIM, class Fn>
 	void per_channel(const Image<T, DIM>& src, Image<T, DIM>& dst, int channelAxis, Fn&& fn)
 	{

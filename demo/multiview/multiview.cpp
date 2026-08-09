@@ -75,15 +75,21 @@ int main()
     for (auto it = ndImage.begin(); it != ndImage.end(); ++it)
         *it = ++i;
 
+    // Deliberately not a step() call -- this comes before step-numbering
+    // starts, so later references like "step 1" unambiguously mean the
+    // first *transformation* shown, not this initial "here's the whole
+    // array" printout. Indentation still matches step()'s own "    code:"/
+    // "    explain:" convention (4 spaces, 13-space-aligned continuation
+    // lines) for visual consistency with every step below it.
     std::cout << "=== printing a 4D image ===\n";
     std::cout << "code:    std::cout << ndImage\n";
-    std::cout << "explain: operator<< recurses from the OUTERMOST dimension inward: it loops frame (dim3),\n"
-                  "         and for each frame value loops channel (dim2), and for each of those loops y (dim1) --\n"
-                  "         down to x (dim0), which is what actually becomes one printed line (a comma-separated\n"
-                  "         row). That's a lot of nesting to track from blank lines alone, so every 2D (y,x) block\n"
-                  "         is preceded by an explicit \"[dim2=.., dim3=..]\" header naming every higher dimension's\n"
-                  "         current index -- blank lines still separate blocks too, but the header is unambiguous\n"
-                  "         at any number of dimensions, where counting blank lines stops being practical past 3D.\n";
+    std::cout << "    explain: operator<< recurses from the OUTERMOST dimension inward: it loops frame (dim3),\n"
+                  "             and for each frame value loops channel (dim2), and for each of those loops y (dim1) --\n"
+                  "             down to x (dim0), which is what actually becomes one printed line (a comma-separated\n"
+                  "             row). That's a lot of nesting to track from blank lines alone, so every 2D (y,x) block\n"
+                  "             is preceded by an explicit \"[dim2=.., dim3=..]\" header naming every higher dimension's\n"
+                  "             current index -- blank lines still separate blocks too, but the header is unambiguous\n"
+                  "             at any number of dimensions, where counting blank lines stops being practical past 3D.\n";
     inputText("ndImage itself -- this is the setup, not a transformation of anything.");
     output(ndImage);
     std::cout << "(the [dim2=1, dim3=1] block above is the one used in step 5 below)\n";

@@ -37,6 +37,7 @@ endif()
 
 option(NDL_BUILD_TESTS "Build the ndl unit test suite" ON)
 option(NDL_BUILD_DEMOS "Build the ndl demo programs" ON)
+option(NDL_BUILD_DOCS "Add a 'docs' target that generates Doxygen documentation (requires Doxygen; off by default since it's not part of the normal build/test loop)" OFF)
 
 if(NDL_BUILD_TESTS)
     enable_testing()
@@ -72,5 +73,77 @@ if(NDL_BUILD_DEMOS)
             # loop regression) instead of blocking ctest indefinitely.
             set_tests_properties(demo_${demo_target} PROPERTIES LABELS "smoke" TIMEOUT 120)
         endforeach()
+    endif()
+endif()
+
+if(NDL_BUILD_DOCS)
+    find_package(Doxygen QUIET OPTIONAL_COMPONENTS dot)
+    if(DOXYGEN_FOUND)
+        # Doxyfile.in is the checked-in, hand-maintained template;
+        # configure_file() resolves @CMAKE_SOURCE_DIR@/@CMAKE_BINARY_DIR@
+        # into a real Doxyfile in the build directory so OUTPUT_DIRECTORY
+        # is an absolute path regardless of where `doxygen` (or this
+        # target) is actually invoked from.
+        configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile @ONLY)
+        add_custom_target(docs
+            COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            COMMENT "Generating HTML documentation with Doxygen -> ${CMAKE_CURRENT_BINARY_DIR}/docs/html/index.html"
+            VERBATIM
+        )
+        # Doxygen_dot_FOUND (not the legacy DOXYGEN_DOT_FOUND) is the
+        # variable actually populated when dot is requested via
+        # OPTIONAL_COMPONENTS above -- FindDoxygen.cmake only maintains the
+        # legacy name in the no-explicit-components code path.
+        if(NOT Doxygen_dot_FOUND)
+            message(STATUS "ndl: Doxygen found but graphviz's 'dot' was not -- the 'docs' target will still work, just without class/collaboration/include graphs")
+        endif()
+
+        # Tutorials: each demo's *actual* runtime output (the step()/
+        # explain() walkthrough it prints, plus whatever PNGs it saves)
+        # becomes a generated Doxygen markdown page -- see
+        # docs/generate_tutorial.py's own comment for why this is a small,
+        # format-specific parser rather than a general one. Requires the
+        # demo targets to exist (NDL_BUILD_DEMOS) and a Python
+        # interpreter to run the generator.
+        if(NDL_BUILD_DEMOS)
+            find_package(Python3 QUIET COMPONENTS Interpreter)
+            if(Python3_FOUND)
+                set(NDL_GENERATED_DOCS_DIR ${CMAKE_CURRENT_BINARY_DIR}/docs/generated)
+                set(NDL_TUTORIAL_PAGES "")
+                set(_ndl_tutorial_targets multiview convolution morphology)
+                set(_ndl_tutorial_labels multiview_tutorial convolution_tutorial morphology_tutorial)
+                set(_ndl_tutorial_titles "Multiview Tutorial" "Convolution Tutorial" "Morphology Tutorial")
+                list(LENGTH _ndl_tutorial_targets _ndl_tutorial_count)
+                math(EXPR _ndl_tutorial_last "${_ndl_tutorial_count} - 1")
+                foreach(_i RANGE ${_ndl_tutorial_last})
+                    list(GET _ndl_tutorial_targets ${_i} _demo_target)
+                    list(GET _ndl_tutorial_labels ${_i} _page_label)
+                    list(GET _ndl_tutorial_titles ${_i} _page_title)
+                    set(_capture_file ${CMAKE_CURRENT_BINARY_DIR}/docs/captured/${_demo_target}.txt)
+                    set(_page_file ${NDL_GENERATED_DOCS_DIR}/${_page_label}.md)
+                    add_custom_command(
+                        OUTPUT ${_page_file}
+                        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/captured
+                        COMMAND ${_demo_target} > ${_capture_file}
+                        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/docs/generate_tutorial.py
+                                ${_capture_file} ${_page_label} ${_page_title}
+                                $<TARGET_FILE_DIR:${_demo_target}>/output
+                                ${NDL_GENERATED_DOCS_DIR}
+                        WORKING_DIRECTORY $<TARGET_FILE_DIR:${_demo_target}>
+                        DEPENDS ${_demo_target} ${CMAKE_CURRENT_SOURCE_DIR}/docs/generate_tutorial.py
+                        COMMENT "Running ${_demo_target} and generating its tutorial page"
+                        VERBATIM
+                    )
+                    list(APPEND NDL_TUTORIAL_PAGES ${_page_file})
+                endforeach()
+                add_custom_target(tutorials DEPENDS ${NDL_TUTORIAL_PAGES})
+                add_dependencies(docs tutorials)
+            else()
+                message(STATUS "ndl: Python3 interpreter not found -- 'docs' will skip regenerating the tutorial pages (any previously generated ones are still used)")
+            endif()
+        endif()
+    else()
+        message(STATUS "ndl: NDL_BUILD_DOCS is ON but Doxygen was not found -- no 'docs' target added")
     endif()
 endif()

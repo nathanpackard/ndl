@@ -1,0 +1,31 @@
+/// @file groups.dox
+/// Doxygen-only file (not compiled) declaring ndl's top-level module groups.
+/// Nothing here is C++; @ingroup tags elsewhere in the real headers attach
+/// classes/functions to these groups so the generated docs have a "Modules"
+/// index alongside the plain class list.
+
+/// @defgroup core_image Core Image Types
+/// Image<T,DIM>, its owning and bit-packed variants, and the zero-copy view
+/// operations (view()/slice()/swap_axes()/mirror()) shared by all of them.
+
+/// @defgroup morphology_filtering Morphology & Filtering
+/// convolve()/erode()/dilate()/median_filter()/percentile_filter()/threshold()/
+/// gaussian_blur()/otsu_threshold() -- the free-function algorithms (image/algorithms.h)
+/// and the Image member functions that forward to them, plus the structuring-element
+/// helpers (make_box_kernel()/make_cross_kernel()) and BorderMode.
+
+/// @defgroup fft FFT
+/// Complex/real power-of-two FFT (FFT, FFTReal), arbitrary-size FFT via Bluestein's
+/// algorithm (FFTBluestein), and the N-dimensional Image-based entry points
+/// (fftn()/ifftn()) most callers actually want.
+
+/// @defgroup matrix Matrix
+/// Fixed-size, compile-time-dimensioned NxN matrices and the geometric transforms
+/// (scale/translate/rotate/project) built on them.
+
+/// @defgroup image_io Image I/O
+/// Loading and saving images in bitmap/PNG/JPEG/DICOM/NRRD/raw formats.
+
+/// @defgroup utilities Utilities
+/// Small standalone helpers (Timer, code_timer(), change_endian()) not specific
+/// to image processing.

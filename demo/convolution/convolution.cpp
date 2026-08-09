@@ -1,7 +1,9 @@
 #include <ndl/image.h>
 #include <ndl/imageIO.h>
 #include <ndl/fft.h>
+#include <ndl/mathHelpers.h>
 #include <iostream>
+#include <sstream>
 #include <filesystem>
 #include <cmath>
 #include <cstdint>
@@ -34,9 +36,59 @@ void step(const std::string& code, const std::string& explanation)
     std::cout << "    explain: " << explanation << "\n";
 }
 
+// Same as step() above, but for a call worth showing as more than one line
+// -- e.g. a demo helper function (fftCorrelateColor() etc.) whose whole
+// point is to stand in for a few lines of real library calls, which is
+// exactly the part worth seeing spelled out rather than hidden behind the
+// helper's name. codeLines[0] prints on the "code:" line itself;
+// codeLines[1..] print indented to line up under it, using the same
+// 13-space continuation convention as the "explain:" text below (and
+// recognized by docs/generate_tutorial.py as still being part of the same
+// code block, not a new one).
+void step(const std::vector<std::string>& codeLines, const std::string& explanation)
+{
+    std::cout << "\n[" << ++stepNumber << "] code:    " << codeLines[0] << "\n";
+    for (std::size_t i = 1; i < codeLines.size(); i++)
+        std::cout << "             " << codeLines[i] << "\n";
+    std::cout << "    explain: " << explanation << "\n";
+}
+
 template<class ImageT>
 void showArray(const std::string& label, const ImageT& img) { std::cout << "    " << label << ":\n" << img; }
 void showText(const std::string& label, const std::string& text) { std::cout << "    " << label << ":   " << text << "\n"; }
+
+// Spells out, tap by tap, exactly what a 3x3 all-1s sumKernel sums at
+// (cx,cy) under the given border mode -- built from the literal same
+// _clamp()/_wrap()/_reflect() primitives convolve() itself uses
+// (mathHelpers.h), so this is a real trace of what convolve() computes,
+// not a hand-simplified stand-in for it. Exists so a reader can check a
+// convolve() result by hand without having to re-derive how each border
+// mode remaps an out-of-bounds tap themselves.
+std::string sumKernelBreakdown(const Image<int, 2>& src, int cx, int cy, BorderMode border)
+{
+    int W = src.extent()[0], H = src.extent()[1];
+    std::ostringstream oss;
+    int total = 0;
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        if (dy != -1) oss << " + ";
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            int x = cx + dx, y = cy + dy;
+            switch (border)
+            {
+                case BorderMode::Clamp:   x = _clamp(W, x);   y = _clamp(H, y);   break;
+                case BorderMode::Wrap:    x = _wrap(W, x);    y = _wrap(H, y);    break;
+                case BorderMode::Reflect: x = _reflect(W, x); y = _reflect(H, y); break;
+            }
+            int v = src(x, y);
+            total += v;
+            oss << (dx != -1 ? "+" : "") << v;
+        }
+    }
+    oss << " = " << total;
+    return oss.str();
+}
 
 std::string outputDir;
 
@@ -125,8 +177,9 @@ void fftshift(const Image<T, DIM>& src, Image<T, DIM>& dst)
 // identity this is and why it's conj() (cross-correlation) rather than the
 // textbook convolution theorem. Always circular (BorderMode::Wrap is the
 // only border mode that means anything here -- the DFT treats every axis as
-// periodic whether asked to or not), and only meaningful when width and
-// height are both powers of two, same as fftn() itself.
+// periodic whether asked to or not). Works for any src/kernel extent --
+// fftn() no longer requires a power of two (see fft.h's FFTBluestein) --
+// though a power-of-two extent is still the fastest case internally.
 void fftCorrelateColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst)
 {
     int W = src.extent()[1], H = src.extent()[2];
@@ -219,29 +272,48 @@ int main()
     OwnedImage<int, 2> out2({ 5, 5 });
 
     step("grid.convolve(sumKernel, out2)   // sumKernel is 3x3, all 1s",
-        "Every weight is 1, so each output value is just the SUM of the 3x3 neighborhood around it:\n"
-        "             out2(2,2) should be the sum of grid's 8 neighbors plus its own center --\n"
-        "             7+8+9 + 12+13+14 + 17+18+19 = 117.");
+        "Every weight is 1, so each output value is just the SUM of the 3x3 neighborhood around it.\n"
+        "             For an INTERIOR position like (2,2), every tap is a real, in-bounds grid element:\n"
+        "             reading straight off the grid above (row y=1 gives x=1..3 -> 7,8,9; row y=2 ->\n"
+        "             12,13,14; row y=3 -> 17,18,19), out2(2,2) = 7+8+9 + 12+13+14 + 17+18+19 = 117.\n"
+        "             For a CORNER like (0,0), some of the 3x3's taps (x,y in {-1,0,1}x{-1,0,1}) fall\n"
+        "             outside the grid entirely -- this call passes no BorderMode, so it uses convolve()'s\n"
+        "             default, BorderMode::Clamp, which substitutes the nearest in-bounds pixel for any\n"
+        "             out-of-bounds one (so both x=-1 and y=-1 become 0). The breakdown printed below\n"
+        "             spells out exactly which 9 grid values that produces and what they sum to -- read it\n"
+        "             alongside out2(0,0) to see the same 27 land in both places.");
     showArray("sumKernel", sumKernel);
     grid.convolve(sumKernel, out2);
     showArray("out2", out2);
-    showText("out2(2,2)", std::to_string(out2(2, 2)) + "  (expected 117)");
+    showText("out2(2,2)", std::to_string(out2(2, 2)) + "  (expected 117, interior -- see explanation)");
+    showText("out2(0,0) breakdown (default border = Clamp)", sumKernelBreakdown(grid, 0, 0, BorderMode::Clamp));
+    showText("out2(0,0)", std::to_string(out2(0, 0)) + "  (should match the breakdown above)");
 
     step("grid.convolve(sumKernel, out2, BorderMode::Clamp / Wrap / Reflect)",
-        "At the edges and corners, some kernel taps fall outside the 5x5 grid -- `border` decides\n"
-        "             what stands in for them. Clamp repeats the nearest edge pixel, Wrap treats the grid\n"
-        "             as periodic (wraps to the opposite edge), Reflect mirrors back into the grid. All\n"
-        "             three are computed below for the same corner, out2(0,0), so you can see they\n"
-        "             genuinely produce different numbers -- the border argument isn't cosmetic.");
+        "Redoing that same corner, out2(0,0), under all three border modes -- the breakdowns below are\n"
+        "             built from the exact same _clamp()/_wrap()/_reflect() functions convolve() itself\n"
+        "             calls (mathHelpers.h), so they're a real trace of the computation, not a paraphrase\n"
+        "             of it. Clamp repeats the nearest in-bounds pixel for an out-of-bounds tap (x=-1 -> 0,\n"
+        "             y=-1 -> 0). Wrap treats the 5-wide/5-tall grid as periodic, so x=-1/y=-1 wrap to the\n"
+        "             OPPOSITE edge (index 4), pulling in row/column 4's much larger values instead --\n"
+        "             that's why Wrap's total (99) is so much bigger than Clamp's (27). Reflect mirrors a\n"
+        "             tap back into the grid using -x-1 (so x=-1 -> 0 too, same as Clamp) -- for THIS\n"
+        "             specific case (a radius-1 kernel, so the only out-of-bounds offset that ever occurs\n"
+        "             is -1) Clamp and Reflect are mathematically guaranteed to agree, which is why both\n"
+        "             read 27 below; they'd diverge for a wider kernel whose taps reach 2+ steps out of\n"
+        "             bounds (there, Reflect mirrors past the edge instead of repeating it).");
+    showText("out2(0,0) breakdown with Clamp", sumKernelBreakdown(grid, 0, 0, BorderMode::Clamp));
+    showText("out2(0,0) breakdown with Wrap", sumKernelBreakdown(grid, 0, 0, BorderMode::Wrap));
+    showText("out2(0,0) breakdown with Reflect", sumKernelBreakdown(grid, 0, 0, BorderMode::Reflect));
     grid.convolve(sumKernel, out2, BorderMode::Clamp);
     int clampCorner = out2(0, 0);
     grid.convolve(sumKernel, out2, BorderMode::Wrap);
     int wrapCorner = out2(0, 0);
     grid.convolve(sumKernel, out2, BorderMode::Reflect);
     int reflectCorner = out2(0, 0);
-    showText("out2(0,0) with Clamp", std::to_string(clampCorner));
-    showText("out2(0,0) with Wrap", std::to_string(wrapCorner));
-    showText("out2(0,0) with Reflect", std::to_string(reflectCorner));
+    showText("out2(0,0) with Clamp", std::to_string(clampCorner) + "  (should match the Clamp breakdown above)");
+    showText("out2(0,0) with Wrap", std::to_string(wrapCorner) + "  (should match the Wrap breakdown above)");
+    showText("out2(0,0) with Reflect", std::to_string(reflectCorner) + "  (should match the Reflect breakdown above)");
 
     // ------------------------------------------------------------------
     // PART 2: the same idea, at photographic scale -- box blur
@@ -322,6 +394,12 @@ int main()
     std::vector<uint8_t> marblesData = image_io::load(dataDir + "/marbles.bmp", marblesExtent);
     Image<uint8_t, 3> marbles(marblesData.data(), marblesExtent);
 
+    step("image_io::load(\"marbles.bmp\", extent)",
+        "The start image for this Part and the frequency-domain Part 6 below -- saved on its own,\n"
+        "             same as photo was in Part 2, so 06_sobel_edges.png further down has an unmodified\n"
+        "             'before' to be compared against instead of only showing the 'after'.");
+    saveForInspection("marbles", marbles, "05_marbles_original.png");
+
     OwnedImage<uint8_t, 3> grey3({ 1, marbles.extent()[1], marbles.extent()[2] });
     step("marbles.mean(0, grey3)   // per-axis reduction over the channel axis",
         "Sobel below looks for brightness change, not color, so marbles.bmp is reduced to greyscale\n"
@@ -369,7 +447,7 @@ int main()
     OwnedImage<uint8_t, 3> edgeImage({ 1, grey.extent()[0], grey.extent()[1] });
     Image<uint8_t, 2> edgeChannel = edgeImage.slice(0, 0);
     toDisplayable(magnitude, edgeChannel);
-    saveForInspection("Sobel edge magnitude", edgeImage, "05_sobel_edges.png");
+    saveForInspection("Sobel edge magnitude", edgeImage, "06_sobel_edges.png");
 
     // ------------------------------------------------------------------
     // PART 5: arbitrary kernels -- sharpen and emboss
@@ -388,7 +466,7 @@ int main()
         "             for, instead of convolve()'s own uint8_t output path.");
     showArray("sharpenKernel", sharpenKernel);
     convolveColorSafe(photo, sharpenKernel, sharpened, BorderMode::Reflect);
-    saveForInspection("sharpened photo", sharpened, "06_sharpen.png");
+    saveForInspection("sharpened photo", sharpened, "07_sharpen.png");
 
     OwnedImage<double, 2> embossKernel({ 3, 3 }, { -2,-1,0,  -1,1,1,  0,1,2 });
     OwnedImage<uint8_t, 3> embossed(photoExtent);
@@ -400,25 +478,28 @@ int main()
         "             to add 128 back so 'no change' lands on mid-grey instead of black.");
     showArray("embossKernel", embossKernel);
     convolveColorSafe(photo, embossKernel, embossed, BorderMode::Reflect, 128.0);
-    saveForInspection("embossed photo", embossed, "07_emboss.png");
+    saveForInspection("embossed photo", embossed, "08_emboss.png");
 
     // ------------------------------------------------------------------
     // PART 6: the same operations again, via the frequency domain
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 6: the frequency domain ===\n";
 
-    step("Image<uint8_t,3> crop = marbles.view({0,581,372}, {2,836,627});   // 256x256, all 3 channels",
-        "fftn() needs every dimension's extent to be a power of two (it's asserted -- see fft.h), and\n"
-        "             neither photo nor marbles is one in either dimension. view() crops out a 256x256\n"
-        "             region instead of touching the whole image -- the same view() from demo/multiview,\n"
-        "             just now feeding fftn() rather than being printed. marbles rather than photo on\n"
-        "             purpose here, same reason Part 4 switched to it for Sobel: photo's real film-grain\n"
-        "             noise spreads energy across every frequency roughly evenly, which swamps the log-\n"
-        "             magnitude spectrum below into near-uniform static rather than showing readable\n"
-        "             structure -- marbles' cleaner per-pixel contrast doesn't have that problem. Every\n"
-        "             step below works on this crop.");
-    Image<uint8_t, 3> crop = marbles.view({ 0, 581, 372 }, { 2, 836, 627 });
-    saveForInspection("crop", crop, "08_crop.png");
+    step("Image<uint8_t,3> crop = marbles.view({0,581,372}, {2,880,596});   // 300x225, all 3 channels -- deliberately NOT a power of two",
+        "fftn() used to require every dimension's extent to be an exact power of two; it no longer does --\n"
+        "             fftn()/ifftn() now handle ANY extent, via Bluestein's algorithm (the chirp-z transform;\n"
+        "             see FFTBluestein in fft.h) for whichever axes aren't already a power of two. This crop is\n"
+        "             still here, but for two much more mundane reasons: keeping this demo's pixel-by-pixel\n"
+        "             comparison and the timing benchmark below fast, and keeping the log-magnitude spectrum\n"
+        "             image a comfortable size to look at -- not because fftn() needs it. To prove that, this\n"
+        "             crop is deliberately 300x225: NOT a power of two in either dimension (256x256 would have\n"
+        "             been). marbles rather than photo on purpose here, same reason Part 4 switched to it for\n"
+        "             Sobel: photo's real film-grain noise spreads energy across every frequency roughly\n"
+        "             evenly, which swamps the log-magnitude spectrum below into near-uniform static rather\n"
+        "             than showing readable structure -- marbles' cleaner per-pixel contrast doesn't have that\n"
+        "             problem. Every step below works on this crop.");
+    Image<uint8_t, 3> crop = marbles.view({ 0, 581, 372 }, { 2, 880, 596 });
+    saveForInspection("crop", crop, "09_crop.png");
 
     OwnedImage<uint8_t, 3> greyCrop3({ 1, crop.extent()[1], crop.extent()[2] });
     crop.mean(0, greyCrop3);
@@ -431,8 +512,8 @@ int main()
         "             corners of the raw output, high frequencies (sharp edges, fine texture) further out.\n"
         "             Displaying that directly is unreadable: fftshift() below recenters it (a numpy.fft\n"
         "             convention -- DC in the middle, not the corner) and a log(1+magnitude) scale tames\n"
-        "             its enormous dynamic range (the DC term alone is the sum of all 65536 pixels) so\n"
-        "             faint high-frequency detail doesn't just disappear next to it.");
+        "             its enormous dynamic range (the DC term alone is the sum of every one of the crop's\n"
+        "             67500 pixels) so faint high-frequency detail doesn't just disappear next to it.");
     OwnedImage<std::complex<double>, 2> greyFreq(greyCropU8.extent());
     fftn<double, 2>(greyCropDbl, greyFreq);
 
@@ -451,38 +532,54 @@ int main()
         auto mIt = magShifted.begin();
         for (auto it = spectrumChannel.begin(); it != spectrumChannel.end(); ++it, ++mIt) *it = (uint8_t)((*mIt / maxMag) * 255.0);
     }
-    saveForInspection("log-magnitude spectrum (fftshifted)", spectrumImage, "09_spectrum.png");
+    saveForInspection("log-magnitude spectrum (fftshifted)", spectrumImage, "10_spectrum.png");
 
-    step("fftCorrelateColor(crop, boxKernel, fftBoxBlurred)   // same 3x3 boxKernel from Part 2",
-        "fftCorrelateColor() takes each channel to the frequency domain, multiplies by the kernel's\n"
-        "             spectrum (conjugated -- convolve() computes a correlation, not a textbook convolution;\n"
-        "             see the comment on fftCorrelateColor() in this file, or\n"
-        "             testFFTMatchesSpatialConvolution in unitTests.cpp, for the exact identity and why),\n"
-        "             and transforms back. That's a real, independent computation of the *same* answer\n"
-        "             Part 2's convolveColor(crop, boxKernel, ..., BorderMode::Wrap) would give -- computed\n"
-        "             below for direct comparison rather than taken on faith.");
+    // A 51x51 box kernel, not Part 2's mild 3x3 one -- big enough (2601 taps,
+    // averaging over a 51x51 neighborhood) that the blur is obvious at a
+    // glance rather than something you have to squint at two images to spot,
+    // and it lines up with the "big kernel" case in the timing benchmark
+    // below, which reuses this exact kernel rather than defining its own.
+    OwnedImage<double, 2> box51Kernel({ 51, 51 });
+    box51Kernel = 1.0 / (51.0 * 51.0);
+
+    step({
+            "fftCorrelateColor(crop, box51Kernel, fftBoxBlurred)   // 51x51 box kernel -- a strong blur, not the mild 3x3 one from Part 2",
+            "// fftCorrelateColor() itself does exactly this, per color channel:",
+            "fftn<double,2>(kernelPadded, kernelFreq);          // kernel -> its own spectrum (computed once, shared by every channel)",
+            "fftn<double,2>(channelAsDouble, imgFreq);          // this channel -> its own spectrum",
+            "product = conj(kernelFreq) * imgFreq;              // per-frequency multiply -- this IS the convolution",
+            "ifftn<double,2>(product, blurredChannel);          // spectrum -> back to pixels"
+        },
+        "The crop shown again just above is this comparison's starting point. fftCorrelateColor() takes\n"
+        "             each channel to the frequency domain, multiplies by the kernel's spectrum (conjugated --\n"
+        "             convolve() computes a correlation, not a textbook convolution; see the comment on\n"
+        "             fftCorrelateColor() in this file, or testFFTMatchesSpatialConvolution in unitTests.cpp,\n"
+        "             for the exact identity and why), and transforms back -- the 5 lines above are that\n"
+        "             function's real body, not a paraphrase of it. That's a real, independent computation of\n"
+        "             the *same* answer Part 2's convolveColor(crop, box51Kernel, ..., BorderMode::Wrap) would\n"
+        "             give -- computed below for direct comparison rather than taken on faith.");
+    saveForInspection("crop (this comparison's starting point, shown again for convenience)", crop, "09_crop.png");
     OwnedImage<uint8_t, 3> fftBoxBlurred(crop.extent());
-    fftCorrelateColor(crop, boxKernel, fftBoxBlurred);
-    saveForInspection("FFT-domain box blur", fftBoxBlurred, "10_fft_box_blur.png");
+    fftCorrelateColor(crop, box51Kernel, fftBoxBlurred);
+    saveForInspection("FFT-domain box blur", fftBoxBlurred, "11_fft_box_blur.png");
 
     OwnedImage<uint8_t, 3> spatialBoxBlurred(crop.extent());
-    convolveColor(crop, boxKernel, spatialBoxBlurred, BorderMode::Wrap);
-    saveForInspection("spatial-domain box blur (BorderMode::Wrap, for a fair comparison)", spatialBoxBlurred, "11_spatial_box_blur_wrap.png");
+    convolveColor(crop, box51Kernel, spatialBoxBlurred, BorderMode::Wrap);
+    saveForInspection("spatial-domain box blur (BorderMode::Wrap, for a fair comparison)", spatialBoxBlurred, "12_spatial_box_blur_wrap.png");
 
     int maxPixelDiff = 0;
     for (const auto& coord : crop.coordinates())
         maxPixelDiff = std::max(maxPixelDiff, std::abs((int)fftBoxBlurred.at(coord) - (int)spatialBoxBlurred.at(coord)));
-    showText("largest per-pixel difference between the two", std::to_string(maxPixelDiff) + " (out of 0-255) -- 10 and 11 should look identical");
+    showText("largest per-pixel difference between the two", std::to_string(maxPixelDiff) + " (out of 0-255) -- 11 and 12 should look identical");
 
     step("timing: spatial convolve() vs FFT correlation, at two very different kernel sizes",
         "convolve()'s cost scales with image size TIMES kernel size (every output pixel visits every\n"
         "             kernel tap); fftn()'s cost scales with image size alone (kernel size only changes how\n"
         "             the kernel gets *built*, not the transform cost) -- so which one wins depends entirely\n"
-        "             on the kernel. A 3x3 kernel is 9 taps; a 51x51 one is 2601, ~300x more spatial work for\n"
-        "             the exact same image, while the FFT side barely changes (same 7 image-sized transforms\n"
-        "             either way -- 1 for the kernel, 2 per channel). Averaged over a few repetitions below.");
-    OwnedImage<double, 2> box51Kernel({ 51, 51 });
-    box51Kernel = 1.0 / (51.0 * 51.0);
+        "             on the kernel. A 3x3 kernel is 9 taps; the 51x51 one already used above for the visual\n"
+        "             comparison is 2601, ~300x more spatial work for the exact same image, while the FFT side\n"
+        "             barely changes (same 7 image-sized transforms either way -- 1 for the kernel, 2 per\n"
+        "             channel). Averaged over a few repetitions below.");
     OwnedImage<uint8_t, 3> timingOut(crop.extent());
     const int reps = 3;
 
@@ -507,12 +604,13 @@ int main()
     std::cout <<
         "\n\nAll outputs written to: " << outputDir << "\n"
         "Open 01_original.png alongside the rest to compare by eye: 02/03/04 should look\n"
-        "progressively softer, 05 should show bright edges on a dark background, 06 should look\n"
-        "crisper than the original, and 07 should look like a grey relief carving. 09 is what the\n"
-        "256x256 crop (08) looks like in the frequency domain -- a bright center fading outward, with\n"
-        "any strong directional texture in the crop showing up as streaks through it. 10 and 11 should\n"
-        "be visually indistinguishable -- two independently computed answers to the same question, one\n"
-        "from the spatial domain and one from the frequency domain.\n";
+        "progressively softer. 06 should show bright edges on a dark background -- compare it to 05,\n"
+        "marbles' own unmodified original. 07 should look crisper than the original, and 08 should\n"
+        "look like a grey relief carving. 10 is what the 300x225 crop (09) looks like in the frequency\n"
+        "domain -- a bright center fading outward, with any strong directional texture in the crop\n"
+        "showing up as streaks through it. 11 and 12 should be visually indistinguishable -- a strong\n"
+        "51x51 blur, computed two independent ways (frequency domain and spatial domain), that agree\n"
+        "to within a pixel or two of rounding.\n";
 
     return 0;
 }

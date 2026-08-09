@@ -151,22 +151,35 @@ namespace ndl
 		// room for MaxPo2Size*4 Reals and stays owned by the FFT instance for
 		// its lifetime, reused across calls (recomputing the twiddle factors is
 		// skipped whenever consecutive calls use the same n).
+		/// Complex-to-complex power-of-two-size FFT/IFFT (Cooley-Tukey). See fftn()/ifftn() for the N-dimensional Image-based entry point most callers want.
+		///
+		/// @tparam Real       Floating-point element type (float or double).
+		/// @tparam MaxPo2Size The largest power-of-two transform size this instance's scratch buffer supports; fft()/ifft() may be called with any power-of-two `n <= MaxPo2Size`, changing `n` between calls at will.
+		/// @ingroup fft
 		template<class Real, int MaxPo2Size>
 		class FFT {
 		public:
-			//maxsize_pow_of_2 is the largest sample size,
+			/// @param ScratchBufferOfSizeNTimesFour Caller-owned buffer of `MaxPo2Size * 4` Reals, kept alive for this FFT instance's whole lifetime and reused across calls.
 			FFT(Real* ScratchBufferOfSizeNTimesFour) {
 				fft_twiddles = ScratchBufferOfSizeNTimesFour;
 				fft_twiddles2 = ScratchBufferOfSizeNTimesFour + MaxPo2Size;
 				scratch = ScratchBufferOfSizeNTimesFour + MaxPo2Size * 2;
 				N = 0;
 			}
+			/// Forward transform.
+			/// @param n      Sample count; must be a power of two, `<= MaxPo2Size`.
+			/// @param input  `n` complex samples.
+			/// @param output `n` complex spectrum values; may alias `input`.
 			void fft(int n, std::complex<Real>* input, std::complex<Real>* output) {
 				Real* fft_input = reinterpret_cast<Real*>(input);
 				Real* fft_output = reinterpret_cast<Real*>(output);
 				if (N != n) update_complex_twiddles(n);
 				FFTPowerOfTwo<Real, MaxPo2Size>::compute(N, fft_input, fft_output, scratch, fft_twiddles);
 			}
+			/// Inverse transform (includes the 1/n normalization).
+			/// @param n      Sample count; must be a power of two, `<= MaxPo2Size`.
+			/// @param input  `n` complex spectrum values.
+			/// @param output `n` reconstructed complex samples; may alias `input`.
 			void ifft(int n, std::complex<Real>* input, std::complex<Real>* output) {
 				Real* fft_input = reinterpret_cast<Real*>(input);
 				Real* fft_output = reinterpret_cast<Real*>(output);
@@ -203,10 +216,15 @@ namespace ndl
 		// N-point real spectrum. Same memory convention as FFT above, just a
 		// bigger scratch requirement (room for MaxPo2Size*5 Reals) for the
 		// extra unpacking buffer.
+		/// Real-to-complex power-of-two-size FFT/IFFT, packing N real samples into an N/2-point complex transform (roughly half the work of FFT above with a zero imaginary part).
+		///
+		/// @tparam Real       Floating-point element type (float or double).
+		/// @tparam MaxPo2Size The largest power-of-two transform size this instance's scratch buffer supports.
+		/// @ingroup fft
 		template<class Real, int MaxPo2Size>
 		class FFTReal {
 		public:
-			//maxsize_pow_of_2 is the largest sample size,
+			/// @param ScratchBufferOfSizeNTimesFive Caller-owned buffer of `MaxPo2Size * 5` Reals, kept alive for this FFTReal instance's whole lifetime and reused across calls.
 			FFTReal(Real* ScratchBufferOfSizeNTimesFive)
 			{
 				fft_twiddles = ScratchBufferOfSizeNTimesFive;
@@ -215,6 +233,10 @@ namespace ndl
 				scratch2 = ScratchBufferOfSizeNTimesFive + MaxPo2Size * 4;
 				iRealN = RealN = 0;
 			}
+			/// Forward transform: n real samples -> n/2+1 unique complex spectrum values (full n-length Hermitian-symmetric output).
+			/// @param n      Sample count; must be a power of two, `<= MaxPo2Size`.
+			/// @param input  `n` real samples.
+			/// @param output `n` complex spectrum values.
 			void fft(int n, Real* input, std::complex<Real>* output) {
 				Real* fft_input = reinterpret_cast<Real*>(input);
 				Real* fft_output = reinterpret_cast<Real*>(output);
@@ -254,6 +276,10 @@ namespace ndl
 					fft_output[1] = 0;
 				}
 			}
+			/// Inverse transform (includes normalization).
+			/// @param n      Sample count; must be a power of two, `<= MaxPo2Size`.
+			/// @param input  `n` complex spectrum values.
+			/// @param output `n` reconstructed real samples.
 			void ifft(int n, std::complex<Real>* input, Real* output) {
 				Real* fft_input = reinterpret_cast<Real*>(input);
 				Real* fft_output = reinterpret_cast<Real*>(output);
@@ -415,12 +441,23 @@ namespace ndl
 		// its own thread_local buffers rather than exposing every byte to
 		// its caller -- so this doesn't introduce a new convention at that
 		// level, just at this one, more complex, class.
+		/// Complex DFT of ANY size N (not just a power of two), via Bluestein's algorithm (the chirp-z transform) -- see fftn()/ifftn() for the N-dimensional entry point that uses this automatically for non-power-of-two dimensions.
+		///
+		/// @tparam Real       Floating-point element type (float or double).
+		/// @tparam MaxPo2Size The largest power-of-two *padded* transform size this instance can use internally -- an N whose `nextPowerOfTwo(2*N-1)` exceeds this throws std::invalid_argument, not the raw N itself.
+		/// @note   Unlike FFT/FFTReal above, this class owns its own scratch (plain std::vectors, resized only when N changes) rather than taking a caller-owned buffer -- see the comment above the class definition for why.
+		/// @ingroup fft
 		template<class Real, int MaxPo2Size>
 		class FFTBluestein
 		{
 		public:
 			FFTBluestein() : engineScratch(MaxPo2Size * 4), engine(engineScratch.data()) { }
 
+			/// Forward transform.
+			/// @param n      Sample count; any positive size, not just a power of two.
+			/// @param input  `n` complex samples.
+			/// @param output `n` complex spectrum values.
+			/// @throws std::invalid_argument if `n`'s padded transform size exceeds MaxPo2Size.
 			void fft(int n, std::complex<Real>* input, std::complex<Real>* output)
 			{
 				ensure(n);
@@ -431,6 +468,11 @@ namespace ndl
 				engine.ifft(M, A.data(), c.data());
 				for (int k = 0; k < n; k++) output[k] = w[k] * c[k];
 			}
+			/// Inverse transform, via the conjugate identity (see the comment above the class definition).
+			/// @param n      Sample count; any positive size, not just a power of two.
+			/// @param input  `n` complex spectrum values.
+			/// @param output `n` reconstructed complex samples.
+			/// @throws std::invalid_argument if `n`'s padded transform size exceeds MaxPo2Size.
 			void ifft(int n, std::complex<Real>* input, std::complex<Real>* output)
 			{
 				conjBuf.resize(n);
@@ -509,6 +551,15 @@ namespace ndl
 		// thread_local, allocated once per worker thread on first use and
 		// reused for every fiber that thread goes on to handle, rather than
 		// once per fiber.
+		/// Separable N-dimensional complex FFT/IFFT: transforms every axis in turn. Any extent works (power of two is fastest; see FFTBluestein for the rest).
+		/// @tparam Real       Floating-point element type (float or double).
+		/// @tparam DIM        Number of dimensions.
+		/// @tparam MaxPo2Size Largest power-of-two *padded* transform size any single non-power-of-two axis may need internally (see FFTBluestein); defaults to 8192. Raise this if `input` has a large non-power-of-two dimension.
+		/// @param  input      Source image.
+		/// @param  output     Destination; must already exist with `input`'s own extent. May alias `input`.
+		/// @param  inverse    If true, computes the inverse transform (with 1/n normalization per axis) instead of the forward one.
+		/// @throws std::invalid_argument if some axis's extent is non-power-of-two and its Bluestein-padded size exceeds MaxPo2Size.
+		/// @ingroup fft
 		template<class Real, int DIM, int MaxPo2Size = 8192>
 		void fftn(const Image<std::complex<Real>, DIM>& input, Image<std::complex<Real>, DIM>& output, bool inverse = false)
 		{
@@ -577,6 +628,14 @@ namespace ndl
 			}
 		}
 
+		/// Inverse of fftn(): reconstructs the spatial-domain signal from its complex spectrum.
+		/// @tparam Real       Floating-point element type (float or double).
+		/// @tparam DIM        Number of dimensions.
+		/// @tparam MaxPo2Size Largest power-of-two padded transform size any single non-power-of-two axis may need; see fftn().
+		/// @param  input      Complex spectrum.
+		/// @param  output     Destination; must already exist with `input`'s own extent. May alias `input`.
+		/// @throws std::invalid_argument under the same conditions as fftn().
+		/// @ingroup fft
 		template<class Real, int DIM, int MaxPo2Size = 8192>
 		void ifftn(const Image<std::complex<Real>, DIM>& input, Image<std::complex<Real>, DIM>& output)
 		{
@@ -590,6 +649,14 @@ namespace ndl
 		// cost of the arithmetic FFTReal saves by working on half-length
 		// complex data. FFTReal itself is still available directly above for
 		// the 1D real<->complex case.
+		/// Convenience overload for a real-valued input: promotes to complex (zero imaginary part), then runs the same transform.
+		/// @tparam Real       Floating-point element type (float or double).
+		/// @tparam DIM        Number of dimensions.
+		/// @tparam MaxPo2Size Largest power-of-two padded transform size any single non-power-of-two axis may need; see fftn().
+		/// @param  input      Real-valued source image.
+		/// @param  output     Destination for the complex spectrum; must already exist with `input`'s own extent.
+		/// @throws std::invalid_argument under the same conditions as fftn().
+		/// @ingroup fft
 		template<class Real, int DIM, int MaxPo2Size = 8192>
 		void fftn(const Image<Real, DIM>& input, Image<std::complex<Real>, DIM>& output)
 		{
@@ -604,6 +671,14 @@ namespace ndl
 		// imaginary part is expected to be ~0 already, up to floating-point
 		// error, whenever the spectrum came from a real-valued image in the
 		// first place).
+		/// Convenience overload reconstructing a real-valued image from a complex spectrum (keeps just the real part).
+		/// @tparam Real       Floating-point element type (float or double).
+		/// @tparam DIM        Number of dimensions.
+		/// @tparam MaxPo2Size Largest power-of-two padded transform size any single non-power-of-two axis may need; see fftn().
+		/// @param  input      Complex spectrum.
+		/// @param  output     Destination for the reconstructed real-valued image; must already exist with `input`'s own extent.
+		/// @throws std::invalid_argument under the same conditions as fftn().
+		/// @ingroup fft
 		template<class Real, int DIM, int MaxPo2Size = 8192>
 		void ifftn(const Image<std::complex<Real>, DIM>& input, Image<Real, DIM>& output)
 		{

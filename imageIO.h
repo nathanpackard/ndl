@@ -14,6 +14,12 @@ namespace ndl
 {
 	namespace image_io
 	{
+		/// Loads a bitmap/PNG/JPEG image (auto-detected by extension) as {channel,width,height} uint8_t data.
+		/// @param fileName Path to load; format is chosen from the file extension (.jpg/.jpeg, .bmp, .png).
+		/// @param extent   Output parameter, set to {channelCount, width, height} on return.
+		/// @return         Raw pixel data, row-major, `extent[0]` interleaved channels per pixel.
+		/// @throws std::runtime_error if the file can't be opened/decoded, or the extension is unrecognized.
+		/// @ingroup image_io
 		std::vector<uint8_t> load(std::string fileName, std::array<int, 3>& extent)
 		{
 			extent = { 0, 0, 0 };
@@ -109,6 +115,14 @@ namespace ndl
 			throw std::runtime_error("unknown data type!!");
 		}
 
+		/// Loads a headerless raw binary file of the given extent and element type.
+		/// @tparam T           Element type; the caller must already know this, since a headerless file carries no type information.
+		/// @tparam DIM         Number of dimensions.
+		/// @param  rawFileName Path to load.
+		/// @param  extent      Shape of the data to read; the caller must already know this too.
+		/// @param  offsetBytes Byte offset into the file to start reading from (e.g. to skip a fixed-size header the caller parsed separately).
+		/// @return             `size(extent)` elements of type T, read in the file's own byte order.
+		/// @ingroup image_io
 		template<class T, int DIM>
 		std::vector<T> load_raw(std::string rawFileName, std::array<int, DIM> extent, int offsetBytes)
 		{
@@ -122,6 +136,12 @@ namespace ndl
 			return result;
 		}
 
+		/// Saves as a headerless raw binary file (just the element data, no header).
+		/// @tparam T           source's element type.
+		/// @tparam DIM         Number of dimensions.
+		/// @param  source      Image to save.
+		/// @param  rawFileName Path to write; overwritten if it already exists.
+		/// @ingroup image_io
 		template<class T, int DIM>
 		void save_raw(const Image<T, DIM>& source, std::string rawFileName)
 		{
@@ -131,6 +151,13 @@ namespace ndl
 			ofile.close();
 		}
 
+		/// Loads a DICOM (medical imaging) file.
+		/// @tparam T              Element type to convert into; converted from the file's own bit depth if they differ.
+		/// @param  filename       Path to load.
+		/// @param  extent         Output parameter, set to {width, height, numberOfFrames} on return.
+		/// @param  openAllInFolder Currently unused by the implementation.
+		/// @return                `size(extent)` elements of type T.
+		/// @ingroup image_io
 		template<class T>
 		std::vector<T> load_dicom(std::string filename, std::array<int, 3>& extent, bool openAllInFolder = false)
 		{
@@ -197,6 +224,12 @@ namespace ndl
 			return result;
 		}
 
+		/// Saves as bitmap/PNG/NRRD (auto-detected by extension).
+		/// @tparam T        image's element type.
+		/// @tparam DIM      Number of dimensions.
+		/// @param  image    Image to save.
+		/// @param  fileName Path to write; format is chosen from the extension (.bmp, .png, or .nrrd/no extension).
+		/// @ingroup image_io
 		template<class T, int DIM>
 		void save(const Image<T, DIM>& image, std::string fileName)
 		{
@@ -304,6 +337,13 @@ namespace ndl
 			}
 		}
 
+		/// Loads an NRRD (Nearly Raw Raster Data) file.
+		/// @tparam T        Element type to convert into.
+		/// @tparam DIM      Number of dimensions.
+		/// @param  extent   Output parameter, set to the file's own shape on return.
+		/// @param  fileName Path to load.
+		/// @return          `size(extent)` elements of type T.
+		/// @ingroup image_io
 		template<class T, int DIM>
 		std::vector<T> load_nrrd(std::array<int, DIM>& extent, std::string fileName)
 		{

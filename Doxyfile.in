@@ -1,0 +1,77 @@
+# Doxygen configuration for ndl -- a minimal, hand-maintained Doxyfile
+# (only the settings that matter are listed; everything else is Doxygen's
+# own default). Processed by CMake's configure_file() into
+# ${CMAKE_BINARY_DIR}/Doxyfile so OUTPUT_DIRECTORY resolves to an absolute,
+# build-directory path regardless of where `doxygen`/`cmake --build . --target docs`
+# is actually invoked from -- see the docs target in CMakeLists.txt.
+
+PROJECT_NAME           = "ndl"
+PROJECT_BRIEF          = "A header-only, multi-dimensional image processing library for C++"
+OUTPUT_DIRECTORY       = @CMAKE_BINARY_DIR@/docs
+
+# ndl's own headers -- INPUT deliberately excludes imageIO/ (vendored/adapted
+# third-party codec implementations: png, jpeg, bitmap, dicom, gif, avi,
+# NRRD, analyzelib), which aren't this library's own public API surface.
+# README.md is included so USE_MDFILE_AS_MAINPAGE below can make it the
+# generated site's front page. docs/tutorials.md is the hand-written
+# \subpage index; docs/generated (built by the `tutorials` CMake target,
+# see CMakeLists.txt) holds the actual per-demo tutorial content, generated
+# fresh from each demo's real output on every docs build -- it doesn't
+# exist until that target has run at least once, which is fine: INPUT may
+# name a not-yet-existing path, Doxygen just finds nothing there until it does.
+INPUT                   = @CMAKE_SOURCE_DIR@/README.md \
+                           @CMAKE_SOURCE_DIR@/image.h \
+                           @CMAKE_SOURCE_DIR@/image \
+                           @CMAKE_SOURCE_DIR@/fft.h \
+                           @CMAKE_SOURCE_DIR@/matrix.h \
+                           @CMAKE_SOURCE_DIR@/imageIO.h \
+                           @CMAKE_SOURCE_DIR@/utility.h \
+                           @CMAKE_SOURCE_DIR@/mathHelpers.h \
+                           @CMAKE_SOURCE_DIR@/docs/groups.dox \
+                           @CMAKE_SOURCE_DIR@/docs/tutorials.md \
+                           @CMAKE_BINARY_DIR@/docs/generated
+USE_MDFILE_AS_MAINPAGE  = @CMAKE_SOURCE_DIR@/README.md
+RECURSIVE                = YES
+IMAGE_PATH               = @CMAKE_BINARY_DIR@/docs/generated/images
+
+# The existing comments throughout ndl's headers are plain "//" prose
+# (extensive "why, not just what" explanations), not Doxygen-tagged
+# ("///"/"/**") doc comments -- Doxygen only extracts the latter. Without
+# EXTRACT_ALL, every entity that doesn't have one of the small number of
+# "///" brief comments added alongside this Doxyfile would be silently
+# omitted from the generated docs entirely (not just shown as
+# undocumented), which for this codebase would mean almost nothing
+# appears. EXTRACT_ALL keeps every class/function/member listed and
+# browsable regardless; JAVADOC_AUTOBRIEF means any "///" comment added
+# only needs its first sentence to double as the one-line summary, no
+# separate \brief tag required.
+EXTRACT_ALL             = YES
+EXTRACT_STATIC          = YES
+JAVADOC_AUTOBRIEF       = YES
+
+# SOURCE_BROWSER is what makes the existing "//" prose actually reachable
+# from the generated docs: every documented (or undocumented) entity links
+# to its full, syntax-highlighted source, where all of that existing
+# rationale-heavy commentary is still fully visible -- EXTRACT_ALL/
+# JAVADOC_AUTOBRIEF only control what shows up in the summary lists and
+# one-line briefs, not what's actually explained once you click through.
+SOURCE_BROWSER          = YES
+REFERENCED_BY_RELATION  = YES
+REFERENCES_RELATION     = YES
+
+GENERATE_TREEVIEW       = YES
+SORT_MEMBER_DOCS        = NO
+WARN_IF_UNDOCUMENTED    = YES
+WARN_LOGFILE            = @CMAKE_BINARY_DIR@/docs/doxygen_warnings.log
+
+# Class/collaboration/include graphs via graphviz -- e.g. OwnedImage's
+# inheritance from Image, or fftn()'s use of Image, are much clearer as a
+# diagram than as prose.
+HAVE_DOT                = YES
+DOT_IMAGE_FORMAT        = svg
+INTERACTIVE_SVG         = YES
+CLASS_GRAPH             = YES
+COLLABORATION_GRAPH     = YES
+INCLUDE_GRAPH           = YES
+
+GENERATE_LATEX          = NO

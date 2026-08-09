@@ -46,6 +46,22 @@ namespace ndl
 	// It's just an ordinary value type wrapping a std::vector<uint64_t> --
 	// copy/move construction/assignment are all the compiler-generated
 	// defaults, and all just work.
+	/// A compact N-dimensional array of bits, 1 bit of real storage per element
+	/// (via std::vector<uint64_t>) instead of a whole byte -- for a genuinely binary
+	/// image (e.g. a threshold() result) where memory is the concern. Not derived
+	/// from Image; see the full comment below for why, and for how it shares
+	/// erode()/dilate()/median_filter()/threshold() with Image via the free
+	/// functions in image/algorithms.h.
+	///
+	/// Not a drop-in replacement for Image<bool,DIM> -- the two are meant for
+	/// different situations. Use pack()/unpack() to convert between them: pack()
+	/// an Image<bool,DIM> (or any minimal-interface image) down into a compact
+	/// PackedBitImage once it's final, unpack() a PackedBitImage back out when
+	/// something needs real addressable elements (e.g. to hand to code that's
+	/// generic over Image<T,DIM>).
+	///
+	/// @tparam DIM Number of dimensions (>= 1).
+	/// @ingroup core_image
 	template<int DIM>
 	class PackedBitImage
 	{
@@ -56,6 +72,10 @@ namespace ndl
 		// non-const at()/operator(), standing in for the "bool&" that can't
 		// exist over packed storage. Converts to bool for reads; assignment
 		// writes the bit in place via read-modify-write on its word.
+		/// Proxy reference to a single bit, standing in for the "bool&" that cannot
+		/// exist over packed storage -- the mutable return type of at()/operator().
+		/// Converts implicitly to bool for reads; `operator=(bool)` writes the bit
+		/// in place via read-modify-write on its 64-bit word.
 		class BitRef
 		{
 		public:
@@ -73,6 +93,8 @@ namespace ndl
 			int bit_;
 		};
 
+		/// Allocates a fresh, all-zero bit array of the given shape.
+		/// @param extent Shape: element count along each dimension.
 		explicit PackedBitImage(std::array<int, DIM> extent) :
 			extent_(extent),
 			stride_(makeStride(extent)),
@@ -87,11 +109,17 @@ namespace ndl
 
 		const std::array<int, DIM>& extent() const { return extent_; }
 
+		/// Reads the bit at the given N-dimensional coordinate.
+		/// @param coord Coordinate, one component per dimension.
+		/// @return The bit's value.
 		bool at(const std::array<int, DIM>& coord) const
 		{
 			std::size_t idx = flatIndex(coord);
 			return (words_[idx / 64] >> (idx % 64)) & std::uint64_t(1);
 		}
+		/// Mutable access to the bit at the given N-dimensional coordinate.
+		/// @param coord Coordinate, one component per dimension.
+		/// @return A BitRef proxy standing in for a real bool&; assign a bool to it to write the bit.
 		BitRef at(const std::array<int, DIM>& coord)
 		{
 			std::size_t idx = flatIndex(coord);
@@ -110,6 +138,8 @@ namespace ndl
 			return at({ static_cast<int>(indices)... });
 		}
 
+		/// Every N-dimensional coordinate this image covers, in row-major order.
+		/// @return One entry per element, in the same order the storage is packed.
 		std::vector<std::array<int, DIM>> coordinates() const { return detail::coordinatesOf(extent_); }
 
 		// Count of set bits -- the natural whole-image reduction for a binary
@@ -117,13 +147,19 @@ namespace ndl
 		// beyond the last valid bit are always 0 (nothing ever sets them --
 		// every write goes through at(), which only ever produces indices <
 		// size()), so no masking is needed here.
+		/// Number of set (true) bits.
+		/// @return Count of true bits, in [0, size()].
 		std::size_t count() const
 		{
 			std::size_t total = 0;
 			for (auto w : words_) total += std::bitset<64>(w).count();
 			return total;
 		}
+		/// True if at least one bit is set.
+		/// @return `count() > 0`.
 		bool any() const { return count() > 0; }
+		/// True if every bit is set.
+		/// @return `count() == size()`.
 		bool all() const { return count() == size(); }
 
 	private:
@@ -155,6 +191,11 @@ namespace ndl
 	// packing a complex image this way only tests "is it exactly zero", which
 	// is rarely the intent; more likely you want to threshold a derived
 	// magnitude/real-part image first and pack *that*.
+	/// Converts any minimal-interface image into a freshly-allocated PackedBitImage, nonzero -> true.
+	/// @tparam ImageT Any type exposing extent()/at(coord)/coordinates() -- Image<T,DIM>, OwnedImage<T,DIM>, etc.
+	/// @param  src    Source image; DIM is read off `src.extent()`'s own array size, never named explicitly.
+	/// @return A new PackedBitImage<DIM> with `src`'s extent, one bit per element (true where `src`'s element != 0).
+	/// @ingroup core_image
 	template<class ImageT>
 	auto pack(const ImageT& src)
 	{
@@ -171,6 +212,14 @@ namespace ndl
 	// caller-owned Image<T,DIM> (or OwnedImage<T,DIM>) -- onValue/offValue
 	// default to T(1)/T(0), the same "generic 0/1 mask" convention
 	// Image::threshold() itself defaults to.
+	/// Expands a PackedBitImage back into a caller-owned Image<T,DIM>: `onValue`/`offValue` for true/false.
+	/// @tparam T        dst's element type.
+	/// @tparam DIM      Number of dimensions.
+	/// @param  src      Source bits.
+	/// @param  dst      Destination; must already exist with `src`'s own extent.
+	/// @param  onValue  Value written where the source bit is true. Defaults to T(1).
+	/// @param  offValue Value written where the source bit is false. Defaults to T(0).
+	/// @ingroup core_image
 	template<class T, int DIM>
 	void unpack(const PackedBitImage<DIM>& src, Image<T, DIM>& dst, T onValue = T(1), T offValue = T(0))
 	{
@@ -187,6 +236,10 @@ namespace ndl
 	// it for a debug-print convenience. Only handles DIM 1/2 (2D grids,
 	// same as the common case for Image's own printer); for higher DIM, the
 	// coordinates loop below still works, just without per-row breaks.
+	/// Prints a PackedBitImage as one '0'/'1' character per bit, one line per row (DIM 1/2 only -- higher DIM still works, just without per-row line breaks).
+	/// @param sb Stream to write to.
+	/// @param r  Image to print.
+	/// @return `sb`, for chaining.
 	template<int DIM>
 	std::ostream& operator<<(std::ostream& sb, const PackedBitImage<DIM>& r)
 	{

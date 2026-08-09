@@ -36,6 +36,14 @@ namespace ndl
 	// the ordering-dependent Image members in core.h. is_arithmetic_v<bool>
 	// is true, so these still work unmodified for a PackedBitImage (whose
 	// value_type is bool) -- erosion/dilation reduce to AND/OR there.
+	/// Morphological erosion: replaces each element with the minimum of its `kernel`-shaped neighborhood. Works on Image or PackedBitImage.
+	/// @tparam ImageT  Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
+	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from ImageT.
+	/// @param  src     Source image.
+	/// @param  dst     Destination; must already exist with `src`'s own extent.
+	/// @param  kernel  Structuring element (nonzero tap = included); see make_box_kernel()/make_cross_kernel().
+	/// @param  border  How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
+	/// @ingroup morphology_filtering
 	template<class ImageT, class KernelT>
 	void erode(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
 	{
@@ -58,6 +66,14 @@ namespace ndl
 			dst.at(coord) = best;
 		}
 	}
+	/// Morphological dilation: replaces each element with the maximum of its `kernel`-shaped neighborhood. Works on Image or PackedBitImage.
+	/// @tparam ImageT  Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
+	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from ImageT.
+	/// @param  src     Source image.
+	/// @param  dst     Destination; must already exist with `src`'s own extent.
+	/// @param  kernel  Structuring element (nonzero tap = included); see make_box_kernel()/make_cross_kernel().
+	/// @param  border  How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
+	/// @ingroup morphology_filtering
 	template<class ImageT, class KernelT>
 	void dilate(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
 	{
@@ -80,6 +96,15 @@ namespace ndl
 			dst.at(coord) = best;
 		}
 	}
+	/// Replaces each element with the given percentile (0=min, 50=median, 100=max) of its `kernel`-shaped neighborhood.
+	/// @tparam ImageT    Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
+	/// @tparam KernelT   Any minimal-interface image type for the structuring element; may differ from ImageT.
+	/// @param  src       Source image.
+	/// @param  dst       Destination; must already exist with `src`'s own extent.
+	/// @param  kernel    Structuring element (nonzero tap = included).
+	/// @param  percentile 0-100.
+	/// @param  border    How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
+	/// @ingroup morphology_filtering
 	template<class ImageT, class KernelT>
 	void percentile_filter(const ImageT& src, ImageT& dst, const KernelT& kernel, double percentile, BorderMode border = BorderMode::Clamp)
 	{
@@ -103,6 +128,14 @@ namespace ndl
 			dst.at(coord) = *mid;
 		}
 	}
+	/// Replaces each element with the median of its `kernel`-shaped neighborhood -- percentile_filter() at 50.
+	/// @tparam ImageT  Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
+	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from ImageT.
+	/// @param  src     Source image.
+	/// @param  dst     Destination; must already exist with `src`'s own extent.
+	/// @param  kernel  Structuring element (nonzero tap = included).
+	/// @param  border  How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
+	/// @ingroup morphology_filtering
 	template<class ImageT, class KernelT>
 	void median_filter(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp) {
 		static_assert(std::is_arithmetic_v<typename ImageT::value_type>, "ndl::median_filter() requires an arithmetic value_type (needs a total order) -- not valid for e.g. std::complex<T>");
@@ -121,6 +154,15 @@ namespace ndl
 	// offValue, which works for any type -- e.g. thresholding a
 	// std::complex source wouldn't make sense (no ordering) and is
 	// rejected below, but the *destination* type is never restricted.
+	/// Binarizes src into dst: `onValue` where greater than `thresholdValue`, `offValue` otherwise. src and dst may be different image types (e.g. thresholding an Image into a PackedBitImage).
+	/// @tparam SrcImageT   Source's minimal-interface image type; its value_type must be arithmetic (needs ordering).
+	/// @tparam DstImageT   Destination's minimal-interface image type; may differ from SrcImageT, and its value_type is unrestricted.
+	/// @param  src         Source image.
+	/// @param  dst         Destination; must already exist with `src`'s own extent.
+	/// @param  thresholdValue Cutoff; strictly-greater-than, matching otsu_threshold()'s own class split.
+	/// @param  onValue     Value written where the source is greater than `thresholdValue`.
+	/// @param  offValue    Value written elsewhere.
+	/// @ingroup morphology_filtering
 	template<class SrcImageT, class DstImageT>
 	void threshold(const SrcImageT& src, DstImageT& dst, typename SrcImageT::value_type thresholdValue, typename DstImageT::value_type onValue, typename DstImageT::value_type offValue)
 	{
@@ -131,6 +173,13 @@ namespace ndl
 	}
 	// Defaults onValue/offValue to DstImageT's own T(1)/T(0) -- 1/0 for an
 	// integral mask image, true/false for a PackedBitImage.
+	/// Binarizes src into dst using dst's own T(1)/T(0) as onValue/offValue -- see the 5-argument overload for the full contract.
+	/// @tparam SrcImageT      Source's minimal-interface image type; its value_type must be arithmetic (needs ordering).
+	/// @tparam DstImageT      Destination's minimal-interface image type; may differ from SrcImageT.
+	/// @param  src            Source image.
+	/// @param  dst            Destination; must already exist with `src`'s own extent.
+	/// @param  thresholdValue Cutoff; strictly-greater-than.
+	/// @ingroup morphology_filtering
 	template<class SrcImageT, class DstImageT>
 	void threshold(const SrcImageT& src, DstImageT& dst, typename SrcImageT::value_type thresholdValue)
 	{

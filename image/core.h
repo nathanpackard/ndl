@@ -18,6 +18,33 @@
 
 namespace ndl
 {
+	/// An N-dimensional, non-owning view over caller-provided memory of element type T.
+	///
+	/// The core type of ndl: construct from an existing buffer, then use view()/slice()/
+	/// swap_axes()/mirror() for zero-copy reshaped views of the same memory, or the
+	/// arithmetic/comparison operators, reductions (sum()/min()/max()/mean()), and
+	/// filters (convolve()/erode()/dilate()/median_filter()/percentile_filter()/
+	/// threshold()/gaussian_blur()) for processing.
+	///
+	/// Image never allocates: every constructor takes an existing buffer (or another
+	/// Image sharing one). See OwnedImage for a subclass that allocates and owns its
+	/// storage instead, for the common "I just need a fresh buffer" case, and
+	/// PackedBitImage for a bit-packed (not merely `Image<bool,DIM>`) boolean image.
+	///
+	/// @tparam T   Element type. Most operations work for any arithmetic T (bool,
+	///             integral, or floating-point); a few (sum(), equality, the
+	///             compound-assignment arithmetic operators) also work for
+	///             std::complex. Operations that need a total order or a double
+	///             conversion (min()/max()/mean()/convolve()/threshold()/
+	///             otsu_threshold()/erode()/dilate()/median_filter()/
+	///             percentile_filter()/the comparison operators) are rejected at
+	///             compile time for non-arithmetic T, with a message naming the
+	///             actual reason. Bitwise/modulus operators additionally require
+	///             an integral T.
+	/// @tparam DIM Number of dimensions (>= 1). Not runtime-configurable -- a
+	///             2D and a 3D Image are unrelated types, the same way
+	///             `std::array<int,2>` and `std::array<int,3>` are.
+	/// @ingroup core_image
 	template <class T, int DIM>
 	class Image
 	{
@@ -197,6 +224,10 @@ namespace ndl
 
 		// deep copy constructor
 		template<class U>
+		/// Deep-copies `source` element-by-element into `buffer` (which must already have room for it).
+		/// @tparam U     source's element type (converted to T element-by-element).
+		/// @param buffer Destination memory, already sized for `source.size()` elements.
+		/// @param source  Image to copy from.
 		Image(T* buffer, const Image<U,DIM>& source) : Image(buffer, source.extent())
 		{
 			auto sourceIt = source.begin();
@@ -204,6 +235,9 @@ namespace ndl
 		}
 
 		// construct from external memory, be sure you have enough space!!
+		/// Constructs a view over `buffer`, which must already have room for `size(extent)` elements of type T.
+		/// @param buffer Existing memory this view aliases -- never copied, freed, or otherwise owned by Image.
+		/// @param extent Shape: element count along each dimension.
 		Image(T* buffer, std::array<int, DIM> extent) :
 			extent_(extent),
 			stride_{ makeStride(extent)},
@@ -213,6 +247,9 @@ namespace ndl
 			data_{ buffer }
 		{ }
 
+		/// Total element count for the given extent -- the buffer size an Image of that shape needs.
+		/// @param extent Shape to measure.
+		/// @return Product of `extent`'s components.
 		static std::size_t size(std::array<int, DIM> extent)
 		{
 			return std::accumulate(extent.begin(), extent.end(), std::size_t(1), std::multiplies<std::size_t>());
@@ -385,6 +422,8 @@ namespace ndl
 		// mean() returns double regardless of T so an integer image doesn't
 		// silently truncate; the others keep T since sum/min/max of T values
 		// are themselves meaningfully a T (matching the caller's own domain).
+		/// Sum of every element (stays in T; see mean() for a double-precision average).
+		/// @return The sum, as a T.
 		T sum() const {
 			T total{};
 			for (auto it = begin(); it != end(); ++it) total = static_cast<T>(total + *it);
@@ -394,6 +433,8 @@ namespace ndl
 		// (here and per-axis below) needs neither -- only +, which
 		// std::complex supports fine -- so it's deliberately left
 		// unrestricted, unlike its min/max/mean siblings.
+		/// Smallest element in the whole image. Requires an arithmetic T.
+		/// @return The minimum element.
 		T min() const {
 			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::min() requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
 			assert(size() > 0);
@@ -402,6 +443,8 @@ namespace ndl
 			for (++it; it != end(); ++it) if (*it < result) result = *it;
 			return result;
 		}
+		/// Largest element in the whole image. Requires an arithmetic T.
+		/// @return The maximum element.
 		T max() const {
 			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::max() requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
 			assert(size() > 0);
@@ -410,6 +453,10 @@ namespace ndl
 			for (++it; it != end(); ++it) if (*it > result) result = *it;
 			return result;
 		}
+		/// Average of every element, computed and returned in double regardless of T. Requires an arithmetic T.
+		/// @return The mean, as a double (so an integer-typed image doesn't silently truncate).
+		/// @note   Unlike whole-image mean(), the per-axis overload mean(axis,output) stays in T
+		///         throughout and has no such restriction -- see its own comment below.
 		double mean() const {
 			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::mean() requires a T convertible to double -- not valid for e.g. std::complex<T>; per-axis mean(axis,output) has no such restriction, since it stays in T throughout");
 			assert(size() > 0);
@@ -457,6 +504,8 @@ namespace ndl
 		}
 
 		// human readable dump of the view's internal bookkeeping, useful when debugging strides/offsets
+		/// Human-readable dump of this view's internal bookkeeping (offset/stride/extent), useful when debugging.
+		/// @return A multi-line diagnostic string.
 		std::string to_string() const
 		{
 			std::ostringstream sb;
@@ -469,12 +518,17 @@ namespace ndl
 		}
 
 		//iterator methods -- overloaded on *this's constness like every standard container
+		/// Iterator to the first element, walking every element of this view in row-major (dimension 0 fastest) order.
+		/// @return An iterator (or const_iterator, for a const Image) positioned at the first element.
 		iterator begin() { return iterator(*this, 0); }
 		const_iterator begin() const { return const_iterator(*this, 0); }
 		iterator end() { return iterator(*this, extent_.back()); }
 		const_iterator end() const { return const_iterator(*this, extent_.back()); }
 
 		//basic accessors
+		/// Element access by N-dimensional coordinate.
+		/// @param index Coordinate, one component per dimension.
+		/// @return Reference to the element at `index` (or a const reference, for a const Image).
 		T& at(const std::array<int, DIM>& index) { return data_[std::inner_product(index.begin(), index.end(), stride_.begin(), 0)]; }
 		const T& at(const std::array<int, DIM>& index) const { return data_[std::inner_product(index.begin(), index.end(), stride_.begin(), 0)]; }
 
@@ -542,14 +596,29 @@ namespace ndl
 		//
 		// Every view() call is O(1) and shares the same underlying memory as
 		// *this -- no elements are copied.
+		/// Builds a new zero-copy view of the same memory, with `end`/`step` left at their defaults (full range, stride 1) -- see the 3-argument overload below for the exact semantics.
+		/// @param start Per-dimension inclusive start index (negative counts from the end); omitted dimensions default to the full range.
+		/// @return A new Image over the same memory.
+		/// @throws std::out_of_range if a resolved range is invalid for its dimension.
 		Image<T, DIM> view(const std::initializer_list<int>& start) const
 		{
 			return view(start, {}, {});
 		}
+		/// Builds a new zero-copy view of the same memory, with `step` left at its default (stride 1) -- see the 3-argument overload below for the exact semantics.
+		/// @param start Per-dimension inclusive start index (negative counts from the end); omitted dimensions default to the full range.
+		/// @param end   Per-dimension inclusive end index (negative counts from the end); omitted dimensions default to the full range.
+		/// @return A new Image over the same memory.
+		/// @throws std::out_of_range if a resolved [start,end] range is invalid for its dimension.
 		Image<T, DIM> view(const std::initializer_list<int>& start, const std::initializer_list<int>& end) const
 		{
 			return view(start, end, {});
 		}
+		/// Builds a new zero-copy view of the same memory: a region of interest, mirror, and/or decimation, expressed per-dimension as {start, end, step}. See the full comment below for the exact semantics of each.
+		/// @param start Per-dimension inclusive start index (negative counts from the end); omitted dimensions default to the full range.
+		/// @param end   Per-dimension inclusive end index (negative counts from the end); omitted dimensions default to the full range.
+		/// @param step  Per-dimension stride; negative mirrors (anchored at `end`), magnitude > 1 decimates. Omitted dimensions default to 1.
+		/// @return A new Image over the same memory.
+		/// @throws std::out_of_range if a resolved [start,end] range is invalid for its dimension, or a step is 0.
 		Image<T, DIM> view(
 			const std::initializer_list<int>& start,
 			const std::initializer_list<int>& end,
@@ -608,10 +677,18 @@ namespace ndl
 			return Image<T, DIM>(*this, newOffset, newExtent, newStride, newMirror);
 		}
 
+		/// Fixes `sliceDimension` to `sliceIndex`, returning a same-memory view with one fewer dimension (e.g. extracting a single color channel).
+		/// @param sliceDimension Dimension to fix.
+		/// @param sliceIndex     Index to fix it at.
+		/// @return A (DIM-1)-dimensional view over the same memory.
 		Image<T, DIM - 1> slice(int sliceDimension, int sliceIndex) const
 		{
 			return Image<T, DIM - 1>(*this, sliceDimension, sliceIndex);
 		}
+		/// Zero-copy view with two dimensions transposed.
+		/// @param dimension1 First axis to swap.
+		/// @param dimension2 Second axis to swap.
+		/// @return A new Image over the same memory, with the two axes' roles exchanged.
 		Image<T, DIM> swap_axes(int dimension1, int dimension2) const
 		{
 			std::array<int, DIM> newExtent;
@@ -627,6 +704,9 @@ namespace ndl
 			}
 			return Image<T, DIM>(*this, newOffset, newExtent, newStride, newMirror, dimension1, dimension2);
 		}
+		/// Zero-copy view with one dimension reversed.
+		/// @param dimension Axis to reverse.
+		/// @return A new Image over the same memory, walked backward along `dimension`.
 		Image<T, DIM> mirror(int dimension) const
 		{
 			// offset/stride below are relative to *this (0 = current start, 1 = no
@@ -661,6 +741,12 @@ namespace ndl
 		// falls outside *this is handled, via the same _clamp/_wrap/_reflect
 		// primitives the iterator's clamp()/wrap()/reflect() accessors use.
 		template<class K>
+		/// Correlates `kernel` against every position, writing the weighted sum into `output`. Requires an arithmetic T.
+		/// @tparam K      Kernel element type.
+		/// @param kernel  Weights, nonzero-tap = included; convolve() also uses the value as a weight. Its own extent sets the neighborhood radius per dimension.
+		/// @param output  Destination; must already exist with this image's own extent.
+		/// @param border  How an out-of-bounds neighbor is resolved.
+		/// @ingroup morphology_filtering
 		void convolve(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
 		{
 			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::convolve() requires a T convertible to double -- not valid for e.g. std::complex<T> (the weighted sum is accumulated in double)");
@@ -684,8 +770,20 @@ namespace ndl
 			// near BorderMode) rather than repeating the walk here, so the
 			// exact same code also runs against a PackedBitImage.
 			template<class K>
+			/// Morphological erosion: replaces each element with the minimum of its `kernel`-shaped neighborhood.
+			/// @tparam K     Kernel element type.
+			/// @param kernel Structuring element (nonzero tap = included); see make_box_kernel()/make_cross_kernel().
+			/// @param output Destination; must already exist with this image's own extent.
+			/// @param border How an out-of-bounds neighbor is resolved.
+			/// @ingroup morphology_filtering
 			void erode(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { ndl::erode(*this, output, kernel, border); }
 			template<class K>
+			/// Morphological dilation: replaces each element with the maximum of its `kernel`-shaped neighborhood.
+			/// @tparam K     Kernel element type.
+			/// @param kernel Structuring element (nonzero tap = included); see make_box_kernel()/make_cross_kernel().
+			/// @param output Destination; must already exist with this image's own extent.
+			/// @param border How an out-of-bounds neighbor is resolved.
+			/// @ingroup morphology_filtering
 			void dilate(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { ndl::dilate(*this, output, kernel, border); }
 
 			// percentile_filter() walks the same "kernel centered on every output
@@ -709,8 +807,21 @@ namespace ndl
 			// smearing edges. Forwards to the free ndl::percentile_filter(),
 			// same reasoning as erode()/dilate() above.
 			template<class K>
+			/// Replaces each element with the given percentile (0=min, 50=median, 100=max) of its `kernel`-shaped neighborhood.
+			/// @tparam K          Kernel element type.
+			/// @param kernel      Structuring element (nonzero tap = included).
+			/// @param output      Destination; must already exist with this image's own extent.
+			/// @param percentile  0-100.
+			/// @param border      How an out-of-bounds neighbor is resolved.
+			/// @ingroup morphology_filtering
 			void percentile_filter(const Image<K, DIM>& kernel, Image<T, DIM>& output, double percentile, BorderMode border = BorderMode::Clamp) const { ndl::percentile_filter(*this, output, kernel, percentile, border); }
 			template<class K>
+			/// Replaces each element with the median of its `kernel`-shaped neighborhood -- percentile_filter() at 50.
+			/// @tparam K     Kernel element type.
+			/// @param kernel Structuring element (nonzero tap = included).
+			/// @param output Destination; must already exist with this image's own extent.
+			/// @param border How an out-of-bounds neighbor is resolved.
+			/// @ingroup morphology_filtering
 			void median_filter(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { ndl::median_filter(*this, output, kernel, border); }
 
 			// Binarizes *this into `output`: `onValue` where the source value is
@@ -725,6 +836,12 @@ namespace ndl
 			// is usually its result, but any fixed cutoff works too. Forwards to
 			// the free ndl::threshold(), same reasoning as erode()/dilate() above
 			// -- e.g. thresholding straight into a PackedBitImage mask.
+			/// Binarizes into `output`: `onValue` where greater than `thresholdValue`, `offValue` otherwise.
+			/// @param thresholdValue Cutoff; strictly-greater-than, matching otsu_threshold()'s own class split.
+			/// @param output         Destination; must already exist with this image's own extent.
+			/// @param onValue        Value written where the source is greater than `thresholdValue`.
+			/// @param offValue       Value written elsewhere.
+			/// @ingroup morphology_filtering
 			void threshold(T thresholdValue, Image<T, DIM>& output, T onValue = T(1), T offValue = T(0)) const { ndl::threshold(*this, output, thresholdValue, onValue, offValue); }
 
 		// Otsu's method: the value that maximizes between-class variance of
@@ -742,6 +859,10 @@ namespace ndl
 		// where they overlap, so Otsu still works on it directly, but
 		// denoising first (e.g. median_filter()) generally finds a cleaner
 		// split -- see demo/morphology.
+		/// Otsu's method: the threshold value that maximizes between-class variance of this image's own histogram.
+		/// @param bins Histogram resolution; the value range is this image's own [min(),max()], divided into this many equal-width buckets.
+		/// @return The threshold value, in T's own range -- pass directly to threshold().
+		/// @ingroup morphology_filtering
 		T otsu_threshold(int bins = 256) const
 		{
 			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::otsu_threshold() requires an arithmetic T (needs a total order and a double conversion) -- not valid for e.g. std::complex<T>");
@@ -804,6 +925,11 @@ namespace ndl
 		// calling this on each channel's 2D slice rather than the 3D whole --
 		// no special-casing needed here, since slice() already shares memory
 		// with the original and convolve() is dimension-agnostic.
+		/// Convolves with a normalized Gaussian kernel of the given standard deviation.
+		/// @param sigma  Standard deviation; the kernel radius follows the standard 3-sigma rule.
+		/// @param output Destination; must already exist with this image's own extent.
+		/// @param border How an out-of-bounds neighbor is resolved.
+		/// @ingroup morphology_filtering
 		void gaussian_blur(double sigma, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
 		{
 			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::gaussian_blur() requires a T convertible to double -- not valid for e.g. std::complex<T> (it calls convolve() internally)");
@@ -833,8 +959,12 @@ namespace ndl
 			convolve(kernel, output, border);
 		}
 
+		/// Every N-dimensional coordinate this view covers, in row-major order.
+		/// @return One entry per element, in the same order iteration visits them.
 		std::vector<std::array<int, DIM>> coordinates() const { return detail::coordinatesOf(extent_); }
 
+		/// This view's shape: element count along each dimension.
+		/// @return A reference to the extent (valid as long as this Image is).
 		const std::array<int, DIM>& extent() const { return extent_; }
 		const std::array<int, DIM>& stride() const { return stride_; }
 
