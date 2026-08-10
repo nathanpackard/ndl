@@ -137,6 +137,19 @@ void gaussianBlurColor(const Image<uint8_t, 3>& src, double sigma, Image<uint8_t
 {
     per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.gaussian_blur(sigma, d, border); });
 }
+// Shrinks src by `factor` in x and y: gaussian_blur() (via gaussianBlurColor()
+// above) so the pixels the strided view() below is about to discard get
+// averaged in first rather than aliased into noise, then a step={1,factor,factor}
+// view() to keep every `factor`-th pixel -- materialized into an OwnedImage
+// since view()'s step only *picks* samples, it doesn't average them. Demo/docs
+// infrastructure only (see its call site's comment); not itself a Part being
+// taught here.
+OwnedImage<uint8_t, 3> downsampleColor(const Image<uint8_t, 3>& src, int factor)
+{
+    auto blurred = OwnedImage<uint8_t, 3>::like(src);
+    gaussianBlurColor(src, factor * 0.5, blurred, BorderMode::Clamp);
+    return OwnedImage<uint8_t, 3>(blurred.view({}, {}, { 1, factor, factor }));
+}
 // Same idea, but for kernels that can produce negative or out-of-range
 // results (sharpen, emboss): convolves through a double intermediate per
 // channel, then clamps via toDisplayable() instead of trusting convolve()'s
@@ -390,14 +403,28 @@ int main()
     // first). marbles.bmp has cleaner per-pixel contrast, so its edges show clearly
     // without needing that extra step, which keeps this part focused on convolve()
     // and Sobel rather than on noise removal.
-    std::array<int, 3> marblesExtent;
-    std::vector<uint8_t> marblesData = image_io::load(dataDir + "/marbles.bmp", marblesExtent);
-    Image<uint8_t, 3> marbles(marblesData.data(), marblesExtent);
+    std::array<int, 3> marblesRawExtent;
+    std::vector<uint8_t> marblesRawData = image_io::load(dataDir + "/marbles.bmp", marblesRawExtent);
+    Image<uint8_t, 3> marblesRaw(marblesRawData.data(), marblesRawExtent);
+    // marbles.bmp is a large photo (1419x1001); downsampleColor() (below) is
+    // the same "blur first, then keep every Nth pixel" pattern most image
+    // libraries use for a resize -- gaussian_blur() so the pixels a plain
+    // strided view() would otherwise skip get averaged in rather than
+    // aliased into noise, then view()'s own step argument to do the actual
+    // decimation, materialized into an OwnedImage since view()'s step only
+    // *picks* samples, it doesn't average them. Keeps every image this Part
+    // and Part 6 below saves (and the docs generated from them) a
+    // reasonable size, without changing anything about how convolve()/
+    // Sobel/fftn() themselves work.
+    OwnedImage<uint8_t, 3> marbles = downsampleColor(marblesRaw, 2);
 
-    step("image_io::load(\"marbles.bmp\", extent)",
+    step("image_io::load(\"marbles.bmp\", extent); downsampleColor(marblesRaw, 2)",
         "The start image for this Part and the frequency-domain Part 6 below -- saved on its own,\n"
         "             same as photo was in Part 2, so 06_sobel_edges.png further down has an unmodified\n"
-        "             'before' to be compared against instead of only showing the 'after'.");
+        "             'before' to be compared against instead of only showing the 'after'. Downsampled 2x\n"
+        "             from the raw file (see downsampleColor() above main()) purely to keep this demo's\n"
+        "             saved images (and the docs generated from them) a reasonable size -- unrelated to\n"
+        "             convolve() or Sobel themselves.");
     saveForInspection("marbles", marbles, "05_marbles_original.png");
 
     OwnedImage<uint8_t, 3> grey3({ 1, marbles.extent()[1], marbles.extent()[2] });
@@ -485,20 +512,20 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 6: the frequency domain ===\n";
 
-    step("Image<uint8_t,3> crop = marbles.view({0,581,372}, {2,880,596});   // 300x225, all 3 channels -- deliberately NOT a power of two",
+    step("Image<uint8_t,3> crop = marbles.view({0,290,186}, {2,439,297});   // 150x112, all 3 channels -- deliberately NOT a power of two",
         "fftn() used to require every dimension's extent to be an exact power of two; it no longer does --\n"
         "             fftn()/ifftn() now handle ANY extent, via Bluestein's algorithm (the chirp-z transform;\n"
         "             see FFTBluestein in fft.h) for whichever axes aren't already a power of two. This crop is\n"
         "             still here, but for two much more mundane reasons: keeping this demo's pixel-by-pixel\n"
         "             comparison and the timing benchmark below fast, and keeping the log-magnitude spectrum\n"
         "             image a comfortable size to look at -- not because fftn() needs it. To prove that, this\n"
-        "             crop is deliberately 300x225: NOT a power of two in either dimension (256x256 would have\n"
+        "             crop is deliberately 150x112: NOT a power of two in either dimension (128x128 would have\n"
         "             been). marbles rather than photo on purpose here, same reason Part 4 switched to it for\n"
         "             Sobel: photo's real film-grain noise spreads energy across every frequency roughly\n"
         "             evenly, which swamps the log-magnitude spectrum below into near-uniform static rather\n"
         "             than showing readable structure -- marbles' cleaner per-pixel contrast doesn't have that\n"
         "             problem. Every step below works on this crop.");
-    Image<uint8_t, 3> crop = marbles.view({ 0, 581, 372 }, { 2, 880, 596 });
+    Image<uint8_t, 3> crop = marbles.view({ 0, 290, 186 }, { 2, 439, 297 });
     saveForInspection("crop", crop, "09_crop.png");
 
     OwnedImage<uint8_t, 3> greyCrop3({ 1, crop.extent()[1], crop.extent()[2] });
@@ -513,7 +540,7 @@ int main()
         "             Displaying that directly is unreadable: fftshift() below recenters it (a numpy.fft\n"
         "             convention -- DC in the middle, not the corner) and a log(1+magnitude) scale tames\n"
         "             its enormous dynamic range (the DC term alone is the sum of every one of the crop's\n"
-        "             67500 pixels) so faint high-frequency detail doesn't just disappear next to it.");
+        "             16800 pixels) so faint high-frequency detail doesn't just disappear next to it.");
     OwnedImage<std::complex<double>, 2> greyFreq(greyCropU8.extent());
     fftn<double, 2>(greyCropDbl, greyFreq);
 
@@ -534,16 +561,17 @@ int main()
     }
     saveForInspection("log-magnitude spectrum (fftshifted)", spectrumImage, "10_spectrum.png");
 
-    // A 51x51 box kernel, not Part 2's mild 3x3 one -- big enough (2601 taps,
-    // averaging over a 51x51 neighborhood) that the blur is obvious at a
-    // glance rather than something you have to squint at two images to spot,
-    // and it lines up with the "big kernel" case in the timing benchmark
-    // below, which reuses this exact kernel rather than defining its own.
-    OwnedImage<double, 2> box51Kernel({ 51, 51 });
-    box51Kernel = 1.0 / (51.0 * 51.0);
+    // A 5x5 box kernel, a bit stronger than Part 2's 3x3 one -- big enough
+    // (25 taps, averaging over a 5x5 neighborhood) that the blur is obvious
+    // at a glance rather than something you have to squint at two images to
+    // spot, and it lines up with the "bigger kernel" case in the timing
+    // benchmark below, which reuses this exact kernel rather than defining
+    // its own.
+    OwnedImage<double, 2> box5Kernel({ 5, 5 });
+    box5Kernel = 1.0 / (5.0 * 5.0);
 
     step({
-            "fftCorrelateColor(crop, box51Kernel, fftBoxBlurred)   // 51x51 box kernel -- a strong blur, not the mild 3x3 one from Part 2",
+            "fftCorrelateColor(crop, box5Kernel, fftBoxBlurred)   // 5x5 box kernel -- a bit stronger than the 3x3 one from Part 2",
             "// fftCorrelateColor() itself does exactly this, per color channel:",
             "fftn<double,2>(kernelPadded, kernelFreq);          // kernel -> its own spectrum (computed once, shared by every channel)",
             "fftn<double,2>(channelAsDouble, imgFreq);          // this channel -> its own spectrum",
@@ -556,15 +584,15 @@ int main()
         "             fftCorrelateColor() in this file, or testFFTMatchesSpatialConvolution in unitTests.cpp,\n"
         "             for the exact identity and why), and transforms back -- the 5 lines above are that\n"
         "             function's real body, not a paraphrase of it. That's a real, independent computation of\n"
-        "             the *same* answer Part 2's convolveColor(crop, box51Kernel, ..., BorderMode::Wrap) would\n"
+        "             the *same* answer Part 2's convolveColor(crop, box5Kernel, ..., BorderMode::Wrap) would\n"
         "             give -- computed below for direct comparison rather than taken on faith.");
     saveForInspection("crop (this comparison's starting point, shown again for convenience)", crop, "09_crop.png");
     OwnedImage<uint8_t, 3> fftBoxBlurred(crop.extent());
-    fftCorrelateColor(crop, box51Kernel, fftBoxBlurred);
+    fftCorrelateColor(crop, box5Kernel, fftBoxBlurred);
     saveForInspection("FFT-domain box blur", fftBoxBlurred, "11_fft_box_blur.png");
 
     OwnedImage<uint8_t, 3> spatialBoxBlurred(crop.extent());
-    convolveColor(crop, box51Kernel, spatialBoxBlurred, BorderMode::Wrap);
+    convolveColor(crop, box5Kernel, spatialBoxBlurred, BorderMode::Wrap);
     saveForInspection("spatial-domain box blur (BorderMode::Wrap, for a fair comparison)", spatialBoxBlurred, "12_spatial_box_blur_wrap.png");
 
     int maxPixelDiff = 0;
@@ -576,8 +604,8 @@ int main()
         "convolve()'s cost scales with image size TIMES kernel size (every output pixel visits every\n"
         "             kernel tap); fftn()'s cost scales with image size alone (kernel size only changes how\n"
         "             the kernel gets *built*, not the transform cost) -- so which one wins depends entirely\n"
-        "             on the kernel. A 3x3 kernel is 9 taps; the 51x51 one already used above for the visual\n"
-        "             comparison is 2601, ~300x more spatial work for the exact same image, while the FFT side\n"
+        "             on the kernel. A 3x3 kernel is 9 taps; the 5x5 one already used above for the visual\n"
+        "             comparison is 25, ~2.8x more spatial work for the exact same image, while the FFT side\n"
         "             barely changes (same 7 image-sized transforms either way -- 1 for the kernel, 2 per\n"
         "             channel). Averaged over a few repetitions below.");
     OwnedImage<uint8_t, 3> timingOut(crop.extent());
@@ -588,9 +616,9 @@ int main()
     auto t1 = std::chrono::steady_clock::now();
     for (int r = 0; r < reps; r++) fftCorrelateColor(crop, boxKernel, timingOut);
     auto t2 = std::chrono::steady_clock::now();
-    for (int r = 0; r < reps; r++) convolveColor(crop, box51Kernel, timingOut, BorderMode::Wrap);
+    for (int r = 0; r < reps; r++) convolveColor(crop, box5Kernel, timingOut, BorderMode::Wrap);
     auto t3 = std::chrono::steady_clock::now();
-    for (int r = 0; r < reps; r++) fftCorrelateColor(crop, box51Kernel, timingOut);
+    for (int r = 0; r < reps; r++) fftCorrelateColor(crop, box5Kernel, timingOut);
     auto t4 = std::chrono::steady_clock::now();
 
     auto ms = [reps](std::chrono::steady_clock::time_point a, std::chrono::steady_clock::time_point b) {
@@ -598,18 +626,18 @@ int main()
     };
     showText("3x3 kernel  -- spatial convolve()", std::to_string(ms(t0, t1)) + " ms/call");
     showText("3x3 kernel  -- FFT correlation", std::to_string(ms(t1, t2)) + " ms/call");
-    showText("51x51 kernel -- spatial convolve()", std::to_string(ms(t2, t3)) + " ms/call");
-    showText("51x51 kernel -- FFT correlation", std::to_string(ms(t3, t4)) + " ms/call");
+    showText("5x5 kernel -- spatial convolve()", std::to_string(ms(t2, t3)) + " ms/call");
+    showText("5x5 kernel -- FFT correlation", std::to_string(ms(t3, t4)) + " ms/call");
 
     std::cout <<
         "\n\nAll outputs written to: " << outputDir << "\n"
         "Open 01_original.png alongside the rest to compare by eye: 02/03/04 should look\n"
         "progressively softer. 06 should show bright edges on a dark background -- compare it to 05,\n"
         "marbles' own unmodified original. 07 should look crisper than the original, and 08 should\n"
-        "look like a grey relief carving. 10 is what the 300x225 crop (09) looks like in the frequency\n"
+        "look like a grey relief carving. 10 is what the 150x112 crop (09) looks like in the frequency\n"
         "domain -- a bright center fading outward, with any strong directional texture in the crop\n"
-        "showing up as streaks through it. 11 and 12 should be visually indistinguishable -- a strong\n"
-        "51x51 blur, computed two independent ways (frequency domain and spatial domain), that agree\n"
+        "showing up as streaks through it. 11 and 12 should be visually indistinguishable -- a 5-pixel\n"
+        "box blur, computed two independent ways (frequency domain and spatial domain), that agree\n"
         "to within a pixel or two of rounding.\n";
 
     return 0;

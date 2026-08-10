@@ -70,6 +70,20 @@ void percentileColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kerne
     per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.percentile_filter(kernel, d, percentile, border); });
 }
 
+// Shrinks src by `factor` in x and y: gaussian_blur() so the pixels the
+// strided view() below is about to discard get averaged in first rather
+// than aliased into noise, then a step={1,factor,factor} view() to keep
+// every `factor`-th pixel -- materialized into an OwnedImage since view()'s
+// step only *picks* samples, it doesn't average them. Demo/docs
+// infrastructure only (see its call site's comment); not itself a Part
+// being taught here.
+OwnedImage<uint8_t, 3> downsampleColor(const Image<uint8_t, 3>& src, int factor)
+{
+    auto blurred = OwnedImage<uint8_t, 3>::like(src);
+    per_channel(src, blurred, 0, [&](const auto& s, auto& d) { s.gaussian_blur(factor * 0.5, d, BorderMode::Clamp); });
+    return OwnedImage<uint8_t, 3>(blurred.view({}, {}, { 1, factor, factor }));
+}
+
 // Corrupts a fixed fraction of pixels to pure black or pure white --
 // classic salt-and-pepper noise, the specific kind of corruption a median
 // filter is the standard tool for (as opposed to Gaussian sensor noise,
@@ -199,12 +213,17 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 3: erode/dilate on a real photo ===\n";
 
-    std::array<int, 3> marblesExtent;
-    std::vector<uint8_t> marblesData = image_io::load(dataDir + "/marbles.bmp", marblesExtent);
-    Image<uint8_t, 3> marbles(marblesData.data(), marblesExtent);
+    std::array<int, 3> marblesRawExtent;
+    std::vector<uint8_t> marblesRawData = image_io::load(dataDir + "/marbles.bmp", marblesRawExtent);
+    Image<uint8_t, 3> marblesRaw(marblesRawData.data(), marblesRawExtent);
+    // marbles.bmp is a large photo (1419x1001); downsampleColor() (above,
+    // near the other per-channel helpers) keeps every image this Part saves
+    // (and the docs generated from them) a reasonable size, without
+    // changing anything about how erode()/dilate() themselves work.
+    OwnedImage<uint8_t, 3> marbles = downsampleColor(marblesRaw, 2);
     saveForInspection("marbles", marbles, "01_original.png");
 
-    OwnedImage<uint8_t, 3> eroded(marblesExtent);
+    OwnedImage<uint8_t, 3> eroded(marbles.extent());
     step("erodeColor(marbles, box5, eroded, BorderMode::Clamp)",
         "erode() on a real photo shrinks bright regions and thickens dark ones -- the bright\n"
         "             highlights on each marble should visibly shrink, and the dark gaps between\n"
@@ -212,7 +231,7 @@ int main()
     erodeColor(marbles, box5, eroded, BorderMode::Clamp);
     saveForInspection("eroded", eroded, "02_eroded.png");
 
-    OwnedImage<uint8_t, 3> dilated(marblesExtent);
+    OwnedImage<uint8_t, 3> dilated(marbles.extent());
     step("dilateColor(marbles, box5, dilated, BorderMode::Clamp)",
         "The mirror image: bright regions grow, dark regions shrink -- compare 02_eroded.png\n"
         "             and 03_dilated.png against 01_original.png side by side.");
@@ -224,7 +243,7 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 4: median_filter vs gaussian_blur on noisy data ===\n";
 
-    Image<uint8_t, 3> crop = marbles.view({ 0, 453, 244 }, { 2, 964, 755 }); // 512x512, all 3 channels
+    Image<uint8_t, 3> crop = marbles.view({ 0, 226, 122 }, { 2, 481, 377 }); // 256x256, all 3 channels
     saveForInspection("crop", crop, "04_crop.png");
 
     OwnedImage<uint8_t, 3> noisy(crop.extent());

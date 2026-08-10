@@ -46,3 +46,7 @@ cmake --build build --target docs
 ```
 
 Output lands in `build/docs/html/index.html`. `NDL_BUILD_DOCS` is off by default -- it's not part of the normal build/test loop, and the target is silently skipped (with a configure-time message) if Doxygen isn't installed.
+
+The same docs are published automatically on every push to `master` (see `.github/workflows/docs.yml`) at **https://nathanpackard.github.io/ndl/**.
+
+For browsing on github.com directly without leaving the file tree, `docs/tutorials/` holds a plain-markdown snapshot of the same generated tutorial pages (images included) -- regenerate it with `docs/update_tutorial_snapshots.sh` after a change worth re-publishing; it's committed, not auto-generated, so it only updates when that script is run and the result committed.

@@ -1,0 +1,63 @@
+name: Deploy Doxygen docs to GitHub Pages
+
+# Rebuilds the same 'docs' CMake target described in README.md's "Generating
+# Documentation" section (Doxygen + the generated tutorial pages, which
+# themselves come from actually running the demo binaries -- see
+# docs/generate_tutorial.py) and publishes build/docs/html to GitHub Pages,
+# so the docs shown on the Pages site can never drift from what's on
+# master. Requires the repo's Settings -> Pages -> "Build and deployment"
+# source to be set to "GitHub Actions" once (see this repo's README or ask
+# whoever set this workflow up).
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time; a newer push cancels an
+# in-flight-but-not-yet-deployed older one instead of racing it.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Doxygen, Graphviz, and CMake
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz cmake
+
+      - name: Configure
+        # Tests are skipped here on purpose: the docs job only needs the
+        # demo binaries (to generate the tutorial pages) and Doxygen itself,
+        # and skipping NDL_BUILD_TESTS avoids the unit tests' GoogleTest
+        # FetchContent download for a job that never runs them.
+        run: cmake -B build -DNDL_BUILD_TESTS=OFF -DNDL_BUILD_DEMOS=ON -DNDL_BUILD_DOCS=ON
+
+      - name: Build docs
+        # The 'docs' target already depends on 'tutorials' (see
+        # CMakeLists.txt), so this alone runs every demo and regenerates
+        # their tutorial pages before Doxygen sees them.
+        run: cmake --build build --target docs -j"$(nproc)"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/docs/html
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

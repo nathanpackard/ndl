@@ -1,0 +1,8 @@
+# Tutorials
+
+Generated snapshots of each demo's own walkthrough -- see `docs/update_tutorial_snapshots.sh`.
+These regenerate automatically for [the hosted Doxygen site](https://nathanpackard.github.io/ndl/) on every push to master; this copy is refreshed manually for browsing directly on GitHub.
+
+- [Multiview Tutorial](multiview_tutorial.md)
+- [Convolution Tutorial](convolution_tutorial.md)
+- [Morphology Tutorial](morphology_tutorial.md)

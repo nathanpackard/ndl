@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Regenerates docs/tutorials/ -- a plain-markdown, GitHub-browsable copy of
+# the same tutorial pages the 'docs' CMake target builds for Doxygen (see
+# README.md's "Generating Documentation" section and
+# .github/workflows/docs.yml, which publishes the full Doxygen site to
+# GitHub Pages on every push to master instead).
+#
+# That Pages site is always fresh; this script's output is NOT -- it's a
+# committed snapshot for people browsing the repo on github.com directly
+# (GitHub renders README-style markdown/images in the file tree; it doesn't
+# render the full Doxygen HTML site inline). Re-run and commit the result
+# whenever a demo's output changes enough to be worth refreshing.
+#
+# One cosmetic wart carried over from the Doxygen pipeline: each page's
+# top heading has a trailing `{#some_label}` Doxygen anchor (e.g.
+# "# Convolution Tutorial {#convolution_tutorial}") that GitHub's markdown
+# renderer shows literally instead of interpreting -- harmless, just not
+# pretty.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+build_dir="${repo_root}/build"
+out_dir="${repo_root}/docs/tutorials"
+
+if [ ! -f "${build_dir}/CMakeCache.txt" ]; then
+    cmake -B "${build_dir}" -DNDL_BUILD_TESTS=OFF -DNDL_BUILD_DEMOS=ON
+fi
+cmake --build "${build_dir}" --target multiview convolution morphology -j"$(nproc)"
+
+rm -rf "${out_dir}"
+mkdir -p "${out_dir}" "${build_dir}/docs/captured"
+
+declare -A titles=(
+    [multiview_tutorial]="Multiview Tutorial"
+    [convolution_tutorial]="Convolution Tutorial"
+    [morphology_tutorial]="Morphology Tutorial"
+)
+
+for target in multiview convolution morphology; do
+    label="${target}_tutorial"
+    bin_dir="${build_dir}/demo/${target}"
+    capture_file="${build_dir}/docs/captured/${target}.txt"
+    "${bin_dir}/${target}" > "${capture_file}"
+    python3 "${repo_root}/docs/generate_tutorial.py" \
+        "${capture_file}" "${label}" "${titles[${label}]}" \
+        "${bin_dir}/output" "${out_dir}"
+done
+
+{
+    echo "# Tutorials"
+    echo
+    echo "Generated snapshots of each demo's own walkthrough -- see \`docs/update_tutorial_snapshots.sh\`."
+    echo "These regenerate automatically for [the hosted Doxygen site](https://nathanpackard.github.io/ndl/) on every push to master; this copy is refreshed manually for browsing directly on GitHub."
+    echo
+    echo "- [Multiview Tutorial](multiview_tutorial.md)"
+    echo "- [Convolution Tutorial](convolution_tutorial.md)"
+    echo "- [Morphology Tutorial](morphology_tutorial.md)"
+} > "${out_dir}/README.md"
+
+echo "wrote ${out_dir}"
