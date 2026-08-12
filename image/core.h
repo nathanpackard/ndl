@@ -515,11 +515,18 @@ namespace ndl
 		const_iterator end() const { return const_iterator(*this, extent_.back()); }
 
 		//basic accessors
+		// assert(), not a thrown exception: consistent with every other
+		// precondition check in this class (e.g. the extent-matching
+		// asserts on add()/convolve()/etc.), so it costs nothing in a
+		// release (NDEBUG) build. Unlike std::vector::at() -- whose name
+		// this deliberately does NOT try to match the checked/unchecked
+		// convention of -- this is the library's only element accessor;
+		// operator() forwards straight to it, so both get the same check.
 		/// Element access by N-dimensional coordinate.
 		/// @param index Coordinate, one component per dimension.
 		/// @return Reference to the element at `index` (or a const reference, for a const Image).
-		T& at(const std::array<int, DIM>& index) { return data_[std::inner_product(index.begin(), index.end(), stride_.begin(), 0)]; }
-		const T& at(const std::array<int, DIM>& index) const { return data_[std::inner_product(index.begin(), index.end(), stride_.begin(), 0)]; }
+		T& at(const std::array<int, DIM>& index) { assert(isValidIndex(index)); return data_[std::inner_product(index.begin(), index.end(), stride_.begin(), 0)]; }
+		const T& at(const std::array<int, DIM>& index) const { assert(isValidIndex(index)); return data_[std::inner_product(index.begin(), index.end(), stride_.begin(), 0)]; }
 
 		// element access, Eigen/Matrix-style: image(x, y, z). Requires exactly DIM
 		// integer indices, so it can never be confused with view() below, whose
@@ -785,6 +792,15 @@ namespace ndl
 		{ }
 
 		// protected helper methods
+		// Every component of index must be a valid coordinate ([0, extent_[i])
+		// per dimension), not just non-negative -- an in-bounds-but-wrong-axis
+		// index is exactly as much of an out-of-bounds memory access as a
+		// negative one, since data_[...] below trusts index completely.
+		bool isValidIndex(const std::array<int, DIM>& index) const
+		{
+			for (int i = 0; i < DIM; i++) if (index[i] < 0 || index[i] >= extent_[i]) return false;
+			return true;
+		}
 		T* computeDataPtr(T* sourceData, const std::array<int,DIM>& sourceStride)
 		{
 			T* value = sourceData;

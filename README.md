@@ -36,6 +36,8 @@ ctest -L smoke    # just the demo smoke tests (crash/compile regressions, not co
 
 The unit tests are split across several GoogleTest-based executables in `unitTests/` (fetched automatically via CMake at configure time); the smoke tests just run each demo binary in `demo/` and check that it completes without crashing. `unitTests/negative_compile/` holds a few deliberately-uncompilable regression checks (see `unitTests/CMakeLists.txt`) verifying the library's compile-time type restrictions stay in place.
 
+For local dev/test iteration with every `assert()` in the codebase active (e.g. `Image::at()`'s bounds check) but without a plain Debug build's full `-O0` cost, build with `-DCMAKE_BUILD_TYPE=Checked` -- optimized like `RelWithDebInfo`, but (unlike every stock CMake build type except `Debug`) deliberately doesn't define `NDEBUG`.
+
 ## Generating Documentation
 
 API documentation is generated with [Doxygen](https://www.doxygen.nl/) (graphviz is optional, for class/collaboration diagrams):

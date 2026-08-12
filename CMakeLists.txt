@@ -6,9 +6,28 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Debug, Release, RelWithDebInfo, MinSizeRel)" FORCE)
-    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Debug, Release, RelWithDebInfo, MinSizeRel, Checked)" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel Checked)
 endif()
+
+# Checked: a custom build type for local dev/test iteration -- optimized
+# like RelWithDebInfo, but (unlike every stock CMake build type except
+# Debug) deliberately does NOT define NDEBUG, so every assert() in the
+# codebase (Image::at()'s bounds check, the extent-matching checks on
+# convolve()/add()/etc., ...) stays live. A plain Debug build (-O0) also
+# keeps asserts live, but disables optimization entirely -- for a
+# template-heavy, iterator/accessor-call-heavy library like this one, most
+# of the resulting slowdown vs. Release is -O0 itself, not the asserts
+# (measured directly: removing Image::at()'s bounds check from an otherwise
+# unchanged Debug build only recovered about a quarter of its runtime on
+# the convolution/morphology demos). -O2 -g here recovers the rest while
+# keeping every check active, so `cmake -B build -DCMAKE_BUILD_TYPE=Checked`
+# is the one to reach for when you want assert-level checking without
+# Debug's full -O0 cost.
+set(CMAKE_CXX_FLAGS_CHECKED "-O2 -g" CACHE STRING "Flags used by the CXX compiler for Checked builds (optimized, asserts still live)." FORCE)
+set(CMAKE_C_FLAGS_CHECKED "-O2 -g" CACHE STRING "Flags used by the C compiler for Checked builds." FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_CHECKED "" CACHE STRING "Flags used for linking binaries for Checked builds." FORCE)
+mark_as_advanced(CMAKE_CXX_FLAGS_CHECKED CMAKE_C_FLAGS_CHECKED CMAKE_EXE_LINKER_FLAGS_CHECKED)
 
 # ndl is a header-only library. Headers are included as <ndl/...>, so
 # consumers need the directory *containing* this checkout on their include
