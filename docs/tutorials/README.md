@@ -6,3 +6,6 @@ These regenerate automatically for [the hosted Doxygen site](https://nathanpacka
 - [Multiview Tutorial](multiview_tutorial.md)
 - [Convolution Tutorial](convolution_tutorial.md)
 - [Morphology Tutorial](morphology_tutorial.md)
+- [Histogram Tutorial](histogram_tutorial.md)
+- [Distance Transform Tutorial](distance_transform_tutorial.md)
+- [Summed-Area Table Tutorial](summed_area_table_tutorial.md)

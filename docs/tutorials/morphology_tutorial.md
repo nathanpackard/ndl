@@ -319,14 +319,14 @@ uint8_t t = ndl::otsu_threshold(greyNoisy); ndl::threshold(greyNoisy, binaryNois
 otsu_threshold() still finds *a* split on the noisy greyscale, but the salt-and-pepper corruption pushes individual pixels across that split regardless of what's actually underneath them, so the binary result should be full of isolated stray black/white speckles rather than clean regions -- the same corruption Part 4 introduced, now breaking a *different* operation than the blur it was shown against there.
 
 ```text
-otsu_threshold() on the noisy greyscale:   41
+otsu_threshold() on the noisy greyscale:   126
 ```
 
 ![morphology_tutorial_13_binary_noisy.png](images/morphology_tutorial/morphology_tutorial_13_binary_noisy.png)
 
 ```text
 binary (thresholded directly, noisy): /home/nathanpackard/git/ndl/build/demo/morphology/output/13_binary_noisy.png
-    extent = {1, 256, 256}   min=0  max=255  mean=141.36
+    extent = {1, 256, 256}   min=0  max=255  mean=130.35
 ```
 
 ### Step 18
@@ -340,17 +340,17 @@ Denoising first (median_filter(), Part 4's own tool for this exact corruption) r
 
 ```text
 binary (clean crop, ground truth): /home/nathanpackard/git/ndl/build/demo/morphology/output/14_binary_clean.png
-    extent = {1, 256, 256}   min=0  max=255  mean=139.80
-otsu_threshold(): clean / noisy / denoised:   42 / 41 / 42
+    extent = {1, 256, 256}   min=0  max=255  mean=130.32
+otsu_threshold(): clean / noisy / denoised:   126 / 126 / 127
 ```
 
 ![morphology_tutorial_15_binary_denoised.png](images/morphology_tutorial/morphology_tutorial_15_binary_denoised.png)
 
 ```text
 binary (denoised first): /home/nathanpackard/git/ndl/build/demo/morphology/output/15_binary_denoised.png
-    extent = {1, 256, 256}   min=0  max=255  mean=140.55
-pixels disagreeing with the clean-crop ground truth, noisy threshold:   2165
-pixels disagreeing with the clean-crop ground truth, denoised threshold:   1655  (lower is closer to the truth)
+    extent = {1, 256, 256}   min=0  max=255  mean=129.03
+pixels disagreeing with the clean-crop ground truth, noisy threshold:   1618
+pixels disagreeing with the clean-crop ground truth, denoised threshold:   501  (lower is closer to the truth)
 ```
 
 ## PART 8: binary morphology
@@ -366,14 +366,14 @@ The same erode()/dilate() from Parts 1 and 3, now on a genuinely binary (0/255) 
 
 ```text
 binary eroded: /home/nathanpackard/git/ndl/build/demo/morphology/output/16_binary_eroded.png
-    extent = {1, 256, 256}   min=0  max=255  mean=106.74
+    extent = {1, 256, 256}   min=0  max=255  mean=116.04
 ```
 
 ![morphology_tutorial_17_binary_dilated.png](images/morphology_tutorial/morphology_tutorial_17_binary_dilated.png)
 
 ```text
 binary dilated: /home/nathanpackard/git/ndl/build/demo/morphology/output/17_binary_dilated.png
-    extent = {1, 256, 256}   min=0  max=255  mean=173.57
+    extent = {1, 256, 256}   min=0  max=255  mean=142.37
 ```
 
 ### Step 20
@@ -387,14 +387,14 @@ One more opening/closing pass (Part 6's idea again, applied here to the ALREADY-
 
 ```text
 binary opened: /home/nathanpackard/git/ndl/build/demo/morphology/output/18_binary_opened.png
-    extent = {1, 256, 256}   min=0  max=255  mean=137.25
+    extent = {1, 256, 256}   min=0  max=255  mean=128.42
 ```
 
 ![morphology_tutorial_19_binary_closed.png](images/morphology_tutorial/morphology_tutorial_19_binary_closed.png)
 
 ```text
 binary closed: /home/nathanpackard/git/ndl/build/demo/morphology/output/19_binary_closed.png
-    extent = {1, 256, 256}   min=0  max=255  mean=145.14
+    extent = {1, 256, 256}   min=0  max=255  mean=129.65
 ```
 
 ## PART 9: PackedBitImage

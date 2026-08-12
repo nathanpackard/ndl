@@ -67,6 +67,9 @@ if(NDL_BUILD_DEMOS)
     add_subdirectory(demo/multiview)
     add_subdirectory(demo/convolution)
     add_subdirectory(demo/morphology)
+    add_subdirectory(demo/histogram)
+    add_subdirectory(demo/distance_transform)
+    add_subdirectory(demo/summed_area_table)
 
     # Smoke tests: each demo is a real, multi-step pipeline (image I/O,
     # convolution, FFT, morphology) the unit tests don't exercise end-to-end
@@ -84,7 +87,7 @@ if(NDL_BUILD_DEMOS)
     # run) would still include them. Use `ctest -LE smoke` for the fast,
     # unit-tests-only loop, and `ctest -L smoke` to run just these.
     if(NDL_BUILD_TESTS)
-        foreach(demo_target multiview convolution morphology)
+        foreach(demo_target multiview convolution morphology histogram distance_transform summed_area_table)
             add_test(NAME demo_${demo_target} COMMAND ${demo_target} WORKING_DIRECTORY $<TARGET_FILE_DIR:${demo_target}>)
             # TIMEOUT is a safety net, not a tuned budget: convolution (the
             # slowest) takes ~10s on a throttled CPU, so 120s leaves ample
@@ -130,9 +133,9 @@ if(NDL_BUILD_DOCS)
             if(Python3_FOUND)
                 set(NDL_GENERATED_DOCS_DIR ${CMAKE_CURRENT_BINARY_DIR}/docs/generated)
                 set(NDL_TUTORIAL_PAGES "")
-                set(_ndl_tutorial_targets multiview convolution morphology)
-                set(_ndl_tutorial_labels multiview_tutorial convolution_tutorial morphology_tutorial)
-                set(_ndl_tutorial_titles "Multiview Tutorial" "Convolution Tutorial" "Morphology Tutorial")
+                set(_ndl_tutorial_targets multiview convolution morphology histogram distance_transform summed_area_table)
+                set(_ndl_tutorial_labels multiview_tutorial convolution_tutorial morphology_tutorial histogram_tutorial distance_transform_tutorial summed_area_table_tutorial)
+                set(_ndl_tutorial_titles "Multiview Tutorial" "Convolution Tutorial" "Morphology Tutorial" "Histogram Tutorial" "Distance Transform Tutorial" "Summed-Area Table Tutorial")
                 list(LENGTH _ndl_tutorial_targets _ndl_tutorial_count)
                 math(EXPR _ndl_tutorial_last "${_ndl_tutorial_count} - 1")
                 foreach(_i RANGE ${_ndl_tutorial_last})

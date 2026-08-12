@@ -11,3 +11,6 @@ library actually does.
 - \subpage multiview_tutorial -- Image::view()/slice()/mirror()/swap_axes(): building zero-copy views of the same memory.
 - \subpage convolution_tutorial -- convolve()/gaussian_blur() (convolution.h), arbitrary kernels, border handling, and the FFT-domain equivalent.
 - \subpage morphology_tutorial -- erode()/dilate()/median_filter()/percentile_filter() (morphology.h), thresholding, and PackedBitImage.
+- \subpage histogram_tutorial -- Histogram<VDIM> and histogram_equalize() (histogram.h), joint histograms, and the Histogram-backed otsu_threshold().
+- \subpage distance_transform_tutorial -- distance_transform()/distance_transform_squared() (distance_transform.h), and pairing it with invert() for distance-to-foreground.
+- \subpage summed_area_table_tutorial -- summed_area_table()/rectangle_sum() (summed_area_table.h), and O(1) box filtering timed against convolve().

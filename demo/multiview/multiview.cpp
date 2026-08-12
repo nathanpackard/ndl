@@ -10,6 +10,17 @@ using namespace ndl;
 // also read the source, and without ever having to guess what a step's input
 // was.
 //
+// Every operation shown here -- printing (operator<<), slice(), view(),
+// mirror(), swap_axes() -- is written against Image<T,DIM> for arbitrary DIM,
+// not anything specific to 4 dimensions; DIM==2 (an ordinary image) and
+// DIM==3 (add a channel or a depth axis) are the common cases, and nothing
+// below is DIM-specific to those either. This demo picks DIM==4 specifically
+// to demonstrate what happens PAST the trivial cases, where a 2D grid alone
+// stops being enough to show what's going on (see the printing step below)
+// and "which dimension did I just slice/view relative to" stops being
+// obvious by inspection -- if 2D/3D examples still left you wondering how
+// this all generalizes, this is that answer, made concrete.
+//
 // Everything operates on one 4D image: 2 frames of a 2-channel, 4-wide/3-tall
 // image (extent {x=4, y=3, channel=2, frame=2}, 48 elements), filled 1..48 in
 // memory order (x fastest, then y, then channel, then frame). That makes each
@@ -81,15 +92,18 @@ int main()
     // array" printout. Indentation still matches step()'s own "    code:"/
     // "    explain:" convention (4 spaces, 13-space-aligned continuation
     // lines) for visual consistency with every step below it.
-    std::cout << "=== printing a 4D image ===\n";
+    std::cout << "=== printing an N-dimensional image (N=4 here) ===\n";
     std::cout << "code:    std::cout << ndImage\n";
-    std::cout << "    explain: operator<< recurses from the OUTERMOST dimension inward: it loops frame (dim3),\n"
-                  "             and for each frame value loops channel (dim2), and for each of those loops y (dim1) --\n"
-                  "             down to x (dim0), which is what actually becomes one printed line (a comma-separated\n"
-                  "             row). That's a lot of nesting to track from blank lines alone, so every 2D (y,x) block\n"
-                  "             is preceded by an explicit \"[dim2=.., dim3=..]\" header naming every higher dimension's\n"
-                  "             current index -- blank lines still separate blocks too, but the header is unambiguous\n"
-                  "             at any number of dimensions, where counting blank lines stops being practical past 3D.\n";
+    std::cout << "    explain: operator<< is written for Image<T,DIM> at any DIM, not specifically DIM==4: for DIM<=2\n"
+                  "             it's just rows and columns, and it recurses from the OUTERMOST dimension inward for\n"
+                  "             however many more there are -- here it loops frame (dim3), and for each frame value\n"
+                  "             loops channel (dim2), and for each of those loops y (dim1) -- down to x (dim0), which\n"
+                  "             is what actually becomes one printed line (a comma-separated row). That's a lot of\n"
+                  "             nesting to track from blank lines alone once DIM > 3, so every 2D (y,x) block is\n"
+                  "             preceded by an explicit \"[dim2=.., dim3=..]\" header naming every higher dimension's\n"
+                  "             current index -- one more \"dimN=..\" entry for however many dimensions DIM actually\n"
+                  "             has, blank lines still separate blocks too, but the header stays unambiguous regardless\n"
+                  "             of DIM, which is exactly the case 4D is here to demonstrate.\n";
     inputText("ndImage itself -- this is the setup, not a transformation of anything.");
     output(ndImage);
     std::cout << "(the [dim2=1, dim3=1] block above is the one used in step 5 below)\n";

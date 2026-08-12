@@ -87,6 +87,16 @@ TEST(PackedBitImage, PackedBitImage) {
 		if (bool(dilatedBits.at(coord)) != bool(dilatedBytes.at(coord) != 0)) dilateMatches = false;
 	passfail << "ndl::dilate() on PackedBitImage matches ndl::dilate() on an equivalent 0/1 Image<uint8_t,2>: " << (dilateMatches ? "Pass" : "Fail") << std::endl;
 
+	PackedBitImage<2> invertedBits(ext);
+	OwnedImage<uint8_t, 2> invertedBytesSrc(ext), invertedBytes(ext);
+	for (const auto& coord : srcBytes.coordinates()) invertedBytesSrc.at(coord) = srcBytes.at(coord) ? 1 : 0;
+	ndl::invert(srcBits, invertedBits);
+	ndl::invert(invertedBytesSrc, invertedBytes); // Image<uint8_t,DIM>'s own invert(), not the PackedBitImage one
+	bool invertMatches = true;
+	for (const auto& coord : invertedBytes.coordinates())
+		if (bool(invertedBits.at(coord)) != bool(invertedBytes.at(coord) != 0)) invertMatches = false;
+	passfail << "ndl::invert() on PackedBitImage matches ndl::invert() on an equivalent 0/1 Image<uint8_t,2>: " << (invertMatches ? "Pass" : "Fail") << std::endl;
+
 	// median_filter with a box kernel is exactly a majority vote over the
 	// neighborhood for bool data -- a simple deterministic pseudo-random
 	// fill exercises that against the same cross-check.

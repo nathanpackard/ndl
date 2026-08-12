@@ -237,7 +237,7 @@ Gradient magnitude is sqrt(gx^2 + gy^2) -- built here from the non-mutating arit
 
 ```text
 Sobel edge magnitude: /home/nathanpackard/git/ndl/build/demo/convolution/output/06_sobel_edges.png
-    extent = {1, 710, 501}   min=0  max=255  mean=55.54
+    extent = {1, 710, 501}   min=0  max=255  mean=44.13
 ```
 
 ## PART 5: arbitrary kernels
@@ -311,7 +311,7 @@ The magnitude of each complex output value says how much of that frequency is pr
 
 ```text
 log-magnitude spectrum (fftshifted): /home/nathanpackard/git/ndl/build/demo/convolution/output/10_spectrum.png
-    extent = {1, 150, 112}   min=51  max=255  mean=136.23
+    extent = {1, 150, 112}   min=15  max=255  mean=97.76
 ```
 
 ### Step 18
@@ -356,10 +356,10 @@ timing: spatial convolve() vs FFT correlation, at two very different kernel size
 convolve()'s cost scales with image size TIMES kernel size (every output pixel visits every kernel tap); fftn()'s cost scales with image size alone (kernel size only changes how the kernel gets *built*, not the transform cost) -- so which one wins depends entirely on the kernel. A 3x3 kernel is 9 taps; the 5x5 one already used above for the visual comparison is 25, ~2.8x more spatial work for the exact same image, while the FFT side barely changes (same 7 image-sized transforms either way -- 1 for the kernel, 2 per channel). Averaged over a few repetitions below.
 
 ```text
-3x3 kernel  -- spatial convolve():   2.158397 ms/call
-3x3 kernel  -- FFT correlation:   4.975679 ms/call
-5x5 kernel -- spatial convolve():   6.073415 ms/call
-5x5 kernel -- FFT correlation:   4.945346 ms/call
+3x3 kernel  -- spatial convolve():   2.169137 ms/call
+3x3 kernel  -- FFT correlation:   5.286203 ms/call
+5x5 kernel -- spatial convolve():   5.803523 ms/call
+5x5 kernel -- FFT correlation:   5.073215 ms/call
 ```
 
 All outputs written to: /home/nathanpackard/git/ndl/build/demo/convolution/output Open 01_original.png alongside the rest to compare by eye: 02/03/04 should look progressively softer. 06 should show bright edges on a dark background -- compare it to 05, marbles' own unmodified original. 07 should look crisper than the original, and 08 should look like a grey relief carving. 10 is what the 150x112 crop (09) looks like in the frequency domain -- a bright center fading outward, with any strong directional texture in the crop showing up as streaks through it. 11 and 12 should be visually indistinguishable -- a 5-pixel box blur, computed two independent ways (frequency domain and spatial domain), that agree to within a pixel or two of rounding.

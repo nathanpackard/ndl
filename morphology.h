@@ -6,13 +6,18 @@
 #include <type_traits>
 #include "image/border_mode.h"
 #include "image/detail.h"
+#include "histogram.h"
 
 // The morphology/thresholding toolkit: erode()/dilate()/median_filter()/
-// percentile_filter()/threshold()/otsu_threshold(), as free functions over
-// any minimal-interface image type. A sibling of fft.h/matrix.h/
-// convolution.h, not part of image.h's core Image object -- #include this
-// directly if you use these; #include <ndl/image.h> alone does not pull
-// it in, the same way it doesn't pull in fft.h.
+// percentile_filter()/threshold()/otsu_threshold()/invert(), as free
+// functions over any minimal-interface image type. A sibling of
+// fft.h/matrix.h/convolution.h, not part of image.h's core Image object --
+// #include this directly if you use these; #include <ndl/image.h> alone
+// does not pull it in, the same way it doesn't pull in fft.h. (This file
+// does include histogram.h -- and therefore image.h -- itself, since
+// otsu_threshold() below builds a Histogram<1>, which needs a real
+// OwnedImage<std::size_t,1> for its own bin-count storage; every other
+// function in this file has no such dependency.)
 
 namespace ndl
 {
@@ -191,22 +196,51 @@ namespace ndl
 		threshold(src, dst, thresholdValue, DstT(1), DstT(0));
 	}
 
+	// Binary/logical NOT: dst = !src, elementwise -- the natural complement
+	// to threshold() above (which is exactly what produces this kind of
+	// image). Written once against the minimal interface, so the same code
+	// runs unmodified whether src/dst are an Image<bool,DIM> or a
+	// PackedBitImage<DIM>: `src.at(coord)` on the (const) source side reads
+	// a plain bool either way (Image<bool,DIM>::at() const returns bool,
+	// PackedBitImage::at() const returns bool too, not BitRef -- BitRef is
+	// only ever the *mutable* accessor), so `!src.at(coord)` is always a
+	// plain bool negation with no operator! needed on BitRef itself; then
+	// `dst.at(coord) = ...` writes back through Image<bool,DIM>'s real
+	// bool& or PackedBitImage's BitRef::operator=(bool), whichever dst is.
+	// Not restricted to bool: any value_type contextually convertible to
+	// bool works (same restriction Image::logical_not() already has), so
+	// inverting an Image<uint8_t,DIM> mask of 0/1 (or 0/255) values works
+	// too -- though the result is always exactly 0 or 1, not the source's
+	// own on/off convention; threshold()'s own onValue/offValue is the
+	// tool for that if you need something other than 0/1 out.
+	/// Binary/logical NOT: dst(coord) = !src(coord), elementwise. Works on Image or PackedBitImage.
+	/// @tparam ImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
+	/// @param  src    Source image.
+	/// @param  dst    Destination; must already exist with `src`'s own extent.
+	/// @ingroup morphology_filtering
+	template<class ImageT>
+	void invert(const ImageT& src, ImageT& dst)
+	{
+		static_assert(std::is_arithmetic_v<typename ImageT::value_type>, "ndl::invert() requires a value_type contextually convertible to bool -- not valid for e.g. std::complex<T>");
+		assert(dst.extent() == src.extent());
+		for (const auto& coord : src.coordinates())
+			dst.at(coord) = !src.at(coord);
+	}
+
 	// Otsu's method: the value that maximizes between-class variance of
 	// src's own histogram -- equivalently, the split that separates the two
 	// classes of values (below/above it) as cleanly as possible. The
 	// standard automatic threshold for turning a grayscale image into a
 	// binary one without picking a cutoff by hand (Otsu, N., 1979, "A
 	// threshold selection method from gray-level histograms"). Generic over
-	// ImageT::value_type: the histogram spans src's own [min,max] range
-	// (scanned directly via extent()/at()/coordinates() -- the same minimal
-	// interface every other function in this file uses, rather than relying
-	// on Image's own min()/max()/begin()/end(), so this works unmodified for
-	// any minimal-interface image type) divided into `bins` equal-width
-	// buckets (default 256 -- enough resolution for classic 8-bit imagery,
-	// and a reasonable default for anything else). A noisy image widens
-	// both classes' spread and can shift where they overlap, so Otsu still
-	// works on it directly, but denoising first (e.g. median_filter())
-	// generally finds a cleaner split -- see demo/morphology.
+	// ImageT::value_type: the histogram (built via Histogram<1> above) spans
+	// src's own [min,max] range, auto-detected the same way for any
+	// minimal-interface image type, divided into `bins` equal-width buckets
+	// (default 256 -- enough resolution for classic 8-bit imagery, and a
+	// reasonable default for anything else). A noisy image widens both
+	// classes' spread and can shift where they overlap, so Otsu still works
+	// on it directly, but denoising first (e.g. median_filter()) generally
+	// finds a cleaner split -- see demo/morphology.
 	/// Otsu's method: the threshold value that maximizes between-class variance of src's own histogram.
 	/// @tparam ImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic (needs ordering and a double conversion).
 	/// @param  src    Source image.
@@ -220,30 +254,20 @@ namespace ndl
 		static_assert(std::is_arithmetic_v<T>, "ndl::otsu_threshold() requires an arithmetic value_type (needs a total order and a double conversion) -- not valid for e.g. std::complex<T>");
 		assert(bins > 1);
 
-		auto coords = src.coordinates();
-		assert(!coords.empty());
-		T lo = src.at(coords[0]);
-		T hi = lo;
-		for (const auto& coord : coords)
-		{
-			T v = src.at(coord);
-			if (v < lo) lo = v;
-			if (v > hi) hi = v;
-		}
-		if (lo == hi) return lo; // degenerate: only one value present, nothing to split
+		Histogram<1> hist(src, bins);
+		double lo = hist.lo()[0];
+		double range = hist.hi()[0] - lo;
+		// No special-casing needed here for a degenerate (lo==hi) source:
+		// Histogram<1> puts every sample in bucket 0 for a zero-range axis,
+		// so weightForeground is 0 at b==0 and the loop below stops
+		// immediately, leaving bestBucket at its initial 0 -- and since
+		// range is 0 too, the final formula's `range * (bestBucket+1)/bins`
+		// term vanishes, returning exactly `lo`, same as the single value
+		// actually present.
 
-		double range = static_cast<double>(hi) - static_cast<double>(lo);
-		auto bucketOf = [&](T value) {
-			int b = (int)((static_cast<double>(value) - static_cast<double>(lo)) / range * bins);
-			return b < 0 ? 0 : (b >= bins ? bins - 1 : b);
-		};
-
-		std::vector<std::size_t> histogram(bins, 0);
-		for (const auto& coord : coords) histogram[bucketOf(src.at(coord))]++;
-
-		std::size_t total = coords.size();
+		std::size_t total = hist.total();
 		double sumAll = 0;
-		for (int i = 0; i < bins; i++) sumAll += (double)i * histogram[i];
+		for (int i = 0; i < bins; i++) sumAll += (double)i * hist.count(i);
 
 		std::size_t weightBackground = 0;
 		double sumBackground = 0;
@@ -251,12 +275,12 @@ namespace ndl
 		int bestBucket = 0;
 		for (int b = 0; b < bins; b++)
 		{
-			weightBackground += histogram[b];
+			weightBackground += hist.count(b);
 			if (weightBackground == 0) continue;
 			std::size_t weightForeground = total - weightBackground;
 			if (weightForeground == 0) break;
 
-			sumBackground += (double)b * histogram[b];
+			sumBackground += (double)b * hist.count(b);
 			double meanBackground = sumBackground / weightBackground;
 			double meanForeground = (sumAll - sumBackground) / weightForeground;
 
@@ -273,7 +297,7 @@ namespace ndl
 		// upper edge, so "value <= threshold" / "value > threshold"
 		// reproduce the same background/foreground split the bucket
 		// boundary represented.
-		double thresholdValue = static_cast<double>(lo) + range * static_cast<double>(bestBucket + 1) / static_cast<double>(bins);
+		double thresholdValue = lo + range * static_cast<double>(bestBucket + 1) / static_cast<double>(bins);
 		return static_cast<T>(thresholdValue);
 	}
 }

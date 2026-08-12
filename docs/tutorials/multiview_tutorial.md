@@ -1,12 +1,12 @@
 # Multiview Tutorial {#multiview_tutorial}
 
-## printing a 4D image
+## printing an N-dimensional image (N=4 here)
 
 ```cpp
 std::cout << ndImage
 ```
 
-operator<< recurses from the OUTERMOST dimension inward: it loops frame (dim3), and for each frame value loops channel (dim2), and for each of those loops y (dim1) -- down to x (dim0), which is what actually becomes one printed line (a comma-separated row). That's a lot of nesting to track from blank lines alone, so every 2D (y,x) block is preceded by an explicit "[dim2=.., dim3=..]" header naming every higher dimension's current index -- blank lines still separate blocks too, but the header is unambiguous at any number of dimensions, where counting blank lines stops being practical past 3D.
+operator<< is written for Image<T,DIM> at any DIM, not specifically DIM==4: for DIM<=2 it's just rows and columns, and it recurses from the OUTERMOST dimension inward for however many more there are -- here it loops frame (dim3), and for each frame value loops channel (dim2), and for each of those loops y (dim1) -- down to x (dim0), which is what actually becomes one printed line (a comma-separated row). That's a lot of nesting to track from blank lines alone once DIM > 3, so every 2D (y,x) block is preceded by an explicit "[dim2=.., dim3=..]" header naming every higher dimension's current index -- one more "dimN=.." entry for however many dimensions DIM actually has, blank lines still separate blocks too, but the header stays unambiguous regardless of DIM, which is exactly the case 4D is here to demonstrate.
 
 ```text
     input:   ndImage itself -- this is the setup, not a transformation of anything.

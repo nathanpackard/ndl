@@ -9,10 +9,11 @@
 /// operations (view()/slice()/swap_axes()/mirror()) shared by all of them.
 
 /// @defgroup morphology_filtering Morphology & Filtering
-/// erode()/dilate()/median_filter()/percentile_filter()/threshold()/otsu_threshold() --
-/// free functions (morphology.h) over any minimal-interface image type (Image or
-/// PackedBitImage), a toolkit built on top of Image rather than part of it -- plus the
-/// structuring-element helpers (make_box_kernel()/make_cross_kernel()) and BorderMode.
+/// erode()/dilate()/median_filter()/percentile_filter()/threshold()/otsu_threshold()/
+/// invert() -- free functions (morphology.h) over any minimal-interface image type
+/// (Image or PackedBitImage), a toolkit built on top of Image rather than part of it --
+/// plus the structuring-element helpers (make_box_kernel()/make_cross_kernel()) and
+/// BorderMode.
 
 /// @defgroup convolution Convolution
 /// convolve()/gaussian_blur() -- free functions (convolution.h), a toolkit built on
@@ -22,6 +23,44 @@
 /// sum, where morphology picks a single one (min/max/percentile) -- a different
 /// family of operation, even though they share BorderMode and the same kernel-tap
 /// machinery underneath.
+
+/// @defgroup visualize Visualize
+/// bar_chart()/heatmap() (visualize.h) -- render any 1D/2D minimal-interface
+/// numeric array as a real image (a bar chart or a greyscale intensity image
+/// respectively), scaled to the array's own max value. Exists so nothing else in
+/// this library needs its own one-off ASCII-art rendering: histogram_image()
+/// (Histogram, below) is a thin dispatch straight to these, not separate drawing
+/// code.
+
+/// @defgroup histogram Histogram
+/// Histogram<VDIM>, histogram_equalize(), and histogram_image() (histogram.h) --
+/// bins the joint distribution of VDIM co-occurring scalar values (VDIM==1 is the
+/// ordinary single-channel histogram; VDIM==2/3/... are joint/co-occurrence
+/// histograms), generalizing over VDIM the same way Image<T,DIM> generalizes over
+/// spatial dimension DIM. otsu_threshold() (Morphology & Filtering, above) is
+/// built on Histogram<1> internally; histogram_image() renders a Histogram<1>/
+/// Histogram<2> as a real bar chart/heatmap via Visualize, above.
+
+/// @defgroup distance_transform Distance Transform
+/// distance_transform()/distance_transform_squared() (distance_transform.h) -- the
+/// exact squared Euclidean distance transform (Felzenszwalt & Huttenlocher), computed
+/// via one 1D lower-envelope-of-parabolas pass per axis, the same "one 1D pass per
+/// axis" structure fftn() (FFT, below) uses. Always measures distance to the nearest
+/// background (false/zero) position; invert() (Morphology & Filtering, above) flips
+/// that to distance-to-nearest-foreground when that's what's wanted instead.
+
+/// @defgroup summed_area_table Summed-Area Table
+/// summed_area_table()/rectangle_sum() (summed_area_table.h) -- builds an integral
+/// image via one prefix-sum pass per axis (again the same per-axis structure fftn()
+/// uses), then answers "what's the sum over this arbitrary rectangle" in O(1) via
+/// inclusion-exclusion over the table's own corners, regardless of the rectangle's
+/// size. box_blur(), also here, is the payoff built on top: an O(1)-per-pixel
+/// (2*radius+1)^DIM average via one rectangle_sum() query per pixel, with real
+/// BorderMode support (Clamp/Wrap/Reflect, the same enum convolve()/erode() share) --
+/// implemented by building one border-extended copy of the source up front (via the
+/// same detail::kernelTapCoord() those use) so every downstream query lands on an
+/// always-in-bounds table position, rather than by making rectangle_sum() itself
+/// border-aware.
 
 /// @defgroup fft FFT
 /// Complex/real power-of-two FFT (FFT, FFTReal), arbitrary-size FFT via Bluestein's

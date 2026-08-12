@@ -472,10 +472,16 @@ namespace ndl
 		// so the result can be broadcast back against *this without reshaping.
 		// Caller owns output's memory, same as every other operation here.
 		// min(axis,...)/max(axis,...) need ordering, same reasoning as the
-		// whole-image versions above; sum(axis,...)/mean(axis,...) don't
-		// (mean(axis,...) divides by a T-converted count and stays in T the
-		// whole way, unlike whole-image mean() above -- verified this
-		// actually compiles for std::complex before leaving it unrestricted).
+		// whole-image versions above; sum(axis,...) doesn't (only needs +,
+		// which std::complex supports fine), and stays in T the whole way --
+		// unlike mean(axis,...) below, this is deliberate and not a bug:
+		// narrow integer T (e.g. uint8_t) wrapping during an over-long
+		// summation is mathematically exact (true_sum mod 2^bits, the same
+		// answer you'd get narrowing the true sum to T at the very end
+		// instead, since modular addition is associative regardless of when
+		// the modulus is taken) -- an unexpected-looking result for a T this
+		// narrow, maybe, but a well-defined one, matching sum()'s own
+		// documented contract that its result is meaningfully a T.
 		void sum(int axis, Image<T, DIM>& output) const { axisReduceOp(axis, output, std::plus<T>{}); }
 		void min(int axis, Image<T, DIM>& output) const {
 			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::min(axis,output) requires an arithmetic T (needs a total order) -- not valid for e.g. std::complex<T>");
@@ -486,10 +492,48 @@ namespace ndl
 			axisReduceOp(axis, output, [](T a, T b) { return b > a ? b : a; });
 		}
 
+		// Unlike sum(axis,...) above, staying in T the whole way here
+		// really would be a bug, not just an unexpected-looking well-defined
+		// result: division doesn't commute with modular wraparound the way
+		// addition does, so dividing an already-wrapped T sum by count
+		// produces a genuinely wrong average (confirmed directly: summing
+		// R=G=B=255 -- reducing a photo's channel axis down to greyscale is
+		// exactly this -- wraps to 253 in uint8_t before ever being divided,
+		// giving a "mean" of 84 instead of 255). Accumulating in double
+		// instead avoids that: the division happens on the true sum, and
+		// only the correctly-averaged result (which, being an average,
+		// lands back in a range T can actually represent) is narrowed to T,
+		// at the very end. No meaningfully "wider" accumulator exists for
+		// std::complex, though, and it doesn't have the same narrow-range
+		// overflow risk to begin with, so that case is untouched -- exactly
+		// the previous (T-the-whole-way) behavior, still unrestricted.
 		void mean(int axis, Image<T, DIM>& output) const {
-			sum(axis, output);
-			T count = static_cast<T>(extent_[axis]);
-			for (auto it = output.begin(); it != output.end(); ++it) *it = static_cast<T>(*it / count);
+			if constexpr (std::is_arithmetic_v<T>)
+			{
+				assert(axis >= 0 && axis < DIM);
+				assert(output.extent()[axis] == 1);
+				for (int i = 0; i < DIM; i++) assert(i == axis || output.extent()[i] == extent_[i]);
+
+				std::vector<double> accumData(output.size());
+				Image<double, DIM> accum(accumData.data(), output.extent());
+				for (const auto& coord : coordinates())
+				{
+					auto outCoord = coord;
+					outCoord[axis] = 0;
+					double v = static_cast<double>(at(coord));
+					if (coord[axis] == 0) accum.at(outCoord) = v;
+					else accum.at(outCoord) = accum.at(outCoord) + v;
+				}
+				double count = static_cast<double>(extent_[axis]);
+				auto accIt = accum.begin();
+				for (auto it = output.begin(); it != output.end(); ++it, ++accIt) *it = static_cast<T>(*accIt / count);
+			}
+			else
+			{
+				sum(axis, output);
+				T count = static_cast<T>(extent_[axis]);
+				for (auto it = output.begin(); it != output.end(); ++it) *it = static_cast<T>(*it / count);
+			}
 		}
 
 		// human readable dump of the view's internal bookkeeping, useful when debugging strides/offsets
