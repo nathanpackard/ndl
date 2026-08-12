@@ -27,6 +27,35 @@ namespace ndl
 		template<class X, int D> std::true_type is_image_test(const Image<X, D>*);
 		std::false_type is_image_test(...);
 		template<class U> struct is_image_like : decltype(is_image_test(std::declval<std::remove_reference_t<U>*>())) {};
+
+		// Detects "ImageT exposes the minimal structural interface
+		// morphology.h/convolution.h's free functions are templated
+		// against, for a DIM-dimensional type": extent() convertible to
+		// std::array<int,DIM>, at(coord) callable with a
+		// std::array<int,DIM>, and coordinates() callable at all.
+		// Deliberately does NOT pin down at()'s or coordinates()'s exact
+		// return type -- that's precisely what varies between Image (at()
+		// returns T&) and PackedBitImage (at() returns BitRef/bool by
+		// value), and constraining it here would reject the very
+		// difference this whole minimal-interface design exists to allow.
+		// Meant to be used as a static_assert right after each
+		// minimal-interface type's own definition (see Image in core.h,
+		// PackedBitImage in packed_bit.h), so a signature that drifts out
+		// of shape fails to compile at the type's own definition, with a
+		// message naming exactly that, instead of later and more
+		// confusingly, deep inside whichever free function first tries to
+		// instantiate against it.
+		template<class ImageT, int DIM, class = void>
+		struct satisfies_minimal_interface : std::false_type {};
+		template<class ImageT, int DIM>
+		struct satisfies_minimal_interface<ImageT, DIM, std::void_t<
+			std::enable_if_t<std::is_convertible_v<decltype(std::declval<const ImageT&>().extent()), std::array<int, DIM>>>,
+			decltype(std::declval<const ImageT&>().at(std::declval<std::array<int, DIM>>())),
+			decltype(std::declval<const ImageT&>().coordinates())
+		>> : std::true_type {};
+		template<class ImageT, int DIM>
+		inline constexpr bool satisfies_minimal_interface_v = satisfies_minimal_interface<ImageT, DIM>::value;
+
 		// Shared coordinate-list generator: every DIM-dimensional "visit
 		// every position" walk (Image::coordinates(), PackedBitImage::
 		// coordinates(), below) is this same recursion, so it lives once

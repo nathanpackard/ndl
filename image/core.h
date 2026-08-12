@@ -941,4 +941,15 @@ namespace ndl
 		T* root_data_;
 		T* data_;
 	};
+
+	// Image itself must satisfy the same minimal structural interface
+	// (extent()/at()/coordinates()) that morphology.h/convolution.h's free
+	// functions are templated against -- it's the reference shape every
+	// other minimal-interface type (PackedBitImage, packed_bit.h) is
+	// checked against, so asserting it here too is cheap insurance against
+	// its own signatures drifting. One representative instantiation is
+	// enough: the checked members' shapes don't vary with T/DIM.
+	static_assert(detail::satisfies_minimal_interface_v<Image<double, 2>, 2>,
+		"Image<T,DIM> no longer satisfies the minimal structural interface (extent()/at()/coordinates()) "
+		"morphology.h/convolution.h's free functions require -- check for a renamed or reshaped member.");
 }

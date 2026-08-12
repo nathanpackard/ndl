@@ -180,6 +180,16 @@ namespace ndl
 		std::vector<std::uint64_t> words_;
 	};
 
+	// PackedBitImage must satisfy the same minimal structural interface
+	// (extent()/at()/coordinates()) Image does -- that's the whole reason
+	// ndl::erode()/ndl::dilate()/ndl::median_filter()/ndl::threshold()
+	// (morphology.h) run against it unmodified. One representative
+	// instantiation is enough: the checked members' shapes don't vary with
+	// DIM.
+	static_assert(detail::satisfies_minimal_interface_v<PackedBitImage<2>, 2>,
+		"PackedBitImage<DIM> no longer satisfies the minimal structural interface (extent()/at()/coordinates()) "
+		"morphology.h's free functions require -- check for a renamed or reshaped member.");
+
 	// Converts any minimal-interface image (Image<bool,DIM>, Image<uint8_t,DIM>,
 	// an already-thresholded mask, ...) into a freshly-allocated PackedBitImage,
 	// nonzero -> true -- the "I have an ordinary image I want to shrink down"
