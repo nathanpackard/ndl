@@ -100,7 +100,7 @@ What does a summed-area table actually look like? heatmap() (visualize.h) render
 
 ```text
 summed-area table (0=barely summed, white=full running sum): /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/02_sat_heatmap.png
-    extent = {3, 560, 300}   min=0  max=255  mean=51.57
+    extent = {560, 300}   min=0  max=255  mean=51.57
 ```
 
 ### Step 6
@@ -124,23 +124,23 @@ box_blur(grey, out, radius, BorderMode::Wrap)   vs.   convolve(grey, kernel, out
 convolve()'s cost scales with kernel size (every output pixel visits every kernel tap, (2*radius+1)^2 of them); box_blur()'s cost per pixel is always exactly one rectangle_sum() call -- 4 table lookups -- no matter how large radius gets, the same 'pay once, query cheaply' trade fftn() makes for repeated convolutions demo/convolution's own Part 6 times against spatial convolve(). Both are given the same BorderMode::Wrap here, so unlike a border-naive summed-area-table box blur (which would need to skip or fudge the border pixels its window can't fully reach), these two should now match pixel-for-pixel everywhere, border included -- checked below, not just eyeballed. The timings are the actual point.
 
 ```text
-radius=2 (5x5 kernel):   SAT box blur 4.776643 ms   vs   convolve() 13.138919 ms
-radius=8 (17x17 kernel):   SAT box blur 5.286442 ms   vs   convolve() 140.330741 ms
-radius=32 (65x65 kernel):   SAT box blur 5.823303 ms   vs   convolve() 2058.950112 ms
+radius=2 (5x5 kernel):   SAT box blur 5.303984 ms   vs   convolve() 11.995709 ms
+radius=8 (17x17 kernel):   SAT box blur 4.836218 ms   vs   convolve() 124.435089 ms
+radius=32 (65x65 kernel):   SAT box blur 5.772144 ms   vs   convolve() 1857.232026 ms
 ```
 
 ![summed_area_table_tutorial_03_sat_box_blur.png](images/summed_area_table_tutorial/summed_area_table_tutorial_03_sat_box_blur.png)
 
 ```text
 SAT box blur (radius=32, BorderMode::Wrap): /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/03_sat_box_blur.png
-    extent = {1, 560, 300}   min=37  max=222  mean=120.26
+    extent = {560, 300}   min=37  max=222  mean=120.26
 ```
 
 ![summed_area_table_tutorial_04_convolve_box_blur.png](images/summed_area_table_tutorial/summed_area_table_tutorial_04_convolve_box_blur.png)
 
 ```text
 convolve() box blur (radius=32, BorderMode::Wrap): /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/04_convolve_box_blur.png
-    extent = {1, 560, 300}   min=37  max=222  mean=120.26
+    extent = {560, 300}   min=37  max=222  mean=120.26
 ```
 
 ### Step 8

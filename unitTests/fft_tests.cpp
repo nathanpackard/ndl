@@ -308,3 +308,30 @@ TEST(FFT, OversizedNonPowerOfTwoThrows) {
 	EXPECT_NO_THROW(callSufficientBound());
 }
 
+TEST(FFT, FFTShift) {
+	// 1D: a DC spike at index 0 should move to index extent/2.
+	std::vector<double> data1(8, 0.0);
+	data1[0] = 1.0;
+	Image<double, 1> src1(data1.data(), { 8 });
+	std::vector<double> out1Data(8, 0.0);
+	Image<double, 1> out1(out1Data.data(), { 8 });
+	fftshift(src1, out1);
+	for (int i = 0; i < 8; i++) EXPECT_EQ(out1(i), i == 4 ? 1.0 : 0.0);
+
+	// 2D: DC at (0,0) should move to (W/2,H/2).
+	std::vector<double> data2(4 * 4, 0.0);
+	Image<double, 2> src2(data2.data(), { 4, 4 });
+	src2(0, 0) = 5.0;
+	std::vector<double> out2Data(4 * 4, 0.0);
+	Image<double, 2> out2(out2Data.data(), { 4, 4 });
+	fftshift(src2, out2);
+	EXPECT_EQ(out2(2, 2), 5.0);
+
+	// Cross-type: SrcImageT/DstImageT deduce independently, so an Image
+	// source and an OwnedImage destination work without an explicit
+	// template argument.
+	OwnedImage<double, 1> ownedOut1({ 8 });
+	fftshift(src1, ownedOut1);
+	EXPECT_EQ(ownedOut1(4), 1.0);
+}
+

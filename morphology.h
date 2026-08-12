@@ -46,18 +46,20 @@ namespace ndl
 	// is true, so these still work unmodified for a PackedBitImage (whose
 	// value_type is bool) -- erosion/dilation reduce to AND/OR there.
 	/// Morphological erosion: replaces each element with the minimum of its `kernel`-shaped neighborhood. Works on Image or PackedBitImage.
-	/// @tparam ImageT  Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
-	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from ImageT.
+	/// @tparam SrcImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
+	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from SrcImageT/DstImageT.
 	/// @param  src     Source image.
 	/// @param  dst     Destination; must already exist with `src`'s own extent.
 	/// @param  kernel  Structuring element (nonzero tap = included); see make_box_kernel()/make_cross_kernel().
 	/// @param  border  How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
 	/// @ingroup morphology_filtering
-	template<class ImageT, class KernelT>
-	void erode(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
+	template<class SrcImageT, class DstImageT, class KernelT>
+	void erode(const SrcImageT& src, DstImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
 	{
-		using T = typename ImageT::value_type;
-		static_assert(std::is_arithmetic_v<T>, "ndl::erode() requires an arithmetic value_type (needs a total order) -- not valid for e.g. std::complex<T>");
+		using SrcT = typename SrcImageT::value_type;
+		using DstT = typename DstImageT::value_type;
+		static_assert(std::is_arithmetic_v<SrcT>, "ndl::erode() requires an arithmetic value_type (needs a total order) -- not valid for e.g. std::complex<T>");
 		assert(dst.extent() == src.extent());
 		auto extent = src.extent();
 		auto center = detail::kernelCenter(kernel);
@@ -66,28 +68,30 @@ namespace ndl
 		for (const auto& coord : src.coordinates())
 		{
 			bool first = true;
-			T best{};
+			SrcT best{};
 			for (const auto& kCoord : taps)
 			{
-				T v = src.at(detail::kernelTapCoord(coord, kCoord, center, extent, border));
+				SrcT v = src.at(detail::kernelTapCoord(coord, kCoord, center, extent, border));
 				if (first || v < best) { best = v; first = false; }
 			}
-			dst.at(coord) = best;
+			dst.at(coord) = static_cast<DstT>(best);
 		}
 	}
 	/// Morphological dilation: replaces each element with the maximum of its `kernel`-shaped neighborhood. Works on Image or PackedBitImage.
-	/// @tparam ImageT  Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
-	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from ImageT.
+	/// @tparam SrcImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
+	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from SrcImageT/DstImageT.
 	/// @param  src     Source image.
 	/// @param  dst     Destination; must already exist with `src`'s own extent.
 	/// @param  kernel  Structuring element (nonzero tap = included); see make_box_kernel()/make_cross_kernel().
 	/// @param  border  How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
 	/// @ingroup morphology_filtering
-	template<class ImageT, class KernelT>
-	void dilate(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
+	template<class SrcImageT, class DstImageT, class KernelT>
+	void dilate(const SrcImageT& src, DstImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
 	{
-		using T = typename ImageT::value_type;
-		static_assert(std::is_arithmetic_v<T>, "ndl::dilate() requires an arithmetic value_type (needs a total order) -- not valid for e.g. std::complex<T>");
+		using SrcT = typename SrcImageT::value_type;
+		using DstT = typename DstImageT::value_type;
+		static_assert(std::is_arithmetic_v<SrcT>, "ndl::dilate() requires an arithmetic value_type (needs a total order) -- not valid for e.g. std::complex<T>");
 		assert(dst.extent() == src.extent());
 		auto extent = src.extent();
 		auto center = detail::kernelCenter(kernel);
@@ -96,36 +100,38 @@ namespace ndl
 		for (const auto& coord : src.coordinates())
 		{
 			bool first = true;
-			T best{};
+			SrcT best{};
 			for (const auto& kCoord : taps)
 			{
-				T v = src.at(detail::kernelTapCoord(coord, kCoord, center, extent, border));
+				SrcT v = src.at(detail::kernelTapCoord(coord, kCoord, center, extent, border));
 				if (first || v > best) { best = v; first = false; }
 			}
-			dst.at(coord) = best;
+			dst.at(coord) = static_cast<DstT>(best);
 		}
 	}
 	/// Replaces each element with the given percentile (0=min, 50=median, 100=max) of its `kernel`-shaped neighborhood.
-	/// @tparam ImageT    Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
-	/// @tparam KernelT   Any minimal-interface image type for the structuring element; may differ from ImageT.
+	/// @tparam SrcImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
+	/// @tparam KernelT   Any minimal-interface image type for the structuring element; may differ from SrcImageT/DstImageT.
 	/// @param  src       Source image.
 	/// @param  dst       Destination; must already exist with `src`'s own extent.
 	/// @param  kernel    Structuring element (nonzero tap = included).
 	/// @param  percentile 0-100.
 	/// @param  border    How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
 	/// @ingroup morphology_filtering
-	template<class ImageT, class KernelT>
-	void percentile_filter(const ImageT& src, ImageT& dst, const KernelT& kernel, double percentile, BorderMode border = BorderMode::Clamp)
+	template<class SrcImageT, class DstImageT, class KernelT>
+	void percentile_filter(const SrcImageT& src, DstImageT& dst, const KernelT& kernel, double percentile, BorderMode border = BorderMode::Clamp)
 	{
-		using T = typename ImageT::value_type;
-		static_assert(std::is_arithmetic_v<T>, "ndl::percentile_filter() requires an arithmetic value_type (needs a total order for std::nth_element) -- not valid for e.g. std::complex<T>");
+		using SrcT = typename SrcImageT::value_type;
+		using DstT = typename DstImageT::value_type;
+		static_assert(std::is_arithmetic_v<SrcT>, "ndl::percentile_filter() requires an arithmetic value_type (needs a total order for std::nth_element) -- not valid for e.g. std::complex<T>");
 		assert(dst.extent() == src.extent());
 		assert(percentile >= 0.0 && percentile <= 100.0);
 		auto extent = src.extent();
 		auto center = detail::kernelCenter(kernel);
 		auto taps = detail::kernelIncludedTaps(kernel);
 
-		std::vector<T> window;
+		std::vector<SrcT> window;
 		for (const auto& coord : src.coordinates())
 		{
 			window.clear();
@@ -134,20 +140,21 @@ namespace ndl
 			std::size_t rank = (std::size_t)std::llround((percentile / 100.0) * (window.size() - 1));
 			auto mid = window.begin() + rank;
 			std::nth_element(window.begin(), mid, window.end());
-			dst.at(coord) = *mid;
+			dst.at(coord) = static_cast<DstT>(*mid);
 		}
 	}
 	/// Replaces each element with the median of its `kernel`-shaped neighborhood -- percentile_filter() at 50.
-	/// @tparam ImageT  Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
-	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from ImageT.
+	/// @tparam SrcImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
+	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from SrcImageT/DstImageT.
 	/// @param  src     Source image.
 	/// @param  dst     Destination; must already exist with `src`'s own extent.
 	/// @param  kernel  Structuring element (nonzero tap = included).
 	/// @param  border  How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
 	/// @ingroup morphology_filtering
-	template<class ImageT, class KernelT>
-	void median_filter(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp) {
-		static_assert(std::is_arithmetic_v<typename ImageT::value_type>, "ndl::median_filter() requires an arithmetic value_type (needs a total order) -- not valid for e.g. std::complex<T>");
+	template<class SrcImageT, class DstImageT, class KernelT>
+	void median_filter(const SrcImageT& src, DstImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp) {
+		static_assert(std::is_arithmetic_v<typename SrcImageT::value_type>, "ndl::median_filter() requires an arithmetic value_type (needs a total order) -- not valid for e.g. std::complex<T>");
 		percentile_filter(src, dst, kernel, 50.0, border);
 	}
 
@@ -214,14 +221,15 @@ namespace ndl
 	// own on/off convention; threshold()'s own onValue/offValue is the
 	// tool for that if you need something other than 0/1 out.
 	/// Binary/logical NOT: dst(coord) = !src(coord), elementwise. Works on Image or PackedBitImage.
-	/// @tparam ImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
+	/// @tparam SrcImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
 	/// @param  src    Source image.
 	/// @param  dst    Destination; must already exist with `src`'s own extent.
 	/// @ingroup morphology_filtering
-	template<class ImageT>
-	void invert(const ImageT& src, ImageT& dst)
+	template<class SrcImageT, class DstImageT>
+	void invert(const SrcImageT& src, DstImageT& dst)
 	{
-		static_assert(std::is_arithmetic_v<typename ImageT::value_type>, "ndl::invert() requires a value_type contextually convertible to bool -- not valid for e.g. std::complex<T>");
+		static_assert(std::is_arithmetic_v<typename SrcImageT::value_type>, "ndl::invert() requires a value_type contextually convertible to bool -- not valid for e.g. std::complex<T>");
 		assert(dst.extent() == src.extent());
 		for (const auto& coord : src.coordinates())
 			dst.at(coord) = !src.at(coord);

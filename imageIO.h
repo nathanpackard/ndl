@@ -115,6 +115,27 @@ namespace ndl
 			throw std::runtime_error("unknown data type!!");
 		}
 
+		// Wraps load() above's own extent-out-param + raw-vector + manual
+		// Image-view dance into a single call for the common case: you just
+		// want a ready-to-use owned image, not the loaded bytes themselves.
+		// Costs one extra deep copy (the raw vector into the OwnedImage's
+		// own storage) over calling load() directly -- irrelevant next to
+		// the decode cost this is already paying, and worth it for not
+		// having to keep the raw vector and a separate Image view alive
+		// side by side just to hand the caller something usable.
+		/// Loads a bitmap/PNG/JPEG image (auto-detected by extension) directly into a ready-to-use OwnedImage<uint8_t,3> -- see load() above for the full contract.
+		/// @param fileName Path to load; format is chosen from the file extension (.jpg/.jpeg, .bmp, .png).
+		/// @return An OwnedImage<uint8_t,3> with extent {channelCount, width, height}.
+		/// @throws std::runtime_error if the file can't be opened/decoded, or the extension is unrecognized.
+		/// @ingroup image_io
+		inline OwnedImage<uint8_t, 3> load_owned(std::string fileName)
+		{
+			std::array<int, 3> extent;
+			std::vector<uint8_t> data = load(fileName, extent);
+			Image<uint8_t, 3> view(data.data(), extent);
+			return OwnedImage<uint8_t, 3>(view);
+		}
+
 		/// Loads a headerless raw binary file of the given extent and element type.
 		/// @tparam T           Element type; the caller must already know this, since a headerless file carries no type information.
 		/// @tparam DIM         Number of dimensions.
@@ -335,6 +356,29 @@ namespace ndl
 			{
 				std::cerr << "couldn't save: " << fileName << "\n";
 			}
+		}
+
+		// Convenience for a 2D single-channel result (a greyscale mask, a
+		// distance field, a Sobel edge map, ...): save()'s own PNG path
+		// requires a 3D (channel,width,height) image, so a 2D result has
+		// nowhere to go without first being wrapped in an implicit leading
+		// channel axis of size 1 -- exactly the "OwnedImage<T,3> X({1,W,H});
+		// Image<T,2> channel = X.slice(0,0); ... ; save(X, ...)" dance every
+		// caller with a 2D result would otherwise have to spell out by hand.
+		// Doing that wrapping here once, instead, means a 2D image can just
+		// be saved directly.
+		/// Saves a 2D single-channel image, via the 3D overload above -- see its own comment for the full contract.
+		/// @tparam T        image's element type.
+		/// @param  image    2D image to save.
+		/// @param  fileName Path to write; format is chosen from the extension (.bmp, .png, or .nrrd/no extension).
+		/// @ingroup image_io
+		template<class T>
+		void save(const Image<T, 2>& image, std::string fileName)
+		{
+			std::vector<T> data(image.size());
+			Image<T, 3> wrapped(data.data(), std::array<int, 3>{1, image.extent()[0], image.extent()[1]});
+			wrapped.slice(0, 0) = image;
+			save(wrapped, fileName);
 		}
 
 		/// Loads an NRRD (Nearly Raw Raster Data) file.

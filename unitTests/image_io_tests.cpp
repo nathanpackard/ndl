@@ -77,6 +77,66 @@ TEST(ImageIO, ImagePngRoundtrip) {
 	reportPassFail(passfail);
 }
 
+TEST(ImageIO, Image2DSaveOverload) {
+	std::stringstream passfail;
+	std::string outputFolder = NDL_TEST_OUTPUT_DIR;
+	std::filesystem::create_directories(outputFolder);
+
+	std::cout << std::endl << "2D IMAGE SAVE OVERLOAD" << std::endl;
+
+	const int W = 6, H = 5;
+	OwnedImage<uint8_t, 2> grey({ W, H });
+	{ int i = 0; for (auto it = grey.begin(); it != grey.end(); ++it) *it = (uint8_t)((++i * 37) % 251); }
+
+	// PNG: save()'s 3D path requires DIM==3, so this only works at all
+	// because the 2D overload wraps it in an implicit leading channel
+	// axis of size 1 first -- round-tripped here through channel 0 of
+	// the reloaded (always-RGBA-expanded, see ImagePngRoundtrip above)
+	// result.
+	std::string pngPath = outputFolder + "/ndl_2d_save_test.png";
+	image_io::save(grey, pngPath);
+	std::array<int, 3> pngExtent;
+	std::vector<uint8_t> pngLoaded = image_io::load(pngPath, pngExtent);
+	Image<uint8_t, 3> pngImg(pngLoaded.data(), pngExtent);
+	Image<uint8_t, 2> pngChannel = pngImg.slice(0, 0);
+	passfail << "2D PNG save/load round trip preserves extent: " << (pngExtent[1] == W && pngExtent[2] == H ? "Pass" : "Fail") << std::endl;
+	passfail << "2D PNG save/load round trip preserves pixel data: " << (pngChannel == grey ? "Pass" : "Fail") << std::endl;
+
+	// BMP: unlike PNG, the underlying generic save() already had a native
+	// DIM==2 branch -- confirming the new overload (which now intercepts
+	// every Image<T,2> call ahead of that generic template, per C++'s own
+	// partial-ordering rules preferring the more-specialized overload)
+	// still produces an equivalent, correctly round-tripping file.
+	std::string bmpPath = outputFolder + "/ndl_2d_save_test.bmp";
+	image_io::save(grey, bmpPath);
+	std::array<int, 3> bmpExtent;
+	std::vector<uint8_t> bmpLoaded = image_io::load(bmpPath, bmpExtent);
+	Image<uint8_t, 3> bmpImg(bmpLoaded.data(), bmpExtent);
+	Image<uint8_t, 2> bmpChannel = bmpImg.slice(0, 0);
+	passfail << "2D BMP save/load round trip preserves extent: " << (bmpExtent[1] == W && bmpExtent[2] == H ? "Pass" : "Fail") << std::endl;
+	passfail << "2D BMP save/load round trip preserves pixel data: " << (bmpChannel == grey ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
+TEST(ImageIO, LoadOwned) {
+	std::stringstream passfail;
+	std::string inputFolder = NDL_TEST_DATA_DIR;
+
+	std::cout << std::endl << "LOAD_OWNED" << std::endl;
+
+	std::array<int, 3> extent;
+	std::vector<uint8_t> data = image_io::load(inputFolder + "/ng_bwgirl_crop.jpg", extent);
+	Image<uint8_t, 3> viaLoad(data.data(), extent);
+
+	OwnedImage<uint8_t, 3> viaLoadOwned = image_io::load_owned(inputFolder + "/ng_bwgirl_crop.jpg");
+
+	passfail << "load_owned() extent matches load()'s own: " << (viaLoadOwned.extent() == extent ? "Pass" : "Fail") << std::endl;
+	passfail << "load_owned() pixel data matches load()'s own: " << (viaLoadOwned == viaLoad ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
 TEST(ImageIO, TestImages) {
 	std::stringstream passfail;
 	std::string inputFolder = NDL_TEST_DATA_DIR;

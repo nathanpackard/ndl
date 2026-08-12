@@ -22,7 +22,12 @@
 /// over every position, but convolution combines the values under it into a weighted
 /// sum, where morphology picks a single one (min/max/percentile) -- a different
 /// family of operation, even though they share BorderMode and the same kernel-tap
-/// machinery underneath.
+/// machinery underneath. downsample(), also here, is built on gaussian_blur(): blur
+/// (so decimated-away pixels get averaged in, not aliased into noise) then keep every
+/// Nth position along every axis except a caller-chosen channelAxis, returning a new,
+/// already-sized OwnedImage. to_displayable() clamps a wider-range result (a kernel
+/// with negative weights, a signed gradient magnitude) into a narrower directly-viewable
+/// type's own range, optionally re-centered by a bias first.
 
 /// @defgroup visualize Visualize
 /// bar_chart()/heatmap() (visualize.h) -- render any 1D/2D minimal-interface
@@ -65,7 +70,11 @@
 /// @defgroup fft FFT
 /// Complex/real power-of-two FFT (FFT, FFTReal), arbitrary-size FFT via Bluestein's
 /// algorithm (FFTBluestein), and the N-dimensional Image-based entry points
-/// (fftn()/ifftn()) most callers actually want.
+/// (fftn()/ifftn()) most callers actually want. fftshift(), also here, is the
+/// standard "center the spectrum" display convention: moves the zero-frequency (DC)
+/// component from index 0 of each axis to that axis' own middle, wrapping the rest
+/// around it -- fftn()'s raw output otherwise reads as meaningless noise until
+/// recentered.
 
 /// @defgroup matrix Matrix
 /// Fixed-size, compile-time-dimensioned NxN matrices and the geometric transforms

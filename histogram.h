@@ -288,21 +288,27 @@ namespace ndl
 	// copied through unchanged, same as trying to "spread out" a single value
 	// would be meaningless).
 	/// Histogram-equalizes src into dst: remaps values so their cumulative distribution is closer to uniform.
-	/// @tparam ImageT Any minimal-interface image type; src and dst must be the same concrete type.
+	/// @tparam SrcImageT Any minimal-interface image type; its value_type must be arithmetic.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
 	/// @param  src    Source image.
 	/// @param  dst    Destination; must already exist with `src`'s own extent.
 	/// @param  bins   Histogram resolution used for the remapping. Defaults to 256.
 	/// @ingroup histogram
-	template<class ImageT>
-	void histogram_equalize(const ImageT& src, ImageT& dst, int bins = 256)
+	template<class SrcImageT, class DstImageT>
+	void histogram_equalize(const SrcImageT& src, DstImageT& dst, int bins = 256)
 	{
-		using T = typename ImageT::value_type;
-		static_assert(std::is_arithmetic_v<T>, "ndl::histogram_equalize() requires an arithmetic value_type -- not valid for e.g. std::complex<T>");
+		using SrcT = typename SrcImageT::value_type;
+		using DstT = typename DstImageT::value_type;
+		static_assert(std::is_arithmetic_v<SrcT>, "ndl::histogram_equalize() requires an arithmetic value_type -- not valid for e.g. std::complex<T>");
 		assert(dst.extent() == src.extent());
 
 		Histogram<1> hist(src, bins);
 		double lo = hist.lo()[0], hi = hist.hi()[0];
-		if (hi <= lo) { dst = src; return; } // degenerate: a single value has nothing to spread out
+		if (hi <= lo) // degenerate: a single value has nothing to spread out
+		{
+			for (const auto& coord : src.coordinates()) dst.at(coord) = static_cast<DstT>(src.at(coord));
+			return;
+		}
 
 		std::vector<std::size_t> cdf(bins);
 		std::size_t running = 0;
@@ -313,7 +319,7 @@ namespace ndl
 		{
 			int b = hist.bucketOf(static_cast<double>(src.at(coord)));
 			double frac = static_cast<double>(cdf[b]) / static_cast<double>(total);
-			dst.at(coord) = static_cast<T>(lo + (hi - lo) * frac);
+			dst.at(coord) = static_cast<DstT>(lo + (hi - lo) * frac);
 		}
 	}
 }

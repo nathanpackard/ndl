@@ -3,6 +3,7 @@
 #include <cmath>
 #include <vector>
 #include <array>
+#include <limits>
 #include <type_traits>
 #include "image/border_mode.h"
 #include "image/detail.h"
@@ -37,18 +38,21 @@ namespace ndl
 	// neighbors in each direction. `border` selects how an offset that falls
 	// outside `src` is handled.
 	/// Correlates `kernel` against every position of `src`, writing the weighted sum into `dst`. Requires an arithmetic value_type.
-	/// @tparam ImageT  Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); src and dst must be the same concrete type.
-	/// @tparam KernelT Any minimal-interface image type for the kernel; may differ from ImageT.
+	/// @tparam SrcImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
+	/// @tparam KernelT Any minimal-interface image type for the kernel; may differ from SrcImageT/DstImageT.
 	/// @param  src     Source image.
 	/// @param  dst     Destination; must already exist with `src`'s own extent.
 	/// @param  kernel  Weights, nonzero-tap = included; convolve() also uses the value as a weight. Its own extent sets the neighborhood radius per dimension.
 	/// @param  border  How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
 	/// @ingroup convolution
-	template<class ImageT, class KernelT>
-	void convolve(const ImageT& src, ImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
+	template<class SrcImageT, class DstImageT, class KernelT>
+	void convolve(const SrcImageT& src, DstImageT& dst, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
 	{
-		using T = typename ImageT::value_type;
-		static_assert(std::is_arithmetic_v<T>, "ndl::convolve() requires a value_type convertible to double -- not valid for e.g. std::complex<T> (the weighted sum is accumulated in double)");
+		using SrcT = typename SrcImageT::value_type;
+		using DstT = typename DstImageT::value_type;
+		static_assert(std::is_arithmetic_v<SrcT>, "ndl::convolve() requires a value_type convertible to double -- not valid for e.g. std::complex<T> (the weighted sum is accumulated in double)");
+		static_assert(std::is_arithmetic_v<DstT>, "ndl::convolve() requires a value_type convertible to double -- not valid for e.g. std::complex<T> (the weighted sum is accumulated in double)");
 		assert(dst.extent() == src.extent());
 		auto extent = src.extent();
 		auto center = detail::kernelCenter(kernel);
@@ -59,7 +63,7 @@ namespace ndl
 			double total = 0;
 			for (const auto& kCoord : taps)
 				total += static_cast<double>(src.at(detail::kernelTapCoord(coord, kCoord, center, extent, border))) * static_cast<double>(kernel.at(kCoord));
-			dst.at(coord) = static_cast<T>(total);
+			dst.at(coord) = static_cast<DstT>(total);
 		}
 	}
 
@@ -77,17 +81,18 @@ namespace ndl
 	// to hold the kernel weights it builds -- that's why this file includes
 	// image.h at all.
 	/// Convolves `src` with a normalized Gaussian kernel of the given standard deviation, writing into `dst`.
-	/// @tparam ImageT Any minimal-interface image type whose own concrete type also has an Image<double,DIM>-compatible construction path (i.e. any Image<T,DIM>).
+	/// @tparam SrcImageT Any minimal-interface image type whose own concrete type also has an Image<double,DIM>-compatible construction path (i.e. any Image<T,DIM>).
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
 	/// @param  src    Source image.
 	/// @param  dst    Destination; must already exist with `src`'s own extent.
 	/// @param  sigma  Standard deviation; the kernel radius follows the standard 3-sigma rule.
 	/// @param  border How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
 	/// @ingroup convolution
-	template<class ImageT>
-	void gaussian_blur(const ImageT& src, ImageT& dst, double sigma, BorderMode border = BorderMode::Clamp)
+	template<class SrcImageT, class DstImageT>
+	void gaussian_blur(const SrcImageT& src, DstImageT& dst, double sigma, BorderMode border = BorderMode::Clamp)
 	{
-		using T = typename ImageT::value_type;
-		static_assert(std::is_arithmetic_v<T>, "ndl::gaussian_blur() requires a value_type convertible to double -- not valid for e.g. std::complex<T> (it calls convolve() internally)");
+		using SrcT = typename SrcImageT::value_type;
+		static_assert(std::is_arithmetic_v<SrcT>, "ndl::gaussian_blur() requires a value_type convertible to double -- not valid for e.g. std::complex<T> (it calls convolve() internally)");
 		assert(sigma > 0);
 		auto srcExtent = src.extent();
 		constexpr int DIM = std::tuple_size<decltype(srcExtent)>::value;
@@ -115,5 +120,89 @@ namespace ndl
 		for (auto it = kernel.begin(); it != kernel.end(); ++it) *it /= total;
 
 		convolve(src, dst, kernel, border);
+	}
+
+	// Shrinks src by `factor` along every axis except `channelAxis`: blurs
+	// first via gaussian_blur() (per_channel()'d over channelAxis, so colors
+	// don't bleed into each other) so the pixels a plain strided view() would
+	// otherwise just skip get averaged in instead of aliased into noise, then
+	// a step={1,...,factor,...,1} view() (1 at channelAxis, factor everywhere
+	// else) does the actual decimation -- the standard "blur, then keep every
+	// Nth pixel" resize most image libraries use. Returns a new OwnedImage
+	// rather than writing into a caller-provided dst (unlike every other
+	// function in this file): the output extent is itself a function of
+	// factor, and there's no simpler way to hand that back than computing and
+	// returning the already-sized result directly, the same reasoning
+	// OwnedImage::like() and view() themselves already return new objects
+	// rather than filling one in place.
+	/// Shrinks `src` by `factor` along every axis except `channelAxis` (blurring first so the pixels a strided view() would otherwise skip get averaged in, not aliased into noise). Returns a new OwnedImage.
+	/// @tparam ImageT Any minimal-interface image type whose own concrete type also has an Image<double,DIM>-compatible construction path (i.e. any Image<T,DIM>).
+	/// @param  src         Source image.
+	/// @param  factor      Shrink factor (keep every `factor`-th pixel along every axis except `channelAxis`).
+	/// @param  channelAxis Axis left undecimated (e.g. 0 for a {channel,x,y} color image). Defaults to 0.
+	/// @param  border      How an out-of-bounds neighbor is resolved during the blur pass. Defaults to BorderMode::Clamp.
+	/// @ingroup convolution
+	template<class ImageT>
+	auto downsample(const ImageT& src, int factor, int channelAxis = 0, BorderMode border = BorderMode::Clamp)
+	{
+		using T = typename ImageT::value_type;
+		auto extent = src.extent();
+		constexpr int DIM = std::tuple_size<decltype(extent)>::value;
+		static_assert(std::is_arithmetic_v<T>, "ndl::downsample() requires a value_type convertible to double -- not valid for e.g. std::complex<T> (it calls gaussian_blur() internally)");
+		assert(factor > 1);
+
+		auto blurred = OwnedImage<T, DIM>::like(src);
+		per_channel(src, blurred, channelAxis, [&](const auto& s, auto& d) { gaussian_blur(s, d, factor * 0.5, border); });
+
+		// view()'s own step argument only takes a compile-time
+		// std::initializer_list, not a runtime-computed std::array (the
+		// step needs to vary by axis here, dictated by the runtime
+		// `channelAxis` argument) -- so the decimation below is a direct
+		// coordinate-mapping copy instead, picking every `factor`-th
+		// position along every axis except channelAxis. Same element
+		// count view()'s own step semantics would produce for a full-range,
+		// stride-`factor`, start-at-0 selection: floor((extent-1)/factor)+1.
+		std::array<int, DIM> outExtent;
+		for (int i = 0; i < DIM; i++)
+			outExtent[i] = (i == channelAxis) ? extent[i] : (extent[i] - 1) / factor + 1;
+
+		OwnedImage<T, DIM> result(outExtent);
+		for (const auto& outCoord : result.coordinates())
+		{
+			std::array<int, DIM> srcCoord;
+			for (int i = 0; i < DIM; i++) srcCoord[i] = (i == channelAxis) ? outCoord[i] : outCoord[i] * factor;
+			result.at(outCoord) = blurred.at(srcCoord);
+		}
+		return result;
+	}
+
+	// Clamps a floating-point (or otherwise wider-range) image into a
+	// narrower, directly displayable type's own [0, max] range, optionally
+	// re-centering by `bias` first. Needed whenever a computation (a kernel
+	// with negative weights, a signed gradient magnitude, ...) can produce
+	// values outside the display type's own range: casting a negative or
+	// out-of-range floating-point value straight to an unsigned narrow type
+	// (e.g. uint8_t) is undefined behavior, not a wraparound, so a value
+	// that would land out of range is clamped here instead, on the way
+	// through to the narrower type.
+	/// Clamps `src` into `dst`'s own [0, numeric_limits<DstT>::max()] range, optionally re-centering by `bias` first.
+	/// @tparam SrcImageT Any minimal-interface image type whose value_type converts to double.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT) whose value_type is arithmetic -- the display type being clamped into.
+	/// @param  src  Source image.
+	/// @param  dst  Destination; must already exist with `src`'s own extent.
+	/// @param  bias Added to every value before clamping (e.g. 128 to re-center an asymmetric kernel's "no change" result on mid-grey instead of black). Defaults to 0.
+	/// @ingroup convolution
+	template<class SrcImageT, class DstImageT>
+	void to_displayable(const SrcImageT& src, DstImageT& dst, double bias = 0.0)
+	{
+		using DstT = typename DstImageT::value_type;
+		static_assert(std::is_arithmetic_v<DstT>, "ndl::to_displayable() requires an arithmetic destination value_type -- not valid for e.g. std::complex<T>");
+		assert(dst.extent() == src.extent());
+		double hi = static_cast<double>(std::numeric_limits<DstT>::max());
+		for (const auto& coord : src.coordinates())
+		{
+			double v = static_cast<double>(src.at(coord)) + bias;
+			dst.at(coord) = static_cast<DstT>(v < 0.0 ? 0.0 : (v > hi ? hi : v));
+		}
 	}
 }

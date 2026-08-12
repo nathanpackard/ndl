@@ -9,6 +9,7 @@
 #include <vector>
 #include <array>
 #include <string>
+#include "../demoHelpers.h"
 
 using namespace ndl;
 namespace fs = std::filesystem;
@@ -24,31 +25,9 @@ namespace fs = std::filesystem;
 // real image rather than ASCII, which is what this demo saves and shows
 // throughout, past the one small hand-checkable example in Part 1 where
 // printing it as text is still perfectly readable.
-
-int stepNumber = 0;
-
-void step(const std::string& code, const std::string& explanation)
-{
-    std::cout << "\n[" << ++stepNumber << "] code:    " << code << "\n";
-    std::cout << "    explain: " << explanation << "\n";
-}
-
-template<class ImageT>
-void showArray(const std::string& label, const ImageT& img) { std::cout << "    " << label << ":\n" << img; }
-void showText(const std::string& label, const std::string& text) { std::cout << "    " << label << ":   " << text << "\n"; }
-
-std::string outputDir;
-
-template<class T, int DIM>
-void saveForInspection(const std::string& label, const Image<T, DIM>& img, const std::string& filename)
-{
-    std::string path = outputDir + "/" + filename;
-    image_io::save(img, path);
-    std::cout << "    " << label << ": " << path << "\n";
-    std::cout << "        extent = {";
-    for (int i = 0; i < DIM; i++) std::cout << (i ? ", " : "") << img.extent()[i];
-    std::cout << "}   min=" << (int)img.min() << "  max=" << (int)img.max() << "  mean=" << img.mean() << "\n";
-}
+//
+// step()/showArray()/showText()/saveForInspection()/outputDir come from
+// demoHelpers.h, shared with every other demo.
 
 int main()
 {
@@ -118,9 +97,7 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 2: a real photo's histogram ===\n";
 
-    std::array<int, 3> photoExtent;
-    std::vector<uint8_t> photoData = image_io::load(dataDir + "/ng_bwgirl_crop.jpg", photoExtent);
-    Image<uint8_t, 3> photo(photoData.data(), photoExtent);
+    OwnedImage<uint8_t, 3> photo = image_io::load_owned(dataDir + "/ng_bwgirl_crop.jpg");
     saveForInspection("photo", photo, "01_original.png");
 
     OwnedImage<uint8_t, 3> grey3({ 1, photo.extent()[1], photo.extent()[2] });
@@ -148,19 +125,12 @@ int main()
         "             03_grey_original.png (the unequalized greyscale photo) against 04_equalized.png, and\n"
         "             the two histogram images below: the equalized one should look visibly flatter/more\n"
         "             spread out across its bins than the original's, which likely has a few tall spikes.");
-    OwnedImage<uint8_t, 3> greyOutImg({ 1, grey.extent()[0], grey.extent()[1] });
-    Image<uint8_t, 2> greyOutChannel = greyOutImg.slice(0, 0);
-    greyOutChannel = grey;
-    saveForInspection("grey (unequalized)", greyOutImg, "03_grey_original.png");
+    saveForInspection("grey (unequalized)", grey, "03_grey_original.png");
 
     std::vector<uint8_t> equalizedData(grey.extent()[0] * grey.extent()[1]);
     Image<uint8_t, 2> equalized(equalizedData.data(), grey.extent());
     histogram_equalize(grey, equalized);
-
-    OwnedImage<uint8_t, 3> equalizedImg({ 1, grey.extent()[0], grey.extent()[1] });
-    Image<uint8_t, 2> equalizedChannel = equalizedImg.slice(0, 0);
-    equalizedChannel = equalized;
-    saveForInspection("equalized", equalizedImg, "04_equalized.png");
+    saveForInspection("equalized", equalized, "04_equalized.png");
 
     OwnedImage<uint8_t, 3> equalizedHistImg({ 3, 256, 120 });
     histogram_image(Histogram<1>(equalized), equalizedHistImg, (uint8_t)255, (uint8_t)0);

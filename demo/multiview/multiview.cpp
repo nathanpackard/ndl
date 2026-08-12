@@ -1,5 +1,6 @@
 #include <ndl/image.h>
 #include <iostream>
+#include "../demoHelpers.h"
 using namespace ndl;
 
 // A step-by-step tour of Image::slice() and Image::view() (plus mirror() and
@@ -39,13 +40,7 @@ using namespace ndl;
 // front. Steps that take it as input don't reprint all 48 numbers every time;
 // they say so explicitly instead and point back at that first printout.
 
-int stepNumber = 0;
-
-void step(const std::string& code, const std::string& explanation)
-{
-    std::cout << "\n[" << ++stepNumber << "] code:    " << code << "\n";
-    std::cout << "    explain: " << explanation << "\n";
-}
+// step()/stepNumber come from demoHelpers.h, shared with every other demo.
 
 // input/output printers: one pair that prints an actual (small) Image, one
 // pair that states in words what the input/output is (for the full

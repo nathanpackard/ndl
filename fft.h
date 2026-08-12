@@ -677,5 +677,35 @@ namespace ndl
 			auto cIt = complexOut.begin();
 			for (auto it = output.begin(); it != output.end(); ++it, ++cIt) *it = cIt->real();
 		}
+
+		// Moves the zero-frequency (DC) component from index 0 of each axis
+		// to that axis' own middle (extent/2), wrapping the rest around it --
+		// the standard rearrangement (numpy calls it fftshift) for
+		// *displaying* a spectrum, since fftn()'s raw output has DC in the
+		// corner with frequency increasing outward in a way that wraps at
+		// the edge, reading as meaningless noise until it's centered. Not
+		// restricted to a complex spectrum itself -- works on any
+		// elementwise-copyable value_type, e.g. a real-valued log-magnitude
+		// image already derived from one (the common case: you shift the
+		// display-ready magnitude, not the raw complex values).
+		/// Rearranges `src` so the zero-frequency (DC) component moves from index 0 of each axis to that axis' own middle -- the standard "center the spectrum" display convention.
+		/// @tparam SrcImageT Any minimal-interface image type.
+		/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
+		/// @param  src Source image (typically a spectrum, or a magnitude/log-magnitude image derived from one).
+		/// @param  dst Destination; must already exist with `src`'s own extent.
+		/// @ingroup fft
+		template<class SrcImageT, class DstImageT>
+		void fftshift(const SrcImageT& src, DstImageT& dst)
+		{
+			assert(dst.extent() == src.extent());
+			auto extent = src.extent();
+			constexpr int DIM = std::tuple_size<decltype(extent)>::value;
+			for (const auto& coord : src.coordinates())
+			{
+				std::array<int, DIM> shifted;
+				for (int d = 0; d < DIM; d++) shifted[d] = (coord[d] + extent[d] / 2) % extent[d];
+				dst.at(shifted) = src.at(coord);
+			}
+		}
 	}
 }

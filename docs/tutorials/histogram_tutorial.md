@@ -101,14 +101,14 @@ Remaps grey's values so their cumulative distribution is closer to uniform acros
 
 ```text
 grey (unequalized): /home/nathanpackard/git/ndl/build/demo/histogram/output/03_grey_original.png
-    extent = {1, 560, 300}   min=0  max=255  mean=120.765
+    extent = {560, 300}   min=0  max=255  mean=120.765
 ```
 
 ![histogram_tutorial_04_equalized.png](images/histogram_tutorial/histogram_tutorial_04_equalized.png)
 
 ```text
 equalized: /home/nathanpackard/git/ndl/build/demo/histogram/output/04_equalized.png
-    extent = {1, 560, 300}   min=0  max=255  mean=127.585
+    extent = {560, 300}   min=0  max=255  mean=127.585
 ```
 
 ![histogram_tutorial_05_equalized_histogram.png](images/histogram_tutorial/histogram_tutorial_05_equalized_histogram.png)

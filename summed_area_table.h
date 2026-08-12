@@ -165,19 +165,21 @@ namespace ndl
 	// rectangle_sum() -- Clamp/Wrap/Reflect all cost exactly the same to
 	// support this way, since they only ever affect how the (one-time) pad
 	// is filled, not the (per-pixel) query itself.
-	/// Averages every position over a (2*radius+1)^DIM window via one rectangle_sum() query per pixel -- O(1) per pixel regardless of radius, unlike convolve()'s O(radius^DIM). Requires an arithmetic, non-bool value_type.
-	/// @tparam ImageT Any minimal-interface image type (Image<T,DIM>, ...) whose value_type is arithmetic and not bool; src and dst must be the same concrete type.
+	/// Averages every position over a (2*radius+1)^DIM window via one rectangle_sum() query per pixel -- O(1) per pixel regardless of radius, unlike convolve()'s O(radius^DIM). Requires an arithmetic, non-bool source value_type.
+	/// @tparam SrcImageT Any minimal-interface image type (Image<T,DIM>, ...) whose value_type is arithmetic and not bool.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
 	/// @param  src    Source image.
 	/// @param  dst    Destination; must already exist with `src`'s own extent.
 	/// @param  radius Window half-width along every axis (window size 2*radius+1).
 	/// @param  border How an out-of-bounds window position is resolved. Defaults to BorderMode::Clamp.
 	/// @ingroup summed_area_table
-	template<class ImageT>
-	void box_blur(const ImageT& src, ImageT& dst, int radius, BorderMode border = BorderMode::Clamp)
+	template<class SrcImageT, class DstImageT>
+	void box_blur(const SrcImageT& src, DstImageT& dst, int radius, BorderMode border = BorderMode::Clamp)
 	{
-		using T = typename ImageT::value_type;
-		static_assert(std::is_arithmetic_v<T>, "ndl::box_blur() requires an arithmetic value_type -- not valid for e.g. std::complex<T>");
-		static_assert(!std::is_same_v<T, bool>, "ndl::box_blur() doesn't work on bool -- std::vector<bool> is bit-packed and has no .data() for the padded working copy this needs. Blurring a binary image doesn't have an obvious meaning anyway; convert to a wider type first if you need this.");
+		using SrcT = typename SrcImageT::value_type;
+		using DstT = typename DstImageT::value_type;
+		static_assert(std::is_arithmetic_v<SrcT>, "ndl::box_blur() requires an arithmetic value_type -- not valid for e.g. std::complex<T>");
+		static_assert(!std::is_same_v<SrcT, bool>, "ndl::box_blur() doesn't work on bool -- std::vector<bool> is bit-packed and has no .data() for the padded working copy this needs. Blurring a binary image doesn't have an obvious meaning anyway; convert to a wider type first if you need this.");
 		assert(radius > 0);
 		assert(dst.extent() == src.extent());
 
@@ -191,8 +193,8 @@ namespace ndl
 		center.fill(radius);
 		std::array<int, DIM> origin{};
 
-		std::vector<T> paddedData(Image<T, DIM>::size(paddedExtent));
-		Image<T, DIM> padded(paddedData.data(), paddedExtent);
+		std::vector<SrcT> paddedData(Image<SrcT, DIM>::size(paddedExtent));
+		Image<SrcT, DIM> padded(paddedData.data(), paddedExtent);
 		for (const auto& pCoord : padded.coordinates())
 			padded.at(pCoord) = src.at(detail::kernelTapCoord(origin, pCoord, center, extent, border));
 
@@ -208,7 +210,7 @@ namespace ndl
 			std::array<int, DIM> hi;
 			for (int i = 0; i < DIM; i++) hi[i] = coord[i] + 2 * radius;
 			double sum = rectangle_sum(table, coord, hi);
-			dst.at(coord) = static_cast<T>(sum / area);
+			dst.at(coord) = static_cast<DstT>(sum / area);
 		}
 	}
 }

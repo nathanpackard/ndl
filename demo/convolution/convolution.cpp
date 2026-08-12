@@ -13,6 +13,7 @@
 #include <vector>
 #include <array>
 #include <string>
+#include "../demoHelpers.h"
 
 using namespace ndl;
 using namespace ndl::fft;
@@ -29,35 +30,9 @@ namespace fs = std::filesystem;
 // a real photo, saving the result as a PNG for *visual* inspection instead of
 // printing pixel values, alongside min/max/mean (via Image's own reductions)
 // so the numbers and the picture can be checked against each other.
-
-int stepNumber = 0;
-
-void step(const std::string& code, const std::string& explanation)
-{
-    std::cout << "\n[" << ++stepNumber << "] code:    " << code << "\n";
-    std::cout << "    explain: " << explanation << "\n";
-}
-
-// Same as step() above, but for a call worth showing as more than one line
-// -- e.g. a demo helper function (fftCorrelateColor() etc.) whose whole
-// point is to stand in for a few lines of real library calls, which is
-// exactly the part worth seeing spelled out rather than hidden behind the
-// helper's name. codeLines[0] prints on the "code:" line itself;
-// codeLines[1..] print indented to line up under it, using the same
-// 13-space continuation convention as the "explain:" text below (and
-// recognized by docs/generate_tutorial.py as still being part of the same
-// code block, not a new one).
-void step(const std::vector<std::string>& codeLines, const std::string& explanation)
-{
-    std::cout << "\n[" << ++stepNumber << "] code:    " << codeLines[0] << "\n";
-    for (std::size_t i = 1; i < codeLines.size(); i++)
-        std::cout << "             " << codeLines[i] << "\n";
-    std::cout << "    explain: " << explanation << "\n";
-}
-
-template<class ImageT>
-void showArray(const std::string& label, const ImageT& img) { std::cout << "    " << label << ":\n" << img; }
-void showText(const std::string& label, const std::string& text) { std::cout << "    " << label << ":   " << text << "\n"; }
+//
+// step()/showArray()/showText()/saveForInspection()/outputDir come from
+// demoHelpers.h, shared with every other demo.
 
 // Spells out, tap by tap, exactly what a 3x3 all-1s sumKernel sums at
 // (cx,cy) under the given border mode -- built from the literal same
@@ -92,40 +67,6 @@ std::string sumKernelBreakdown(const Image<int, 2>& src, int cx, int cy, BorderM
     return oss.str();
 }
 
-std::string outputDir;
-
-// Saves img as a PNG under the demo's output folder and prints where it
-// went plus min/max/mean, so the numbers and the picture can be checked
-// against each other rather than eyeballing the picture alone.
-template<class T, int DIM>
-void saveForInspection(const std::string& label, const Image<T, DIM>& img, const std::string& filename)
-{
-    std::string path = outputDir + "/" + filename;
-    image_io::save(img, path);
-    std::cout << "    " << label << ": " << path << "\n";
-    std::cout << "        extent = {";
-    for (int i = 0; i < DIM; i++) std::cout << (i ? ", " : "") << img.extent()[i];
-    std::cout << "}   min=" << (int)img.min() << "  max=" << (int)img.max() << "  mean=" << img.mean() << "\n";
-}
-
-// Converts a double-precision image to a displayable uint8_t one, clamping
-// to [0,255] and optionally re-centering by `bias` first. Needed whenever a
-// kernel's weights aren't all non-negative (sharpen, emboss below): convolve()
-// accumulates in double internally but casts straight to T on the way out,
-// and casting a negative double straight to uint8_t is undefined behavior,
-// not a wraparound -- so those kernels convolve into a double buffer and
-// come through here instead of writing directly to a uint8_t output.
-template<int DIM>
-void toDisplayable(const Image<double, DIM>& src, Image<uint8_t, DIM>& dst, double bias = 0.0)
-{
-    auto srcIt = src.begin();
-    for (auto it = dst.begin(); it != dst.end(); ++it, ++srcIt)
-    {
-        double v = *srcIt + bias;
-        *it = (uint8_t)(v < 0.0 ? 0.0 : (v > 255.0 ? 255.0 : v));
-    }
-}
-
 // Applies a (non-negative-weight) kernel to a color image one channel at a
 // time, via per_channel(), so colors don't bleed into each other. Safe to
 // write straight to a uint8_t output only because every kernel used with
@@ -139,23 +80,10 @@ void gaussianBlurColor(const Image<uint8_t, 3>& src, double sigma, Image<uint8_t
 {
     per_channel(src, dst, 0, [&](const auto& s, auto& d) { ndl::gaussian_blur(s, d, sigma, border); });
 }
-// Shrinks src by `factor` in x and y: gaussian_blur() (via gaussianBlurColor()
-// above) so the pixels the strided view() below is about to discard get
-// averaged in first rather than aliased into noise, then a step={1,factor,factor}
-// view() to keep every `factor`-th pixel -- materialized into an OwnedImage
-// since view()'s step only *picks* samples, it doesn't average them. Demo/docs
-// infrastructure only (see its call site's comment); not itself a Part being
-// taught here.
-OwnedImage<uint8_t, 3> downsampleColor(const Image<uint8_t, 3>& src, int factor)
-{
-    auto blurred = OwnedImage<uint8_t, 3>::like(src);
-    gaussianBlurColor(src, factor * 0.5, blurred, BorderMode::Clamp);
-    return OwnedImage<uint8_t, 3>(blurred.view({}, {}, { 1, factor, factor }));
-}
-// Same idea, but for kernels that can produce negative or out-of-range
-// results (sharpen, emboss): convolves through a double intermediate per
-// channel, then clamps via toDisplayable() instead of trusting convolve()'s
-// own uint8_t output path.
+// Same idea as convolveColor(), but for kernels that can produce negative or
+// out-of-range results (sharpen, emboss): convolves through a double
+// intermediate per channel, then clamps via ndl::to_displayable()
+// (convolution.h) instead of trusting convolve()'s own uint8_t output path.
 void convolveColorSafe(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, BorderMode border, double bias = 0.0)
 {
     per_channel(src, dst, 0, [&](const auto& s, auto& d)
@@ -163,25 +91,8 @@ void convolveColorSafe(const Image<uint8_t, 3>& src, const Image<double, 2>& ker
         OwnedImage<double, 2> srcDbl(s); // deep copy, converts uint8_t -> double
         auto outDbl = OwnedImage<double, 2>::like(srcDbl);
         ndl::convolve(srcDbl, outDbl, kernel, border);
-        toDisplayable(outDbl, d, bias);
+        ndl::to_displayable(outDbl, d, bias);
     });
-}
-
-// Moves the zero-frequency (DC) component from index 0 of each axis to the
-// middle of that axis (index extent/2), wrapping the rest around it -- the
-// standard rearrangement (numpy calls it fftshift) for *displaying* a
-// spectrum, since fftn()'s raw output has DC in the corner with frequency
-// increasing outward in a way that wraps at the edge, which reads as
-// meaningless noise until it's centered.
-template<class T, int DIM>
-void fftshift(const Image<T, DIM>& src, Image<T, DIM>& dst)
-{
-    for (const auto& coord : src.coordinates())
-    {
-        std::array<int, DIM> shifted;
-        for (int d = 0; d < DIM; d++) shifted[d] = (coord[d] + src.extent()[d] / 2) % src.extent()[d];
-        dst.at(shifted) = src.at(coord);
-    }
 }
 
 // The frequency-domain equivalent of convolveColor() above: correlates a
@@ -335,11 +246,9 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 2: a real photo, box blur ===\n";
 
-    std::array<int, 3> photoExtent;
-    std::vector<uint8_t> photoData = image_io::load(dataDir + "/ng_bwgirl_crop.jpg", photoExtent);
-    Image<uint8_t, 3> photo(photoData.data(), photoExtent);
+    OwnedImage<uint8_t, 3> photo = image_io::load_owned(dataDir + "/ng_bwgirl_crop.jpg");
 
-    step("image_io::load(\"ng_bwgirl_crop.jpg\", extent)",
+    step("image_io::load_owned(\"ng_bwgirl_crop.jpg\")",
         "A real photo: extent {channel, x, y}, channel-interleaved, loaded exactly like every other\n"
         "             image_io-supported format. Saved right back out unmodified first, so you have an\n"
         "             unblurred reference to compare every later step against.");
@@ -347,7 +256,7 @@ int main()
 
     OwnedImage<double, 2> boxKernel({ 3, 3 });
     boxKernel = 1.0 / 9.0;
-    OwnedImage<uint8_t, 3> boxBlurred(photoExtent);
+    OwnedImage<uint8_t, 3> boxBlurred(photo.extent());
 
     step("convolveColor(photo, boxKernel, boxBlurred, BorderMode::Clamp)   // boxKernel is 3x3, all 1/9",
         "The exact same sumKernel idea from Part 1, just normalized (weights sum to 1 instead of 9)\n"
@@ -377,7 +286,7 @@ int main()
     ndl::gaussian_blur(impulse, response, 1.0);
     showArray("response (the Gaussian kernel's own shape, scaled by 1000)", response);
 
-    OwnedImage<uint8_t, 3> gauss1(photoExtent);
+    OwnedImage<uint8_t, 3> gauss1(photo.extent());
     step("gaussianBlurColor(photo, 2.0, gauss1, BorderMode::Clamp)",
         "The same gaussian_blur() call, on the real photo, per channel. sigma=2.0 gives a wider,\n"
         "             softer blur than Part 2's 3x3 box -- compare 02_box_blur.png and\n"
@@ -385,7 +294,7 @@ int main()
     gaussianBlurColor(photo, 2.0, gauss1, BorderMode::Clamp);
     saveForInspection("gaussian-blurred (sigma=2.0)", gauss1, "03_gaussian_sigma2.png");
 
-    OwnedImage<uint8_t, 3> gauss2(photoExtent);
+    OwnedImage<uint8_t, 3> gauss2(photo.extent());
     step("gaussianBlurColor(photo, 6.0, gauss2, BorderMode::Clamp)",
         "A much larger sigma -- the radius grows with it too (ceil(3*6.0)=18, a 37x37 kernel), so\n"
         "             this is a heavy blur, the kind used to approximate depth-of-field or to build an\n"
@@ -405,26 +314,22 @@ int main()
     // first). marbles.bmp has cleaner per-pixel contrast, so its edges show clearly
     // without needing that extra step, which keeps this part focused on convolve()
     // and Sobel rather than on noise removal.
-    std::array<int, 3> marblesRawExtent;
-    std::vector<uint8_t> marblesRawData = image_io::load(dataDir + "/marbles.bmp", marblesRawExtent);
-    Image<uint8_t, 3> marblesRaw(marblesRawData.data(), marblesRawExtent);
-    // marbles.bmp is a large photo (1419x1001); downsampleColor() (below) is
-    // the same "blur first, then keep every Nth pixel" pattern most image
+    OwnedImage<uint8_t, 3> marblesRaw = image_io::load_owned(dataDir + "/marbles.bmp");
+    // marbles.bmp is a large photo (1419x1001); ndl::downsample() (convolution.h)
+    // is the same "blur first, then keep every Nth pixel" pattern most image
     // libraries use for a resize -- gaussian_blur() so the pixels a plain
     // strided view() would otherwise skip get averaged in rather than
-    // aliased into noise, then view()'s own step argument to do the actual
-    // decimation, materialized into an OwnedImage since view()'s step only
-    // *picks* samples, it doesn't average them. Keeps every image this Part
-    // and Part 6 below saves (and the docs generated from them) a
-    // reasonable size, without changing anything about how convolve()/
-    // Sobel/fftn() themselves work.
-    OwnedImage<uint8_t, 3> marbles = downsampleColor(marblesRaw, 2);
+    // aliased into noise, then keeping every Nth position along every axis
+    // except channelAxis. Keeps every image this Part and Part 6 below saves
+    // (and the docs generated from them) a reasonable size, without changing
+    // anything about how convolve()/Sobel/fftn() themselves work.
+    OwnedImage<uint8_t, 3> marbles = downsample(marblesRaw, 2);
 
-    step("image_io::load(\"marbles.bmp\", extent); downsampleColor(marblesRaw, 2)",
+    step("image_io::load_owned(\"marbles.bmp\"); ndl::downsample(marblesRaw, 2)",
         "The start image for this Part and the frequency-domain Part 6 below -- saved on its own,\n"
         "             same as photo was in Part 2, so 06_sobel_edges.png further down has an unmodified\n"
         "             'before' to be compared against instead of only showing the 'after'. Downsampled 2x\n"
-        "             from the raw file (see downsampleColor() above main()) purely to keep this demo's\n"
+        "             from the raw file (see ndl::downsample(), convolution.h) purely to keep this demo's\n"
         "             saved images (and the docs generated from them) a reasonable size -- unrelated to\n"
         "             convolve() or Sobel themselves.");
     saveForInspection("marbles", marbles, "05_marbles_original.png");
@@ -460,8 +365,8 @@ int main()
     step("gx.multiply(gx, gx2); gy.multiply(gy, gy2); gx2.add(gy2, magSq); then sqrt() elementwise",
         "Gradient magnitude is sqrt(gx^2 + gy^2) -- built here from the non-mutating arithmetic\n"
         "             methods (multiply/add) added alongside convolve(), rather than a hand-written loop,\n"
-        "             then a sqrt+clamp pass (toDisplayable) converts back to a displayable 8-bit image,\n"
-        "             saved as a single-channel (greyscale) PNG.");
+        "             then a sqrt+clamp pass (ndl::to_displayable()) converts back to a displayable 8-bit\n"
+        "             image, saved as a single-channel (greyscale) PNG.");
     auto gx2 = OwnedImage<double, 2>::like(grey), gy2 = OwnedImage<double, 2>::like(grey), magSq = OwnedImage<double, 2>::like(grey);
     gx.multiply(gx, gx2);
     gy.multiply(gy, gy2);
@@ -475,7 +380,7 @@ int main()
 
     OwnedImage<uint8_t, 3> edgeImage({ 1, grey.extent()[0], grey.extent()[1] });
     Image<uint8_t, 2> edgeChannel = edgeImage.slice(0, 0);
-    toDisplayable(magnitude, edgeChannel);
+    ndl::to_displayable(magnitude, edgeChannel);
     saveForInspection("Sobel edge magnitude", edgeImage, "06_sobel_edges.png");
 
     // ------------------------------------------------------------------
@@ -484,7 +389,7 @@ int main()
     std::cout << "\n\n=== PART 5: arbitrary kernels ===\n";
 
     OwnedImage<double, 2> sharpenKernel({ 3, 3 }, { 0,-1,0,  -1,5,-1,  0,-1,0 });
-    OwnedImage<uint8_t, 3> sharpened(photoExtent);
+    OwnedImage<uint8_t, 3> sharpened(photo.extent());
 
     step("convolveColorSafe(photo, sharpenKernel, sharpened, BorderMode::Reflect)",
         "convolve() places no restriction on kernel weights -- here center=5, neighbors=-1, weights\n"
@@ -498,13 +403,13 @@ int main()
     saveForInspection("sharpened photo", sharpened, "07_sharpen.png");
 
     OwnedImage<double, 2> embossKernel({ 3, 3 }, { -2,-1,0,  -1,1,1,  0,1,2 });
-    OwnedImage<uint8_t, 3> embossed(photoExtent);
+    OwnedImage<uint8_t, 3> embossed(photo.extent());
 
     step("convolveColorSafe(photo, embossKernel, embossed, BorderMode::Reflect, 128.0)",
         "An asymmetric kernel: it responds to change along one diagonal and is flat along the other,\n"
         "             so flat regions of the photo collapse toward 0 (black) rather than toward their own\n"
-        "             brightness. The usual fix -- applied here via toDisplayable()'s bias argument -- is\n"
-        "             to add 128 back so 'no change' lands on mid-grey instead of black.");
+        "             brightness. The usual fix -- applied here via ndl::to_displayable()'s bias argument --\n"
+        "             is to add 128 back so 'no change' lands on mid-grey instead of black.");
     showArray("embossKernel", embossKernel);
     convolveColorSafe(photo, embossKernel, embossed, BorderMode::Reflect, 128.0);
     saveForInspection("embossed photo", embossed, "08_emboss.png");
@@ -597,10 +502,8 @@ int main()
     convolveColor(crop, box5Kernel, spatialBoxBlurred, BorderMode::Wrap);
     saveForInspection("spatial-domain box blur (BorderMode::Wrap, for a fair comparison)", spatialBoxBlurred, "12_spatial_box_blur_wrap.png");
 
-    int maxPixelDiff = 0;
-    for (const auto& coord : crop.coordinates())
-        maxPixelDiff = std::max(maxPixelDiff, std::abs((int)fftBoxBlurred.at(coord) - (int)spatialBoxBlurred.at(coord)));
-    showText("largest per-pixel difference between the two", std::to_string(maxPixelDiff) + " (out of 0-255) -- 11 and 12 should look identical");
+    auto diff = countMismatches(fftBoxBlurred, spatialBoxBlurred);
+    showText("largest per-pixel difference between the two", std::to_string(diff.maxDiff) + " (out of 0-255) -- 11 and 12 should look identical");
 
     step("timing: spatial convolve() vs FFT correlation, at two very different kernel sizes",
         "convolve()'s cost scales with image size TIMES kernel size (every output pixel visits every\n"

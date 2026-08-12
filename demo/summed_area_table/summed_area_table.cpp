@@ -12,6 +12,7 @@
 #include <vector>
 #include <array>
 #include <string>
+#include "../demoHelpers.h"
 
 using namespace ndl;
 namespace fs = std::filesystem;
@@ -23,31 +24,9 @@ namespace fs = std::filesystem;
 // result -- first on small numbers you can check by hand, then on a real
 // photo, ending with the same kind of timing comparison demo/convolution's
 // Part 6 does for FFT vs spatial convolution.
-
-int stepNumber = 0;
-
-void step(const std::string& code, const std::string& explanation)
-{
-    std::cout << "\n[" << ++stepNumber << "] code:    " << code << "\n";
-    std::cout << "    explain: " << explanation << "\n";
-}
-
-template<class ImageT>
-void showArray(const std::string& label, const ImageT& img) { std::cout << "    " << label << ":\n" << img; }
-void showText(const std::string& label, const std::string& text) { std::cout << "    " << label << ":   " << text << "\n"; }
-
-std::string outputDir;
-
-template<class T, int DIM>
-void saveForInspection(const std::string& label, const Image<T, DIM>& img, const std::string& filename)
-{
-    std::string path = outputDir + "/" + filename;
-    image_io::save(img, path);
-    std::cout << "    " << label << ": " << path << "\n";
-    std::cout << "        extent = {";
-    for (int i = 0; i < DIM; i++) std::cout << (i ? ", " : "") << img.extent()[i];
-    std::cout << "}   min=" << (int)img.min() << "  max=" << (int)img.max() << "  mean=" << img.mean() << "\n";
-}
+//
+// step()/showArray()/showText()/saveForInspection()/outputDir come from
+// demoHelpers.h, shared with every other demo.
 
 int main()
 {
@@ -114,9 +93,7 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 3: a real photo ===\n";
 
-    std::array<int, 3> photoExtent;
-    std::vector<uint8_t> photoData = image_io::load(dataDir + "/ng_bwgirl_crop.jpg", photoExtent);
-    Image<uint8_t, 3> photo(photoData.data(), photoExtent);
+    OwnedImage<uint8_t, 3> photo = image_io::load_owned(dataDir + "/ng_bwgirl_crop.jpg");
     saveForInspection("photo", photo, "01_original.png");
 
     OwnedImage<uint8_t, 3> grey3({ 1, photo.extent()[1], photo.extent()[2] });
@@ -143,7 +120,7 @@ int main()
         "             should look almost black in the top-left corner (barely anything summed in yet) and\n"
         "             brighten smoothly toward solid white at the bottom-right corner (the full-image sum\n"
         "             printed just above) -- a cumulative brightness map, not a picture of the photo itself.");
-    OwnedImage<uint8_t, 3> satHeatmap({ 3, greyExtent[0], greyExtent[1] });
+    OwnedImage<uint8_t, 2> satHeatmap(greyExtent);
     heatmap(greyTable, satHeatmap, (uint8_t)255);
     saveForInspection("summed-area table (0=barely summed, white=full running sum)", satHeatmap, "02_sat_heatmap.png");
 
@@ -181,23 +158,20 @@ int main()
         "             pixel-for-pixel everywhere, border included -- checked below, not just eyeballed. The\n"
         "             timings are the actual point.");
 
-    OwnedImage<uint8_t, 3> satBlurred3({ 1, greyExtent[0], greyExtent[1] });
-    OwnedImage<uint8_t, 3> convBlurred3({ 1, greyExtent[0], greyExtent[1] });
-    Image<uint8_t, 2> greyAsImg = grey;
-    Image<uint8_t, 2> satChannel = satBlurred3.slice(0, 0);
+    OwnedImage<uint8_t, 2> satBlurred(greyExtent);
+    OwnedImage<uint8_t, 2> convBlurred(greyExtent);
 
     for (int radius : { 2, 8, 32 })
     {
         auto t0 = std::chrono::steady_clock::now();
-        box_blur(grey, satChannel, radius, BorderMode::Wrap);
+        box_blur(grey, satBlurred, radius, BorderMode::Wrap);
         auto t1 = std::chrono::steady_clock::now();
 
         int k = 2 * radius + 1;
         std::vector<double> kernelData((std::size_t)k * k, 1.0 / (double)(k * k));
         Image<double, 2> kernel(kernelData.data(), { k, k });
-        Image<uint8_t, 2> convChannel = convBlurred3.slice(0, 0);
         auto t2 = std::chrono::steady_clock::now();
-        ndl::convolve(greyAsImg, convChannel, kernel, BorderMode::Wrap);
+        ndl::convolve(grey, convBlurred, kernel, BorderMode::Wrap);
         auto t3 = std::chrono::steady_clock::now();
 
         double satMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -205,8 +179,8 @@ int main()
         showText("radius=" + std::to_string(radius) + " (" + std::to_string(k) + "x" + std::to_string(k) + " kernel)",
             "SAT box blur " + std::to_string(satMs) + " ms   vs   convolve() " + std::to_string(convMs) + " ms");
     }
-    saveForInspection("SAT box blur (radius=32, BorderMode::Wrap)", satBlurred3, "03_sat_box_blur.png");
-    saveForInspection("convolve() box blur (radius=32, BorderMode::Wrap)", convBlurred3, "04_convolve_box_blur.png");
+    saveForInspection("SAT box blur (radius=32, BorderMode::Wrap)", satBlurred, "03_sat_box_blur.png");
+    saveForInspection("convolve() box blur (radius=32, BorderMode::Wrap)", convBlurred, "04_convolve_box_blur.png");
 
     step("count pixels where 03 and 04 differ",
         "Both used the same BorderMode::Wrap this time, so with border handling now shared between them\n"
@@ -219,15 +193,9 @@ int main()
         "             narrows to uint8_t. A handful of pixels landing right on a truncation boundary can come\n"
         "             out ±1 apart between the two paths; that's rounding noise, not a correctness bug --\n"
         "             checked below by how many pixels differ, and by how much.");
-    Image<uint8_t, 2> convChannelFinal = convBlurred3.slice(0, 0);
-    long boxBlurMismatch = 0, boxBlurMaxDiff = 0;
-    for (const auto& coord : satChannel.coordinates())
-    {
-        int d = std::abs((int)satChannel.at(coord) - (int)convChannelFinal.at(coord));
-        if (d != 0) { boxBlurMismatch++; boxBlurMaxDiff = std::max(boxBlurMaxDiff, (long)d); }
-    }
-    showText("mismatched pixels, box_blur() vs convolve() (both BorderMode::Wrap)", std::to_string(boxBlurMismatch) + " out of " + std::to_string(satChannel.size()) + "  (expect a tiny handful, from floating-point rounding order, not 0)");
-    showText("largest per-pixel difference among those mismatches", std::to_string(boxBlurMaxDiff) + "  (expected 1 -- a rounding tie, not a real disagreement)");
+    auto boxBlurDiff = countMismatches(satBlurred, convBlurred);
+    showText("mismatched pixels, box_blur() vs convolve() (both BorderMode::Wrap)", std::to_string(boxBlurDiff.count) + " out of " + std::to_string(satBlurred.size()) + "  (expect a tiny handful, from floating-point rounding order, not 0)");
+    showText("largest per-pixel difference among those mismatches", std::to_string(boxBlurDiff.maxDiff) + "  (expected 1 -- a rounding tie, not a real disagreement)");
 
     std::cout <<
         "\n\nAll outputs written to: " << outputDir << "\n"

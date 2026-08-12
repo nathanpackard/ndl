@@ -100,7 +100,7 @@ size: 504000
 
 ### Step 5
 ```cpp
-image_io::load("ng_bwgirl_crop.jpg", extent)
+image_io::load_owned("ng_bwgirl_crop.jpg")
 ```
 
 A real photo: extent {channel, x, y}, channel-interleaved, loaded exactly like every other image_io-supported format. Saved right back out unmodified first, so you have an unblurred reference to compare every later step against.
@@ -182,10 +182,10 @@ gaussian-blurred (sigma=6.0): /home/nathanpackard/git/ndl/build/demo/convolution
 
 ### Step 10
 ```cpp
-image_io::load("marbles.bmp", extent); downsampleColor(marblesRaw, 2)
+image_io::load_owned("marbles.bmp"); ndl::downsample(marblesRaw, 2)
 ```
 
-The start image for this Part and the frequency-domain Part 6 below -- saved on its own, same as photo was in Part 2, so 06_sobel_edges.png further down has an unmodified 'before' to be compared against instead of only showing the 'after'. Downsampled 2x from the raw file (see downsampleColor() above main()) purely to keep this demo's saved images (and the docs generated from them) a reasonable size -- unrelated to convolve() or Sobel themselves.
+The start image for this Part and the frequency-domain Part 6 below -- saved on its own, same as photo was in Part 2, so 06_sobel_edges.png further down has an unmodified 'before' to be compared against instead of only showing the 'after'. Downsampled 2x from the raw file (see ndl::downsample(), convolution.h) purely to keep this demo's saved images (and the docs generated from them) a reasonable size -- unrelated to convolve() or Sobel themselves.
 
 ![convolution_tutorial_05_marbles_original.png](images/convolution_tutorial/convolution_tutorial_05_marbles_original.png)
 
@@ -231,7 +231,7 @@ Two more 3x3 kernels -- proof convolve() takes any weights, not just symmetric b
 gx.multiply(gx, gx2); gy.multiply(gy, gy2); gx2.add(gy2, magSq); then sqrt() elementwise
 ```
 
-Gradient magnitude is sqrt(gx^2 + gy^2) -- built here from the non-mutating arithmetic methods (multiply/add) added alongside convolve(), rather than a hand-written loop, then a sqrt+clamp pass (toDisplayable) converts back to a displayable 8-bit image, saved as a single-channel (greyscale) PNG.
+Gradient magnitude is sqrt(gx^2 + gy^2) -- built here from the non-mutating arithmetic methods (multiply/add) added alongside convolve(), rather than a hand-written loop, then a sqrt+clamp pass (ndl::to_displayable()) converts back to a displayable 8-bit image, saved as a single-channel (greyscale) PNG.
 
 ![convolution_tutorial_06_sobel_edges.png](images/convolution_tutorial/convolution_tutorial_06_sobel_edges.png)
 
@@ -268,7 +268,7 @@ sharpened photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/07_sh
 convolveColorSafe(photo, embossKernel, embossed, BorderMode::Reflect, 128.0)
 ```
 
-An asymmetric kernel: it responds to change along one diagonal and is flat along the other, so flat regions of the photo collapse toward 0 (black) rather than toward their own brightness. The usual fix -- applied here via toDisplayable()'s bias argument -- is to add 128 back so 'no change' lands on mid-grey instead of black.
+An asymmetric kernel: it responds to change along one diagonal and is flat along the other, so flat regions of the photo collapse toward 0 (black) rather than toward their own brightness. The usual fix -- applied here via ndl::to_displayable()'s bias argument -- is to add 128 back so 'no change' lands on mid-grey instead of black.
 
 ```text
     embossKernel:
@@ -356,10 +356,10 @@ timing: spatial convolve() vs FFT correlation, at two very different kernel size
 convolve()'s cost scales with image size TIMES kernel size (every output pixel visits every kernel tap); fftn()'s cost scales with image size alone (kernel size only changes how the kernel gets *built*, not the transform cost) -- so which one wins depends entirely on the kernel. A 3x3 kernel is 9 taps; the 5x5 one already used above for the visual comparison is 25, ~2.8x more spatial work for the exact same image, while the FFT side barely changes (same 7 image-sized transforms either way -- 1 for the kernel, 2 per channel). Averaged over a few repetitions below.
 
 ```text
-3x3 kernel  -- spatial convolve():   2.169137 ms/call
-3x3 kernel  -- FFT correlation:   5.286203 ms/call
-5x5 kernel -- spatial convolve():   5.803523 ms/call
-5x5 kernel -- FFT correlation:   5.073215 ms/call
+3x3 kernel  -- spatial convolve():   2.085349 ms/call
+3x3 kernel  -- FFT correlation:   4.663543 ms/call
+5x5 kernel -- spatial convolve():   5.307213 ms/call
+5x5 kernel -- FFT correlation:   4.719188 ms/call
 ```
 
 All outputs written to: /home/nathanpackard/git/ndl/build/demo/convolution/output Open 01_original.png alongside the rest to compare by eye: 02/03/04 should look progressively softer. 06 should show bright edges on a dark background -- compare it to 05, marbles' own unmodified original. 07 should look crisper than the original, and 08 should look like a grey relief carving. 10 is what the 150x112 crop (09) looks like in the frequency domain -- a bright center fading outward, with any strong directional texture in the crop showing up as streaks through it. 11 and 12 should be visually indistinguishable -- a 5-pixel box blur, computed two independent ways (frequency domain and spatial domain), that agree to within a pixel or two of rounding.

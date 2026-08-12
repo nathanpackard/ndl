@@ -9,6 +9,7 @@
 #include <array>
 #include <string>
 #include <random>
+#include "../demoHelpers.h"
 
 using namespace ndl;
 namespace fs = std::filesystem;
@@ -19,31 +20,9 @@ namespace fs = std::filesystem;
 // demo/convolution: each step shows the code, explains it, and shows the
 // result -- first on a small hand-checkable grid, then on real images,
 // saved as PNGs for visual inspection alongside the numbers.
-
-int stepNumber = 0;
-
-void step(const std::string& code, const std::string& explanation)
-{
-    std::cout << "\n[" << ++stepNumber << "] code:    " << code << "\n";
-    std::cout << "    explain: " << explanation << "\n";
-}
-
-template<class ImageT>
-void showArray(const std::string& label, const ImageT& img) { std::cout << "    " << label << ":\n" << img; }
-void showText(const std::string& label, const std::string& text) { std::cout << "    " << label << ":   " << text << "\n"; }
-
-std::string outputDir;
-
-template<class T, int DIM>
-void saveForInspection(const std::string& label, const Image<T, DIM>& img, const std::string& filename)
-{
-    std::string path = outputDir + "/" + filename;
-    image_io::save(img, path);
-    std::cout << "    " << label << ": " << path << "\n";
-    std::cout << "        extent = {";
-    for (int i = 0; i < DIM; i++) std::cout << (i ? ", " : "") << img.extent()[i];
-    std::cout << "}   min=" << (int)img.min() << "  max=" << (int)img.max() << "  mean=" << img.mean() << "\n";
-}
+//
+// step()/showArray()/showText()/saveForInspection()/outputDir come from
+// demoHelpers.h, shared with every other demo.
 
 // Per-channel helpers, same reasoning as demo/convolution's convolveColor():
 // erode()/dilate()/median_filter() run one color channel at a time so colors
@@ -70,20 +49,6 @@ void medianColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, I
 void percentileColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, double percentile, BorderMode border)
 {
     per_channel(src, dst, 0, [&](const auto& s, auto& d) { ndl::percentile_filter(s, d, kernel, percentile, border); });
-}
-
-// Shrinks src by `factor` in x and y: gaussian_blur() so the pixels the
-// strided view() below is about to discard get averaged in first rather
-// than aliased into noise, then a step={1,factor,factor} view() to keep
-// every `factor`-th pixel -- materialized into an OwnedImage since view()'s
-// step only *picks* samples, it doesn't average them. Demo/docs
-// infrastructure only (see its call site's comment); not itself a Part
-// being taught here.
-OwnedImage<uint8_t, 3> downsampleColor(const Image<uint8_t, 3>& src, int factor)
-{
-    auto blurred = OwnedImage<uint8_t, 3>::like(src);
-    per_channel(src, blurred, 0, [&](const auto& s, auto& d) { ndl::gaussian_blur(s, d, factor * 0.5, BorderMode::Clamp); });
-    return OwnedImage<uint8_t, 3>(blurred.view({}, {}, { 1, factor, factor }));
 }
 
 // Corrupts a fixed fraction of pixels to pure black or pure white --
@@ -215,14 +180,12 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 3: erode/dilate on a real photo ===\n";
 
-    std::array<int, 3> marblesRawExtent;
-    std::vector<uint8_t> marblesRawData = image_io::load(dataDir + "/marbles.bmp", marblesRawExtent);
-    Image<uint8_t, 3> marblesRaw(marblesRawData.data(), marblesRawExtent);
-    // marbles.bmp is a large photo (1419x1001); downsampleColor() (above,
-    // near the other per-channel helpers) keeps every image this Part saves
-    // (and the docs generated from them) a reasonable size, without
-    // changing anything about how erode()/dilate() themselves work.
-    OwnedImage<uint8_t, 3> marbles = downsampleColor(marblesRaw, 2);
+    OwnedImage<uint8_t, 3> marblesRaw = image_io::load_owned(dataDir + "/marbles.bmp");
+    // marbles.bmp is a large photo (1419x1001); ndl::downsample() (convolution.h)
+    // keeps every image this Part saves (and the docs generated from them)
+    // a reasonable size, without changing anything about how erode()/
+    // dilate() themselves work.
+    OwnedImage<uint8_t, 3> marbles = downsample(marblesRaw, 2);
     saveForInspection("marbles", marbles, "01_original.png");
 
     OwnedImage<uint8_t, 3> eroded(marbles.extent());
@@ -368,14 +331,12 @@ int main()
         "             14_binary_clean.png -- the Otsu result on the never-corrupted crop, the ground truth\n"
         "             both are approximating.");
     OwnedImage<uint8_t, 2> greyDenoised(greyNoisy.extent());
-    // Explicit ImageT: greyNoisy is an Image<uint8_t,2> (a slice()'d view),
-    // greyDenoised an OwnedImage<uint8_t,2> (its own concrete type, even
-    // though it IS-A Image) -- template deduction can't unify two different
-    // types for the same ImageT on its own, the same reason add()/multiply()/
-    // etc. need an is_image_like guard elsewhere in this codebase. Naming
-    // ImageT explicitly resolves it via ordinary derived-to-base reference
-    // binding for greyDenoised.
-    ndl::median_filter<Image<uint8_t, 2>>(greyNoisy, greyDenoised, box3, BorderMode::Clamp);
+    // greyNoisy is an Image<uint8_t,2> (a slice()'d view), greyDenoised an
+    // OwnedImage<uint8_t,2> (its own concrete type) -- median_filter()'s
+    // independent SrcImageT/DstImageT template parameters deduce each side
+    // on its own, so no explicit template argument is needed even though
+    // the two sides are different concrete types.
+    ndl::median_filter(greyNoisy, greyDenoised, box3, BorderMode::Clamp);
 
     uint8_t tClean = ndl::otsu_threshold(greyClean);
     OwnedImage<uint8_t, 3> binaryClean({ 1, greyClean.extent()[0], greyClean.extent()[1] });
@@ -395,14 +356,8 @@ int main()
     // threshold on? A much higher mismatch count for the noisy version is a
     // direct, numeric measure of how much closer denoise-then-threshold gets
     // to the truth than threshold-directly.
-    auto countMismatch = [&](const Image<uint8_t, 2>& binaryImg) {
-        long mismatch = 0;
-        for (const auto& coord : binaryImg.coordinates())
-            if (binaryImg.at(coord) != binaryCleanChannel.at(coord)) mismatch++;
-        return mismatch;
-    };
-    showText("pixels disagreeing with the clean-crop ground truth, noisy threshold", std::to_string(countMismatch(binaryNoisyChannel)));
-    showText("pixels disagreeing with the clean-crop ground truth, denoised threshold", std::to_string(countMismatch(binaryDenoisedChannel)) + "  (lower is closer to the truth)");
+    showText("pixels disagreeing with the clean-crop ground truth, noisy threshold", std::to_string(countMismatches(binaryNoisyChannel, binaryCleanChannel).count));
+    showText("pixels disagreeing with the clean-crop ground truth, denoised threshold", std::to_string(countMismatches(binaryDenoisedChannel, binaryCleanChannel).count) + "  (lower is closer to the truth)");
 
     // ------------------------------------------------------------------
     // PART 8: binary morphology, tying it together

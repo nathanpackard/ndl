@@ -66,3 +66,51 @@ TEST(ImageConvolution, ImageConvolution) {
 	reportPassFail(passfail);
 }
 
+TEST(ImageConvolution, Downsample) {
+	std::stringstream passfail;
+
+	std::cout << std::endl << "DOWNSAMPLE" << std::endl;
+
+	// A constant color image should downsample to the same constant
+	// everywhere -- blurring a flat field changes nothing, and decimation
+	// just thins out identical samples.
+	OwnedImage<uint8_t, 3> constColor({ 3, 40, 30 });
+	constColor = uint8_t(77);
+	auto constDown = downsample(constColor, 2);
+	passfail << "downsample() extent: channel axis untouched, spatial axes halved: "
+		<< (constDown.extent() == std::array<int, 3>{3, 20, 15} ? "Pass" : "Fail") << std::endl;
+	bool constMatches = true;
+	for (const auto& c : constDown.coordinates()) if (constDown.at(c) != 77) constMatches = false;
+	passfail << "downsample() of a constant image stays constant: " << (constMatches ? "Pass" : "Fail") << std::endl;
+
+	// Same result whether channelAxis is explicitly 0 (the default) or
+	// passed explicitly -- confirms the default argument actually wires
+	// through to the same behavior.
+	auto explicitAxis = downsample(constColor, 2, 0, BorderMode::Clamp);
+	passfail << "downsample() default channelAxis matches explicit channelAxis=0: " << (explicitAxis == constDown ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
+TEST(ImageConvolution, ToDisplayable) {
+	std::stringstream passfail;
+
+	std::cout << std::endl << "TO_DISPLAYABLE" << std::endl;
+
+	std::vector<double> data = { -50.0, 0.0, 128.0, 300.0, 255.0 };
+	Image<double, 1> src(data.data(), { 5 });
+	OwnedImage<uint8_t, 1> dst({ 5 });
+	to_displayable(src, dst);
+	bool clampsCorrectly = dst(0) == 0 && dst(1) == 0 && dst(2) == 128 && dst(3) == 255 && dst(4) == 255;
+	passfail << "to_displayable() clamps below 0 and above 255 without a bias: " << (clampsCorrectly ? "Pass" : "Fail") << std::endl;
+
+	std::vector<double> biasedData = { -128.0, 0.0, 127.0 };
+	Image<double, 1> biasedSrc(biasedData.data(), { 3 });
+	OwnedImage<uint8_t, 1> biasedDst({ 3 });
+	to_displayable(biasedSrc, biasedDst, 128.0);
+	bool biasCorrect = biasedDst(0) == 0 && biasedDst(1) == 128 && biasedDst(2) == 255;
+	passfail << "to_displayable() applies bias before clamping: " << (biasCorrect ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+

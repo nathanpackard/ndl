@@ -3,6 +3,7 @@
 #include <ndl/morphology.h>
 #include <ndl/convolution.h>
 #include <ndl/distance_transform.h>
+#include <ndl/visualize.h>
 #include <iostream>
 #include <sstream>
 #include <filesystem>
@@ -11,6 +12,7 @@
 #include <vector>
 #include <array>
 #include <string>
+#include "../demoHelpers.h"
 
 using namespace ndl;
 namespace fs = std::filesystem;
@@ -22,49 +24,9 @@ namespace fs = std::filesystem;
 // it, and shows the result -- first on small numbers you can check by
 // hand, then on a real photo whose results you check by *looking at the
 // saved PNG*.
-
-int stepNumber = 0;
-
-void step(const std::string& code, const std::string& explanation)
-{
-    std::cout << "\n[" << ++stepNumber << "] code:    " << code << "\n";
-    std::cout << "    explain: " << explanation << "\n";
-}
-
-template<class ImageT>
-void showArray(const std::string& label, const ImageT& img) { std::cout << "    " << label << ":\n" << img; }
-void showText(const std::string& label, const std::string& text) { std::cout << "    " << label << ":   " << text << "\n"; }
-
-std::string outputDir;
-
-template<class T, int DIM>
-void saveForInspection(const std::string& label, const Image<T, DIM>& img, const std::string& filename)
-{
-    std::string path = outputDir + "/" + filename;
-    image_io::save(img, path);
-    std::cout << "    " << label << ": " << path << "\n";
-    std::cout << "        extent = {";
-    for (int i = 0; i < DIM; i++) std::cout << (i ? ", " : "") << img.extent()[i];
-    std::cout << "}   min=" << (int)img.min() << "  max=" << (int)img.max() << "  mean=" << img.mean() << "\n";
-}
-
-// Normalizes a floating-point distance field to a viewable 8-bit greyscale
-// image: 0 (nearest a background pixel) is black, the field's own max is
-// white. Demo/display infrastructure only, not itself a step being taught
-// here -- distance_transform() itself already produced the real distances.
-void distanceToGreyscale(const Image<double, 2>& dist, Image<uint8_t, 3>& out)
-{
-    double maxD = dist.max();
-    auto channel = out.slice(0, 0);
-    auto it = channel.begin();
-    for (auto dIt = dist.begin(); dIt != dist.end(); ++dIt, ++it)
-        *it = (uint8_t)(maxD <= 0 ? 0 : (*dIt / maxD) * 255.0);
-    // Duplicate the single channel into the other two so the saved PNG is
-    // plain greyscale (R==G==B) rather than looking tinted.
-    auto ch1 = out.slice(0, 1), ch2 = out.slice(0, 2);
-    ch1 = channel;
-    ch2 = channel;
-}
+//
+// step()/showArray()/showText()/saveForInspection()/outputDir come from
+// demoHelpers.h, shared with every other demo.
 
 int main()
 {
@@ -157,9 +119,7 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 3: a real photo ===\n";
 
-    std::array<int, 3> photoExtent;
-    std::vector<uint8_t> photoData = image_io::load(dataDir + "/ng_bwgirl_crop.jpg", photoExtent);
-    Image<uint8_t, 3> photo(photoData.data(), photoExtent);
+    OwnedImage<uint8_t, 3> photo = image_io::load_owned(dataDir + "/ng_bwgirl_crop.jpg");
     saveForInspection("photo", photo, "01_original.png");
 
     OwnedImage<uint8_t, 3> grey3({ 1, photo.extent()[1], photo.extent()[2] });
@@ -178,11 +138,7 @@ int main()
         "             own tiny island of foreground/background, fracturing what should be one smooth distance\n"
         "             field into a field full of tiny local maxima.");
     OwnedImage<uint8_t, 2> greySmooth(grey.extent());
-    // Explicit ImageT: grey is an Image<uint8_t,2> (a slice()'d view),
-    // greySmooth an OwnedImage<uint8_t,2> (its own concrete type) -- same
-    // deduction wrinkle demo/morphology's median_filter() call below hits,
-    // resolved the same way.
-    gaussian_blur<Image<uint8_t, 2>>(grey, greySmooth, 1.5, BorderMode::Clamp);
+    gaussian_blur(grey, greySmooth, 1.5, BorderMode::Clamp);
 
     step("uint8_t t = otsu_threshold(greySmooth); threshold(greySmooth, maskU8, t, 1, 0);",
         "distance_transform() needs a binary-ish source, so the smoothed greyscale photo is thresholded --\n"
@@ -192,9 +148,8 @@ int main()
     OwnedImage<uint8_t, 2> maskU8(greySmooth.extent());
     threshold(greySmooth, maskU8, t, (uint8_t)1, (uint8_t)0);
 
-    OwnedImage<uint8_t, 3> maskImg({ 1, grey.extent()[0], grey.extent()[1] });
-    Image<uint8_t, 2> maskImgChannel = maskImg.slice(0, 0);
-    threshold(greySmooth, maskImgChannel, t, (uint8_t)255, (uint8_t)0);
+    OwnedImage<uint8_t, 2> maskImg(grey.extent());
+    threshold(greySmooth, maskImg, t, (uint8_t)255, (uint8_t)0);
     saveForInspection("binary mask (smoothed, then otsu-thresholded)", maskImg, "02_mask.png");
 
     step("distance_transform(maskU8, dt)   // distance to the nearest background (0) pixel",
@@ -210,8 +165,8 @@ int main()
     distance_transform(maskU8, photoDist);
     showText("max distance found", std::to_string(photoDist.max()));
 
-    OwnedImage<uint8_t, 3> distImg({ 3, grey.extent()[0], grey.extent()[1] });
-    distanceToGreyscale(photoDist, distImg);
+    OwnedImage<uint8_t, 2> distImg(grey.extent());
+    heatmap(photoDist, distImg, (uint8_t)255);
     saveForInspection("distance field (0=black, max=white)", distImg, "03_distance.png");
 
     std::cout <<
