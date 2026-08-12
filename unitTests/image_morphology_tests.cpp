@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
+#include <ndl/morphology.h>
 
 #include "testHelpers.h"
 
@@ -29,29 +30,24 @@ TEST(ImageMorphology, ImageMorphology) {
 	std::vector<int> outData(25);
 	Image<int, 2> out(outData.data(), { 5, 5 });
 
-	grid.erode(box, out);
+	ndl::erode(grid, out, box);
 	passfail << "erode(box) takes the minimum of the 3x3 neighborhood: " << (out(2, 2) == 7 ? "Pass" : "Fail") << std::endl;
-	grid.dilate(box, out);
+	ndl::dilate(grid, out, box);
 	passfail << "dilate(box) takes the maximum of the 3x3 neighborhood: " << (out(2, 2) == 19 ? "Pass" : "Fail") << std::endl;
 
-	grid.min(box, out);
-	passfail << "min(kernel, output) overload matches erode(): " << (out(2, 2) == 7 ? "Pass" : "Fail") << std::endl;
-	grid.max(box, out);
-	passfail << "max(kernel, output) overload matches dilate(): " << (out(2, 2) == 19 ? "Pass" : "Fail") << std::endl;
-
-	grid.median_filter(box, out);
+	ndl::median_filter(grid, out, box);
 	passfail << "median_filter(box) takes the middle of the sorted 3x3 neighborhood: " << (out(2, 2) == 13 ? "Pass" : "Fail") << std::endl;
 
-	grid.erode(cross, out);
+	ndl::erode(grid, out, cross);
 	passfail << "erode(cross) considers only the 5-tap plus-sign neighborhood: " << (out(2, 2) == 8 ? "Pass" : "Fail") << std::endl;
-	grid.dilate(cross, out);
+	ndl::dilate(grid, out, cross);
 	passfail << "dilate(cross) considers only the 5-tap plus-sign neighborhood: " << (out(2, 2) == 18 ? "Pass" : "Fail") << std::endl;
 
-	grid.percentile_filter(box, out, 0.0);
+	ndl::percentile_filter(grid, out, box, 0.0);
 	passfail << "percentile_filter(0) equals erode() (the minimum): " << (out(2, 2) == 7 ? "Pass" : "Fail") << std::endl;
-	grid.percentile_filter(box, out, 100.0);
+	ndl::percentile_filter(grid, out, box, 100.0);
 	passfail << "percentile_filter(100) equals dilate() (the maximum): " << (out(2, 2) == 19 ? "Pass" : "Fail") << std::endl;
-	grid.percentile_filter(box, out, 50.0);
+	ndl::percentile_filter(grid, out, box, 50.0);
 	passfail << "percentile_filter(50) equals median_filter(): " << (out(2, 2) == 13 ? "Pass" : "Fail") << std::endl;
 
 	// Dilating a single point reproduces the structuring element's own shape
@@ -64,12 +60,12 @@ TEST(ImageMorphology, ImageMorphology) {
 	std::vector<int> dotOutData(25);
 	Image<int, 2> dotOut(dotOutData.data(), { 5, 5 });
 
-	dot.dilate(box, dotOut);
+	ndl::dilate(dot, dotOut, box);
 	int boxOnes = 0;
 	for (auto it = dotOut.begin(); it != dotOut.end(); ++it) if (*it == 1) boxOnes++;
 	passfail << "dilate(box) of a single point turns on all 9 taps of the box (filled square): " << (boxOnes == 9 ? "Pass" : "Fail") << std::endl;
 
-	dot.dilate(cross, dotOut);
+	ndl::dilate(dot, dotOut, cross);
 	int crossOnes = 0;
 	for (auto it = dotOut.begin(); it != dotOut.end(); ++it) if (*it == 1) crossOnes++;
 	passfail << "dilate(cross) of a single point turns on only the 5 cross taps (plus sign, not a filled diamond): " << (crossOnes == 5 ? "Pass" : "Fail") << std::endl;
@@ -90,12 +86,12 @@ TEST(ImageMorphology, OtsuThreshold) {
 	for (int i = 1000; i < 2000; i++) data[i] = 200;
 	Image<uint8_t, 1> img(data.data(), { 2000 });
 
-	uint8_t t = img.otsu_threshold();
+	uint8_t t = ndl::otsu_threshold(img);
 	passfail << "otsu_threshold() on a clean bimodal split lands strictly between the two clusters: " << (t >= 50 && t < 200 ? "Pass" : "Fail") << std::endl;
 
 	std::vector<uint8_t> outData(2000);
 	Image<uint8_t, 1> out(outData.data(), { 2000 });
-	img.threshold(t, out); // default on/off = 1/0
+	ndl::threshold(img, out, t); // default on/off = 1/0
 	bool separated = true;
 	for (int i = 0; i < 1000; i++) if (out(i) != 0) separated = false;
 	for (int i = 1000; i < 2000; i++) if (out(i) != 1) separated = false;
@@ -103,7 +99,7 @@ TEST(ImageMorphology, OtsuThreshold) {
 
 	std::vector<uint8_t> out255Data(2000);
 	Image<uint8_t, 1> out255(out255Data.data(), { 2000 });
-	img.threshold(t, out255, (uint8_t)255, (uint8_t)0);
+	ndl::threshold(img, out255, t, (uint8_t)255, (uint8_t)0);
 	bool separated255 = true;
 	for (int i = 0; i < 1000; i++) if (out255(i) != 0) separated255 = false;
 	for (int i = 1000; i < 2000; i++) if (out255(i) != 255) separated255 = false;
@@ -115,14 +111,14 @@ TEST(ImageMorphology, OtsuThreshold) {
 	for (int i = 0; i < 800; i++) skewedData[i] = 30;
 	for (int i = 800; i < 1000; i++) skewedData[i] = 220;
 	Image<uint8_t, 1> skewed(skewedData.data(), { 1000 });
-	uint8_t tSkewed = skewed.otsu_threshold();
+	uint8_t tSkewed = ndl::otsu_threshold(skewed);
 	passfail << "otsu_threshold() on a skewed (800/200) split still lands between the clusters: " << (tSkewed >= 30 && tSkewed < 220 ? "Pass" : "Fail") << std::endl;
 
 	// A uniform (single-value) image is degenerate -- nothing to split --
 	// but must not crash, and the only sane answer is that single value.
 	std::vector<uint8_t> uniformData(100, 128);
 	Image<uint8_t, 1> uniform(uniformData.data(), { 100 });
-	uint8_t tUniform = uniform.otsu_threshold();
+	uint8_t tUniform = ndl::otsu_threshold(uniform);
 	passfail << "otsu_threshold() on a uniform image returns that single value rather than crashing: " << (tUniform == 128 ? "Pass" : "Fail") << std::endl;
 
 	// Generalization: the same bimodal idea, but on float data with a
@@ -133,12 +129,12 @@ TEST(ImageMorphology, OtsuThreshold) {
 	for (int i = 0; i < 1000; i++) floatData[i] = 0.2f;
 	for (int i = 1000; i < 2000; i++) floatData[i] = 0.8f;
 	Image<float, 1> floatImg(floatData.data(), { 2000 });
-	float floatT = floatImg.otsu_threshold();
+	float floatT = ndl::otsu_threshold(floatImg);
 	passfail << "otsu_threshold() generalizes to float data (threshold lands in (0.2,0.8)): " << (floatT > 0.2f && floatT < 0.8f ? "Pass" : "Fail") << std::endl;
 
 	std::vector<float> floatOutData(2000);
 	Image<float, 1> floatOut(floatOutData.data(), { 2000 });
-	floatImg.threshold(floatT, floatOut, 1.0f, 0.0f);
+	ndl::threshold(floatImg, floatOut, floatT, 1.0f, 0.0f);
 	bool floatSeparated = true;
 	for (int i = 0; i < 1000; i++) if (floatOut(i) != 0.0f) floatSeparated = false;
 	for (int i = 1000; i < 2000; i++) if (floatOut(i) != 1.0f) floatSeparated = false;

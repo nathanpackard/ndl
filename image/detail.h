@@ -49,13 +49,11 @@ namespace ndl
 			return allIndices;
 		}
 
-		// Shared setup for every kernel-walking operation (erode/dilate/
-		// median_filter/percentile_filter/convolve, whether reached as an
-		// Image member or one of the free functions below): the kernel's
-		// center, and its nonzero ("included") taps, computed once per
-		// call rather than once per output pixel -- see the comment on
-		// the per-pixel-loop version this replaced in an earlier revision
-		// of this file. DIM is read off kernel.extent()'s own
+		// Shared setup for every kernel-walking operation (erode()/dilate()/
+		// median_filter()/percentile_filter()/convolve(), in morphology.h
+		// and convolution.h): the kernel's center, and its nonzero
+		// ("included") taps, computed once per call rather than once per
+		// output pixel. DIM is read off kernel.extent()'s own
 		// std::array<int,DIM> return type via std::tuple_size, rather
 		// than being named as a separate template parameter -- kernel
 		// only needs to expose extent()/at()/coordinates() (the same

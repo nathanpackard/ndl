@@ -569,31 +569,20 @@ namespace ndl
 			for (int axis = 0; axis < DIM; axis++)
 			{
 				int n = output.extent()[axis];
-				// Every dimension's extent used to have to be an exact power
-				// of two -- FFTPowerOfTwo<Real,MaxPo2Size> recurses by
-				// repeatedly halving MaxPo2Size looking for an exact match to
-				// n, and silently falls through to its N=0 base case (a
-				// no-op) for anything else, so a non-power-of-two n used to
-				// silently leave `output` all-zero with no error at all in a
-				// Release build (confirmed empirically: fftn() on a
-				// 100-element input returned a silently all-zero spectrum
-				// under -DNDEBUG, before this was fixed). Now, non-power-of-
-				// two dimensions go through FFTBluestein above instead --
-				// still correct, just several times more work than the direct
-				// power-of-two path (one padded FFT/IFFT pair plus the O(n)
-				// chirp setup, versus one direct FFT/IFFT), so the fast path
-				// stays the default for the common case and this is strictly
-				// additive.
+				// An exact power-of-two extent takes the direct FFTPowerOfTwo<Real,MaxPo2Size>
+				// path; any other extent goes through FFTBluestein above instead -- still
+				// correct, just several times more work (one padded FFT/IFFT pair plus the
+				// O(n) chirp setup, versus one direct FFT/IFFT), so the fast path stays the
+				// one used for the common case.
 				bool po2 = detail::isPowerOfTwo(n);
 				// Checked here, sequentially, rather than left to
 				// FFTBluestein::ensure()'s own throw when the first fiber
 				// below hits it: an exception thrown from inside a
 				// std::execution::par callable doesn't propagate to the
 				// caller at all -- the standard mandates std::terminate()
-				// instead (confirmed empirically: this exact
-				// invalid_argument, thrown from inside the parallel
-				// for_each, aborted the whole process instead of being
-				// catchable). FFTBluestein keeps its own check too, for
+				// instead, so an uncaught throw from inside the parallel
+				// for_each below would abort the whole process rather than
+				// being catchable. FFTBluestein keeps its own check too, for
 				// when it's used directly outside a parallel context.
 				if (!po2 && detail::nextPowerOfTwo(2 * n - 1) > MaxPo2Size)
 				{

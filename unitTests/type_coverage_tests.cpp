@@ -6,6 +6,8 @@
 #include <iostream>
 
 #include <ndl/image.h>
+#include <ndl/convolution.h>
+#include <ndl/morphology.h>
 
 #include "testHelpers.h"
 
@@ -15,14 +17,13 @@ using namespace ndl;
 // OwnedImage, PackedBitImage) through its paces with each data type the
 // library is meant to support (bool, integral, floating-point, and
 // std::complex), and to confirm the operations that only work for SOME of
-// those types actually reject the rest -- see image/core.h and
-// image/algorithms.h for the static_assert-based restrictions this checks
+// those types actually reject the rest -- see image/core.h, morphology.h,
+// and convolution.h for the static_assert-based restrictions this checks
 // against, and unitTests/negative_compile/ for the restrictions that can
 // only be verified by actually failing to compile (a static_assert is a
 // hard error, not a SFINAE substitution failure, so it can't be probed
 // gracefully via is_constructible_v/decltype from inside a normal TEST()
-// the way is_image_like's convertibility check can -- confirmed empirically
-// before writing this file, not assumed).
+// the way is_image_like's convertibility check can).
 
 // Compile-time enforcement of the exact trait every ordering/bitwise
 // static_assert in the library is gated on. If a future change ever made
@@ -97,13 +98,13 @@ TEST(TypeCoverage, BoolImageMorphology) {
 
 	std::array<bool, 49> erodedData{};
 	Image<bool, 2> eroded(erodedData.data(), { 7, 7 });
-	src.erode(box3, eroded, BorderMode::Clamp);
+	ndl::erode(src, eroded, box3, BorderMode::Clamp);
 	EXPECT_TRUE(eroded(3, 3));    // center of the filled square survives (all 9 neighbors true)
 	EXPECT_FALSE(eroded(2, 2));   // corner's neighborhood includes an outside false
 
 	std::array<bool, 49> dilatedData{};
 	Image<bool, 2> dilated(dilatedData.data(), { 7, 7 });
-	src.dilate(box3, dilated, BorderMode::Clamp);
+	ndl::dilate(src, dilated, box3, BorderMode::Clamp);
 	EXPECT_TRUE(dilated(1, 1));   // one step outside the square, now covered by dilation
 	EXPECT_FALSE(dilated(0, 0));  // still too far away
 }
@@ -144,7 +145,7 @@ TEST(TypeCoverage, FloatImageArithmeticAndOrdering) {
 	OwnedImage<double, 1> avgKernel({ 3 }, { 1.0 / 3, 1.0 / 3, 1.0 / 3 });
 	std::array<float, 4> outData{};
 	Image<float, 1> out(outData.data(), { 4 });
-	a.convolve(avgKernel, out, BorderMode::Clamp);
+	ndl::convolve(a, out, avgKernel, BorderMode::Clamp);
 	EXPECT_FLOAT_EQ(out(1), (3.0f + 5.0f + 7.0f) / 3.0f);
 }
 

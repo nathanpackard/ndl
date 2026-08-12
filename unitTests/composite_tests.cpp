@@ -7,6 +7,8 @@
 #include <iostream>
 
 #include <ndl/image.h>
+#include <ndl/convolution.h>
+#include <ndl/morphology.h>
 #include <ndl/imageIO.h>
 
 #include "testHelpers.h"
@@ -115,7 +117,7 @@ TEST(Composite, ConvolveThenReduce) {
 
 	std::vector<int> outData(20);
 	Image<int, 2> out(outData.data(), { 5, 4 });
-	img.convolve(kernel, out, BorderMode::Wrap);
+	ndl::convolve(img, out, kernel, BorderMode::Wrap);
 
 	// With wrap (circular) border handling, a fixed circular shift is a
 	// bijection over a periodic image, so every image pixel contributes to
@@ -146,8 +148,8 @@ TEST(Composite, MorphologyOpening) {
 
 	std::vector<int> erodedData(100), openedData(100);
 	Image<int, 2> eroded(erodedData.data(), { 10, 10 }), opened(openedData.data(), { 10, 10 });
-	img.erode(box, eroded);
-	eroded.dilate(box, opened);
+	ndl::erode(img, eroded, box);
+	ndl::dilate(eroded, opened, box);
 
 	// No isolated pixel's 3x3 neighborhood is ever entirely bright, so erode()
 	// wipes it out completely -- dilating an all-zero region afterward can't

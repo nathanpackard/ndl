@@ -9,6 +9,7 @@
 #include <stdexcept>
 
 #include <ndl/image.h>
+#include <ndl/convolution.h>
 #include <ndl/fft.h>
 
 #include "testHelpers.h"
@@ -177,7 +178,7 @@ TEST(FFT, FFTMatchesSpatialConvolution) {
 	// --- spatial domain ---
 	std::vector<double> spatialData((size_t)W * H);
 	Image<double, 2> spatial(spatialData.data(), { W, H });
-	img.convolve(kernel, spatial, BorderMode::Wrap);
+	ndl::convolve(img, spatial, kernel, BorderMode::Wrap);
 
 	// --- frequency domain ---
 	std::vector<std::complex<double>> imgFreqData((size_t)W * H), kernelPaddedData((size_t)W * H),
@@ -217,19 +218,14 @@ TEST(FFT, FFTMatchesSpatialConvolution) {
 		maxImag = std::max(maxImag, std::abs(back.at(coord).imag()));
 	}
 	passfail << "FFT-based circular cross-correlation has ~0 imaginary part (as expected for real inputs): " << (maxImag < 1e-6 ? "Pass" : "Fail") << std::endl;
-	passfail << "FFT-based circular cross-correlation matches image.convolve(kernel, out, BorderMode::Wrap): " << (maxErr < 1e-6 ? "Pass" : "Fail") << std::endl;
+	passfail << "FFT-based circular cross-correlation matches ndl::convolve(img, out, kernel, BorderMode::Wrap): " << (maxErr < 1e-6 ? "Pass" : "Fail") << std::endl;
 	reportPassFail(passfail);
 }
 
 TEST(FFT, NonPowerOfTwoSizeComputesCorrectly) {
-	// fftn()/ifftn() no longer require a power-of-two extent -- non-power-
-	// of-two dimensions now go through FFTBluestein (fft.h) instead of the
-	// direct Cooley-Tukey path. This used to be a debug-only assert() that
-	// left a silently all-zero `output` in a Release build for a
-	// non-power-of-two size (confirmed empirically before it was fixed: a
-	// 100-element fftn() call returned an all-zero spectrum under -DNDEBUG)
-	// -- first fixed to throw a clear error, and now to actually compute
-	// the right answer instead, cross-checked here against the same
+	// fftn()/ifftn() work at any extent, not just a power of two:
+	// non-power-of-two dimensions go through FFTBluestein (fft.h) instead of
+	// the direct Cooley-Tukey path, cross-checked here against the same
 	// brute-force reference DFT the power-of-two tests above use.
 	std::stringstream passfail;
 	for (int N : {3, 5, 6, 7, 12, 13, 100, 101}) {

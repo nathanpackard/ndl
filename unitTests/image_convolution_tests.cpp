@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
+#include <ndl/convolution.h>
 
 #include "testHelpers.h"
 
@@ -25,14 +26,14 @@ TEST(ImageConvolution, ImageConvolution) {
 	Image<int, 2> identityKernel(identityKernelData.data(), { 3, 3 });
 	std::vector<int> outData(16);
 	Image<int, 2> out(outData.data(), { 4, 4 });
-	img.convolve(identityKernel, out);
+	ndl::convolve(img, out, identityKernel);
 	passfail << "convolve() with identity kernel leaves image unchanged: " << (out == img ? "Pass" : "Fail") << std::endl;
 
 	// All-ones 3x3 kernel: at an interior point every tap is in-bounds, so the
 	// result is just the sum of the 3x3 neighborhood.
 	std::vector<int> sumKernelData(9, 1);
 	Image<int, 2> sumKernel(sumKernelData.data(), { 3, 3 });
-	img.convolve(sumKernel, out, BorderMode::Clamp);
+	ndl::convolve(img, out, sumKernel, BorderMode::Clamp);
 	int expectedInterior = 1 + 2 + 3 + 5 + 6 + 7 + 9 + 10 + 11; // 3x3 block around (1,1)
 	passfail << "convolve() sum kernel matches expected interior value: " << (out(1, 1) == expectedInterior ? "Pass" : "Fail") << std::endl;
 
@@ -40,7 +41,7 @@ TEST(ImageConvolution, ImageConvolution) {
 	// 9 taps onto the 2x2 block (0,0),(1,0),(0,1),(1,1), with (0,0) counted 4x
 	// and the other two edge cells counted 2x each -- derive that generically
 	// from img's own values rather than hardcoding a number.
-	img.convolve(sumKernel, out, BorderMode::Clamp);
+	ndl::convolve(img, out, sumKernel, BorderMode::Clamp);
 	int clampCorner = out(0, 0);
 	int expectedClampCorner = 4 * img(0, 0) + 2 * img(1, 0) + 2 * img(0, 1) + img(1, 1);
 	passfail << "convolve() clamp border matches hand-derived value: " << (clampCorner == expectedClampCorner ? "Pass" : "Fail") << std::endl;
@@ -48,7 +49,7 @@ TEST(ImageConvolution, ImageConvolution) {
 	// Wrap (circular) border handling picks entirely different source pixels
 	// at the corner (it wraps to the opposite edge instead of repeating the
 	// edge pixel), so it must disagree with the clamp result computed above.
-	img.convolve(sumKernel, out, BorderMode::Wrap);
+	ndl::convolve(img, out, sumKernel, BorderMode::Wrap);
 	int wrapCorner = out(0, 0);
 	passfail << "convolve() wrap border differs from clamp border at the corner: " << (wrapCorner != clampCorner ? "Pass" : "Fail") << std::endl;
 
@@ -57,9 +58,9 @@ TEST(ImageConvolution, ImageConvolution) {
 	// different multiset of source pixels, so the corner values must differ.
 	std::vector<int> sumKernel5Data(25, 1);
 	Image<int, 2> sumKernel5(sumKernel5Data.data(), { 5, 5 });
-	img.convolve(sumKernel5, out, BorderMode::Clamp);
+	ndl::convolve(img, out, sumKernel5, BorderMode::Clamp);
 	int clampCorner5 = out(0, 0);
-	img.convolve(sumKernel5, out, BorderMode::Reflect);
+	ndl::convolve(img, out, sumKernel5, BorderMode::Reflect);
 	int reflectCorner5 = out(0, 0);
 	passfail << "convolve() reflect border differs from clamp border with a wider kernel: " << (reflectCorner5 != clampCorner5 ? "Pass" : "Fail") << std::endl;
 	reportPassFail(passfail);

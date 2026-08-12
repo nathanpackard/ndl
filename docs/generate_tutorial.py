@@ -137,9 +137,7 @@ def render_markdown(lines, page_label, image_dir_rel):
             # shared output directory by basename alone, so two demos both
             # saving e.g. "01_original.png" would silently overwrite one
             # another there even though they're copied into separate
-            # per-page source subdirectories below (confirmed empirically
-            # -- convolution's own 01_original.png was being clobbered by
-            # morphology's before this prefix was added).
+            # per-page source subdirectories below.
             dst_name = f'{page_label}_{src.name}'
             out.append(f'![{dst_name}]({image_dir_rel}/{dst_name})')
             out.append('')

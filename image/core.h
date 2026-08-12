@@ -13,7 +13,6 @@
 #include <type_traits>
 #include "border_mode.h"
 #include "detail.h"
-#include "algorithms.h"
 #include "../mathHelpers.h"
 
 namespace ndl
@@ -22,9 +21,12 @@ namespace ndl
 	///
 	/// The core type of ndl: construct from an existing buffer, then use view()/slice()/
 	/// swap_axes()/mirror() for zero-copy reshaped views of the same memory, or the
-	/// arithmetic/comparison operators, reductions (sum()/min()/max()/mean()), and
-	/// filters (convolve()/erode()/dilate()/median_filter()/percentile_filter()/
-	/// threshold()/gaussian_blur()) for processing.
+	/// arithmetic/comparison operators and reductions (sum()/min()/max()/mean()) below.
+	/// That's everything Image itself provides -- convolution (convolve()/
+	/// gaussian_blur()) and morphology/thresholding (erode()/dilate()/median_filter()/
+	/// percentile_filter()/threshold()/otsu_threshold()) are separate toolkits built on
+	/// top of it, the same way fftn()/ifftn() (fft.h) are: free functions (see
+	/// convolution.h/morphology.h) taking an Image as a plain argument, not members.
 	///
 	/// Image never allocates: every constructor takes an existing buffer (or another
 	/// Image sharing one). See OwnedImage for a subclass that allocates and owns its
@@ -35,12 +37,12 @@ namespace ndl
 	///             integral, or floating-point); a few (sum(), equality, the
 	///             compound-assignment arithmetic operators) also work for
 	///             std::complex. Operations that need a total order or a double
-	///             conversion (min()/max()/mean()/convolve()/threshold()/
-	///             otsu_threshold()/erode()/dilate()/median_filter()/
-	///             percentile_filter()/the comparison operators) are rejected at
-	///             compile time for non-arithmetic T, with a message naming the
-	///             actual reason. Bitwise/modulus operators additionally require
-	///             an integral T.
+	///             conversion (min()/max()/mean()/the comparison operators here, plus
+	///             convolve()/threshold()/otsu_threshold()/erode()/dilate()/
+	///             median_filter()/percentile_filter() in convolution.h/morphology.h)
+	///             are rejected at compile time for non-arithmetic T, with a message
+	///             naming the actual reason. Bitwise/modulus operators additionally
+	///             require an integral T.
 	/// @tparam DIM Number of dimensions (>= 1). Not runtime-configurable -- a
 	///             2D and a 3D Image are unrelated types, the same way
 	///             `std::array<int,2>` and `std::array<int,3>` are.
@@ -484,19 +486,6 @@ namespace ndl
 			axisReduceOp(axis, output, [](T a, T b) { return b > a ? b : a; });
 		}
 
-			// A third min()/max() overload, alongside the whole-image and per-axis
-			// ones above: a *local* min/max, taken over the neighborhood `kernel`
-			// marks (same "kernel centered on every output position" walk
-			// convolve() uses). This is exactly morphological erosion/dilation,
-			// so both just forward to the free ndl::erode()/ndl::dilate()
-			// functions below (see their comment) -- "windowed min/max" and
-			// "erode/dilate" are both standard vocabulary for the identical
-			// operation, and which one reads clearer depends on context.
-			template<class K>
-			void min(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { ndl::erode(*this, output, kernel, border); }
-			template<class K>
-			void max(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { ndl::dilate(*this, output, kernel, border); }
-
 		void mean(int axis, Image<T, DIM>& output) const {
 			sum(axis, output);
 			T count = static_cast<T>(extent_[axis]);
@@ -730,234 +719,16 @@ namespace ndl
 			}
 			return Image<T, DIM>(*this, newOffset, newExtent, newStride, newMirror);
 		}
-		// Applies `kernel` to *this via correlation (the kernel is not flipped --
-		// the same convention OpenCV's filter2D uses, as opposed to signal
-		// processing's flipped-kernel definition), writing a same-size result
-		// into `output`, which must already exist with *this's own extent.
-		// Kernel indices are centered: extent K along a dimension covers
-		// offsets -(K/2) .. K-(K/2)-1 from the output element being computed,
-		// so an odd-sized kernel (e.g. 3x3) reaches an equal number of
-		// neighbors in each direction. `border` selects how an offset that
-		// falls outside *this is handled, via the same _clamp/_wrap/_reflect
-		// primitives the iterator's clamp()/wrap()/reflect() accessors use.
-		template<class K>
-		/// Correlates `kernel` against every position, writing the weighted sum into `output`. Requires an arithmetic T.
-		/// @tparam K      Kernel element type.
-		/// @param kernel  Weights, nonzero-tap = included; convolve() also uses the value as a weight. Its own extent sets the neighborhood radius per dimension.
-		/// @param output  Destination; must already exist with this image's own extent.
-		/// @param border  How an out-of-bounds neighbor is resolved.
-		/// @ingroup morphology_filtering
-		void convolve(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
-		{
-			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::convolve() requires a T convertible to double -- not valid for e.g. std::complex<T> (the weighted sum is accumulated in double)");
-			assert(output.extent() == extent_);
-			auto center = kernelCenter(kernel);
-			auto taps = kernelIncludedTaps(kernel); // zero-weight taps contribute nothing to the sum, so skipping them is free
-
-			for (const auto& coord : coordinates())
-			{
-				double total = 0;
-				for (const auto& kCoord : taps)
-					total += static_cast<double>(at(kernelTapCoord(coord, kCoord, center, border))) * static_cast<double>(kernel.at(kCoord));
-				output.at(coord) = static_cast<T>(total);
-			}
-		}
-
-			// Morphology: the classic "shrink bright regions" (erode) / "grow
-			// bright regions" (dilate) operations are just names for the local
-			// min()/max() overload above -- both forward to the free
-			// ndl::erode()/ndl::dilate() functions (see their comment above,
-			// near BorderMode) rather than repeating the walk here, so the
-			// exact same code also runs against a PackedBitImage.
-			template<class K>
-			/// Morphological erosion: replaces each element with the minimum of its `kernel`-shaped neighborhood.
-			/// @tparam K     Kernel element type.
-			/// @param kernel Structuring element (nonzero tap = included); see make_box_kernel()/make_cross_kernel().
-			/// @param output Destination; must already exist with this image's own extent.
-			/// @param border How an out-of-bounds neighbor is resolved.
-			/// @ingroup morphology_filtering
-			void erode(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { ndl::erode(*this, output, kernel, border); }
-			template<class K>
-			/// Morphological dilation: replaces each element with the maximum of its `kernel`-shaped neighborhood.
-			/// @tparam K     Kernel element type.
-			/// @param kernel Structuring element (nonzero tap = included); see make_box_kernel()/make_cross_kernel().
-			/// @param output Destination; must already exist with this image's own extent.
-			/// @param border How an out-of-bounds neighbor is resolved.
-			/// @ingroup morphology_filtering
-			void dilate(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { ndl::dilate(*this, output, kernel, border); }
-
-			// percentile_filter() walks the same "kernel centered on every output
-			// position" pattern convolve() above does, but instead of combining
-			// the values under the kernel, picks ONE of them: the window is
-			// partially sorted (std::nth_element, average O(n) rather than a
-			// full O(n log n) sort) and the value at nearest-rank
-			// round(percentile/100 * (N-1)) of its N included values is kept.
-			// percentile 0/50/100 are exactly min/median/max over the window --
-			// median_filter() below is just this at 50 -- so this is a strict
-			// generalization of erode()/median_filter()/dilate() rather than a
-			// separate operation. Anything in between is a genuine "soft" version
-			// of erode/dilate: percentile 10 shrinks bright regions like erode
-			// but is more resistant to a single dark outlier pixel, since it
-			// takes the 10th-ranked value rather than the strict minimum. Same
-			// 0/1-mask "nonzero = included" convention as min/max above --
-			// make_box_kernel()/make_cross_kernel() (image/kernels.h) work here too.
-			// Unlike a mean/gaussian blur, the output is always one of the actual
-			// input values (never an average), which is what makes median_filter()
-			// specifically good at removing salt-and-pepper noise without
-			// smearing edges. Forwards to the free ndl::percentile_filter(),
-			// same reasoning as erode()/dilate() above.
-			template<class K>
-			/// Replaces each element with the given percentile (0=min, 50=median, 100=max) of its `kernel`-shaped neighborhood.
-			/// @tparam K          Kernel element type.
-			/// @param kernel      Structuring element (nonzero tap = included).
-			/// @param output      Destination; must already exist with this image's own extent.
-			/// @param percentile  0-100.
-			/// @param border      How an out-of-bounds neighbor is resolved.
-			/// @ingroup morphology_filtering
-			void percentile_filter(const Image<K, DIM>& kernel, Image<T, DIM>& output, double percentile, BorderMode border = BorderMode::Clamp) const { ndl::percentile_filter(*this, output, kernel, percentile, border); }
-			template<class K>
-			/// Replaces each element with the median of its `kernel`-shaped neighborhood -- percentile_filter() at 50.
-			/// @tparam K     Kernel element type.
-			/// @param kernel Structuring element (nonzero tap = included).
-			/// @param output Destination; must already exist with this image's own extent.
-			/// @param border How an out-of-bounds neighbor is resolved.
-			/// @ingroup morphology_filtering
-			void median_filter(const Image<K, DIM>& kernel, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const { ndl::median_filter(*this, output, kernel, border); }
-
-			// Binarizes *this into `output`: `onValue` where the source value is
-			// greater than `thresholdValue`, `offValue` otherwise. Defaults to a
-			// generic 0/1 mask -- the same "nonzero = included" convention
-			// erode()/dilate()/median_filter()/percentile_filter()/convolve()
-			// already use for kernels -- rather than assuming an 8-bit image;
-			// pass onValue=T(255) explicitly for a directly-viewable black/white
-			// image instead. Strictly greater-than, not >=, to match
-			// otsu_threshold()'s own class split below (background is values <=
-			// the threshold, foreground is values above it) -- `thresholdValue`
-			// is usually its result, but any fixed cutoff works too. Forwards to
-			// the free ndl::threshold(), same reasoning as erode()/dilate() above
-			// -- e.g. thresholding straight into a PackedBitImage mask.
-			/// Binarizes into `output`: `onValue` where greater than `thresholdValue`, `offValue` otherwise.
-			/// @param thresholdValue Cutoff; strictly-greater-than, matching otsu_threshold()'s own class split.
-			/// @param output         Destination; must already exist with this image's own extent.
-			/// @param onValue        Value written where the source is greater than `thresholdValue`.
-			/// @param offValue       Value written elsewhere.
-			/// @ingroup morphology_filtering
-			void threshold(T thresholdValue, Image<T, DIM>& output, T onValue = T(1), T offValue = T(0)) const { ndl::threshold(*this, output, thresholdValue, onValue, offValue); }
-
-		// Otsu's method: the value that maximizes between-class variance of
-		// *this's own histogram -- equivalently, the split that separates
-		// the two classes of values (below/above it) as cleanly as possible.
-		// The standard automatic threshold for turning a grayscale image
-		// into a binary one without picking a cutoff by hand (Otsu, N.,
-		// 1979, "A threshold selection method from gray-level histograms").
-		// Generic over T: the histogram spans *this's own [min(),max()]
-		// range divided into `bins` equal-width buckets (default 256 --
-		// enough resolution for classic 8-bit imagery, and a reasonable
-		// default for anything else), rather than assuming any fixed range,
-		// so this works the same way for uint8_t, int, float, or double
-		// data. A noisy image widens both classes' spread and can shift
-		// where they overlap, so Otsu still works on it directly, but
-		// denoising first (e.g. median_filter()) generally finds a cleaner
-		// split -- see demo/morphology.
-		/// Otsu's method: the threshold value that maximizes between-class variance of this image's own histogram.
-		/// @param bins Histogram resolution; the value range is this image's own [min(),max()], divided into this many equal-width buckets.
-		/// @return The threshold value, in T's own range -- pass directly to threshold().
-		/// @ingroup morphology_filtering
-		T otsu_threshold(int bins = 256) const
-		{
-			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::otsu_threshold() requires an arithmetic T (needs a total order and a double conversion) -- not valid for e.g. std::complex<T>");
-			assert(bins > 1);
-			T lo = min();
-			T hi = max();
-			if (lo == hi) return lo; // degenerate: only one value present, nothing to split
-
-			double range = static_cast<double>(hi) - static_cast<double>(lo);
-			auto bucketOf = [&](T value) {
-				int b = (int)((static_cast<double>(value) - static_cast<double>(lo)) / range * bins);
-				return b < 0 ? 0 : (b >= bins ? bins - 1 : b);
-			};
-
-			std::vector<std::size_t> histogram(bins, 0);
-			for (auto it = begin(); it != end(); ++it) histogram[bucketOf(*it)]++;
-
-			std::size_t total = size();
-			double sumAll = 0;
-			for (int i = 0; i < bins; i++) sumAll += (double)i * histogram[i];
-
-			std::size_t weightBackground = 0;
-			double sumBackground = 0;
-			double bestVariance = -1;
-			int bestBucket = 0;
-			for (int b = 0; b < bins; b++)
-			{
-				weightBackground += histogram[b];
-				if (weightBackground == 0) continue;
-				std::size_t weightForeground = total - weightBackground;
-				if (weightForeground == 0) break;
-
-				sumBackground += (double)b * histogram[b];
-				double meanBackground = sumBackground / weightBackground;
-				double meanForeground = (sumAll - sumBackground) / weightForeground;
-
-				double diff = meanBackground - meanForeground;
-				double variance = (double)weightBackground * (double)weightForeground * diff * diff;
-				if (variance > bestVariance)
-				{
-					bestVariance = variance;
-					bestBucket = b;
-				}
-			}
-
-			// Map the winning bucket back to a value in T's own range -- its
-			// upper edge, so "value <= threshold" / "value > threshold"
-			// reproduce the same background/foreground split the bucket
-			// boundary represented.
-			double thresholdValue = static_cast<double>(lo) + range * static_cast<double>(bestBucket + 1) / static_cast<double>(bins);
-			return static_cast<T>(thresholdValue);
-		}
-
-		// Gaussian blur: builds a normalized (weights sum to 1) Gaussian
-		// kernel and hands it to convolve() above. Kernel radius follows the
-		// standard 3-sigma rule (_kernelSize in mathHelpers.h), so larger
-		// sigma automatically gets a wider kernel; the same sigma and radius
-		// apply along every dimension. Blurring a color image channel-by-
-		// channel (so colors don't bleed into each other) is a matter of
-		// calling this on each channel's 2D slice rather than the 3D whole --
-		// no special-casing needed here, since slice() already shares memory
-		// with the original and convolve() is dimension-agnostic.
-		/// Convolves with a normalized Gaussian kernel of the given standard deviation.
-		/// @param sigma  Standard deviation; the kernel radius follows the standard 3-sigma rule.
-		/// @param output Destination; must already exist with this image's own extent.
-		/// @param border How an out-of-bounds neighbor is resolved.
-		/// @ingroup morphology_filtering
-		void gaussian_blur(double sigma, Image<T, DIM>& output, BorderMode border = BorderMode::Clamp) const
-		{
-			static_assert(std::is_arithmetic_v<T>, "Image<T,DIM>::gaussian_blur() requires a T convertible to double -- not valid for e.g. std::complex<T> (it calls convolve() internally)");
-			assert(sigma > 0);
-			int radius = _kernelSize(sigma);
-			std::array<int, DIM> kernelExtent;
-			for (int i = 0; i < DIM; i++) kernelExtent[i] = 2 * radius + 1;
-
-			std::vector<double> kernelData(Image<double, DIM>::size(kernelExtent));
-			Image<double, DIM> kernel(kernelData.data(), kernelExtent);
-
-			double total = 0;
-			for (const auto& coord : kernel.coordinates())
-			{
-				double distSq = 0;
-				for (int i = 0; i < DIM; i++)
-				{
-					double d = coord[i] - radius;
-					distSq += d * d;
-				}
-				double w = std::exp(-distSq / (2 * sigma * sigma));
-				kernel.at(coord) = w;
-				total += w;
-			}
-			for (auto it = kernel.begin(); it != kernel.end(); ++it) *it /= total;
-
-			convolve(kernel, output, border);
-		}
+		// Image itself has no convolve()/gaussian_blur()/erode()/dilate()/
+		// median_filter()/percentile_filter()/threshold()/otsu_threshold()
+		// members -- unlike view()/slice()/the arithmetic operators/the
+		// reductions above, which are genuinely core to what an Image *is*,
+		// those are toolkits built on top of it, the same way fftn()/ifftn()
+		// (fft.h) are: free functions taking an Image (or any other
+		// minimal-interface image type, e.g. PackedBitImage) as a plain
+		// argument. #include <ndl/convolution.h> for the first two,
+		// <ndl/morphology.h> for the rest -- neither is pulled in by
+		// #include <ndl/image.h> alone.
 
 		/// Every N-dimensional coordinate this view covers, in row-major order.
 		/// @return One entry per element, in the same order iteration visits them.
@@ -1081,31 +852,6 @@ namespace ndl
 				result[i] = newExtent[i] * newStride[i];
 			return result;
 		}
-
-		// Resolves the border-handled source coordinate for kernel tap
-		// `kCoord` (centered via `center`) when computing the value at
-		// `coord` -- shared by convolve()/erode()/dilate()/median_filter(),
-		// all of which walk the same "kernel centered on every output
-		// position" pattern and differ only in how they combine the values
-		// found under the kernel. Forwards to the free detail::kernelTapCoord()
-		// (see its comment, near BorderMode) so convolve() above shares the
-		// exact same logic ndl::erode()/ndl::dilate()/etc. use.
-		std::array<int, DIM> kernelTapCoord(const std::array<int, DIM>& coord, const std::array<int, DIM>& kCoord, const std::array<int, DIM>& center, BorderMode border) const
-		{
-			return detail::kernelTapCoord(coord, kCoord, center, extent_, border);
-		}
-
-		// Shared setup for every kernel-walking operation (convolve()/min()/
-		// max()/percentile_filter()): the kernel's center, and its nonzero
-		// ("included") taps, computed once per call rather than once per
-		// output pixel -- see detail::kernelCenter()/kernelIncludedTaps()'s
-		// own comment for why this matters. These just forward to those free
-		// functions so convolve() shares the same logic as the free
-		// ndl::erode()/ndl::dilate()/etc.
-		template<class K>
-		std::array<int, DIM> kernelCenter(const Image<K, DIM>& kernel) const { return detail::kernelCenter(kernel); }
-		template<class K>
-		std::vector<std::array<int, DIM>> kernelIncludedTaps(const Image<K, DIM>& kernel) const { return detail::kernelIncludedTaps(kernel); }
 
 		template<class Op, class U>
 		Image& mutableBinaryImageOp(const Image<U, DIM>& rhs) {

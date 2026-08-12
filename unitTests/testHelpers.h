@@ -8,17 +8,12 @@
 #include <cmath>
 #include <ndl/image.h>
 
-// Shared helpers used across the split-out test files (originally all
-// defined once at the top of unitTests.cpp). Kept byte-identical to their
-// original bodies -- only reportPassFail() below is new, added as the
-// bridge between the pre-existing "stringstream of "label: Pass/Fail"
-// lines" idiom every test function already used and GoogleTest: each
-// TEST() still builds its own local passfail stringstream and runs its
-// exact original checks unmodified, then hands the accumulated text to
-// reportPassFail(), which turns any line ending in "Fail" into a gtest
-// failure (via ADD_FAILURE(), so one failing check doesn't abort the
-// others in the same TEST) while printing every line either way, matching
-// the original tool's visible output.
+// Shared helpers used across the split-out test files. Each TEST() builds
+// its own local passfail stringstream, appending one "label: Pass/Fail"
+// line per check, then hands the accumulated text to reportPassFail(),
+// which turns any line ending in "Fail" into a gtest failure (via
+// ADD_FAILURE(), so one failing check doesn't abort the others in the same
+// TEST) while printing every line either way.
 //
 // Every function here is `inline` -- this header is included by several
 // independent test executables' translation units, and while each one

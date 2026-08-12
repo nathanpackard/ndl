@@ -32,7 +32,7 @@ namespace ndl
 	//
 	// What it DOES share with Image, deliberately, is the same minimal
 	// structural interface the free ndl::erode()/dilate()/median_filter()/
-	// threshold() functions (image/algorithms.h) are written against:
+	// threshold() functions (morphology.h) are written against:
 	// extent(), at(coord) (const returns bool by value; non-const returns a
 	// BitRef, assignable from bool), and coordinates(). That's the whole
 	// contract those functions need, so they run against a PackedBitImage
@@ -51,7 +51,7 @@ namespace ndl
 	/// image (e.g. a threshold() result) where memory is the concern. Not derived
 	/// from Image; see the full comment below for why, and for how it shares
 	/// erode()/dilate()/median_filter()/threshold() with Image via the free
-	/// functions in image/algorithms.h.
+	/// functions in morphology.h.
 	///
 	/// Not a drop-in replacement for Image<bool,DIM> -- the two are meant for
 	/// different situations. Use pack()/unpack() to convert between them: pack()
@@ -211,7 +211,7 @@ namespace ndl
 	// The other direction: expands a PackedBitImage back out into a real,
 	// caller-owned Image<T,DIM> (or OwnedImage<T,DIM>) -- onValue/offValue
 	// default to T(1)/T(0), the same "generic 0/1 mask" convention
-	// Image::threshold() itself defaults to.
+	// threshold() (morphology.h) itself defaults to.
 	/// Expands a PackedBitImage back into a caller-owned Image<T,DIM>: `onValue`/`offValue` for true/false.
 	/// @tparam T        dst's element type.
 	/// @tparam DIM      Number of dimensions.

@@ -1,4 +1,5 @@
 #include <ndl/image.h>
+#include <ndl/convolution.h>
 #include <ndl/imageIO.h>
 #include <ndl/fft.h>
 #include <ndl/mathHelpers.h>
@@ -17,8 +18,9 @@ using namespace ndl;
 using namespace ndl::fft;
 namespace fs = std::filesystem;
 
-// A step-by-step tour of Image::convolve() (plus gaussian_blur(), which is
-// built on it), in the same spirit as demo/multiview's tour of view()/slice():
+// A step-by-step tour of ndl::convolve() (plus ndl::gaussian_blur(), which is
+// built on it) -- free functions, convolution.h, not Image members: see
+// image/core.h's own comment for why -- in the same spirit as demo/multiview's tour of view()/slice():
 // each step shows the code, explains it, and shows the result. The two demos
 // differ in one respect, though -- multiview's arrays were small enough to
 // print in full and check by eye; a real photo is not. So Part 1 below
@@ -131,11 +133,11 @@ void toDisplayable(const Image<double, DIM>& src, Image<uint8_t, DIM>& dst, doub
 // guarantees the result never leaves [0,255].
 void convolveColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, BorderMode border)
 {
-    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.convolve(kernel, d, border); });
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { ndl::convolve(s, d, kernel, border); });
 }
 void gaussianBlurColor(const Image<uint8_t, 3>& src, double sigma, Image<uint8_t, 3>& dst, BorderMode border)
 {
-    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.gaussian_blur(sigma, d, border); });
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { ndl::gaussian_blur(s, d, sigma, border); });
 }
 // Shrinks src by `factor` in x and y: gaussian_blur() (via gaussianBlurColor()
 // above) so the pixels the strided view() below is about to discard get
@@ -160,7 +162,7 @@ void convolveColorSafe(const Image<uint8_t, 3>& src, const Image<double, 2>& ker
     {
         OwnedImage<double, 2> srcDbl(s); // deep copy, converts uint8_t -> double
         auto outDbl = OwnedImage<double, 2>::like(srcDbl);
-        srcDbl.convolve(kernel, outDbl, border);
+        ndl::convolve(srcDbl, outDbl, kernel, border);
         toDisplayable(outDbl, d, bias);
     });
 }
@@ -186,13 +188,13 @@ void fftshift(const Image<T, DIM>& src, Image<T, DIM>& dst)
 // color image with `kernel` by taking each channel to the frequency domain,
 // multiplying by the kernel's (once-computed, shared across channels)
 // spectrum, and transforming back -- see the big comment on
-// testFFTMatchesSpatialConvolution in unitTests.cpp for exactly which DFT
-// identity this is and why it's conj() (cross-correlation) rather than the
-// textbook convolution theorem. Always circular (BorderMode::Wrap is the
-// only border mode that means anything here -- the DFT treats every axis as
-// periodic whether asked to or not). Works for any src/kernel extent --
-// fftn() no longer requires a power of two (see fft.h's FFTBluestein) --
-// though a power-of-two extent is still the fastest case internally.
+// FFT.FFTMatchesSpatialConvolution in unitTests/fft_tests.cpp for exactly
+// which DFT identity this is and why it's conj() (cross-correlation) rather
+// than the textbook convolution theorem. Always circular (BorderMode::Wrap
+// is the only border mode that means anything here -- the DFT treats every
+// axis as periodic whether asked to or not). Works for any src/kernel
+// extent, via fft.h's FFTBluestein for whichever axes aren't a power of
+// two -- though a power-of-two extent is still the fastest case internally.
 void fftCorrelateColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst)
 {
     int W = src.extent()[1], H = src.extent()[2];
@@ -246,7 +248,7 @@ int main()
     std::string dataDir = NDL_TEST_DATA_DIR;
 
     std::cout <<
-        "This demo teaches Image::convolve() (and gaussian_blur(), which is built on it)\n"
+        "This demo teaches ndl::convolve() (and ndl::gaussian_blur(), which is built on it)\n"
         "the same way demo/multiview teaches view()/slice(): each step shows the code,\n"
         "explains it, and shows the result -- first on small numbers you can check by\n"
         "hand, then on a real photo whose results you check by *looking at the saved\n"
@@ -269,22 +271,22 @@ int main()
     OwnedImage<int, 2> identityKernel({ 3, 3 }, { 0,0,0, 0,1,0, 0,0,0 });
     OwnedImage<int, 2> out1({ 5, 5 });
 
-    step("grid.convolve(identityKernel, out1)",
-        "convolve(kernel, output) centers `kernel` on every position of *this in turn, multiplies\n"
-        "             each kernel weight by the input value under it, and sums: output(coord) = sum over\n"
-        "             kernel taps of kernel(k) * input(coord + k - center). A kernel that's 1 at its own\n"
+    step("ndl::convolve(grid, out1, identityKernel)",
+        "convolve(src, dst, kernel) centers `kernel` on every position of `src` in turn, multiplies\n"
+        "             each kernel weight by the input value under it, and sums: dst(coord) = sum over\n"
+        "             kernel taps of kernel(k) * src(coord + k - center). A kernel that's 1 at its own\n"
         "             center and 0 everywhere else reproduces exactly the value already there -- convolving\n"
         "             with it is a no-op, the simplest possible check that the machinery above does what it\n"
         "             says.");
     showArray("identityKernel", identityKernel);
-    grid.convolve(identityKernel, out1);
+    ndl::convolve(grid, out1, identityKernel);
     showArray("out1 (should equal grid)", out1);
 
     OwnedImage<int, 2> sumKernel({ 3, 3 });
     sumKernel = 1;
     OwnedImage<int, 2> out2({ 5, 5 });
 
-    step("grid.convolve(sumKernel, out2)   // sumKernel is 3x3, all 1s",
+    step("ndl::convolve(grid, out2, sumKernel)   // sumKernel is 3x3, all 1s",
         "Every weight is 1, so each output value is just the SUM of the 3x3 neighborhood around it.\n"
         "             For an INTERIOR position like (2,2), every tap is a real, in-bounds grid element:\n"
         "             reading straight off the grid above (row y=1 gives x=1..3 -> 7,8,9; row y=2 ->\n"
@@ -296,13 +298,13 @@ int main()
         "             spells out exactly which 9 grid values that produces and what they sum to -- read it\n"
         "             alongside out2(0,0) to see the same 27 land in both places.");
     showArray("sumKernel", sumKernel);
-    grid.convolve(sumKernel, out2);
+    ndl::convolve(grid, out2, sumKernel);
     showArray("out2", out2);
     showText("out2(2,2)", std::to_string(out2(2, 2)) + "  (expected 117, interior -- see explanation)");
     showText("out2(0,0) breakdown (default border = Clamp)", sumKernelBreakdown(grid, 0, 0, BorderMode::Clamp));
     showText("out2(0,0)", std::to_string(out2(0, 0)) + "  (should match the breakdown above)");
 
-    step("grid.convolve(sumKernel, out2, BorderMode::Clamp / Wrap / Reflect)",
+    step("ndl::convolve(grid, out2, sumKernel, BorderMode::Clamp / Wrap / Reflect)",
         "Redoing that same corner, out2(0,0), under all three border modes -- the breakdowns below are\n"
         "             built from the exact same _clamp()/_wrap()/_reflect() functions convolve() itself\n"
         "             calls (mathHelpers.h), so they're a real trace of the computation, not a paraphrase\n"
@@ -318,11 +320,11 @@ int main()
     showText("out2(0,0) breakdown with Clamp", sumKernelBreakdown(grid, 0, 0, BorderMode::Clamp));
     showText("out2(0,0) breakdown with Wrap", sumKernelBreakdown(grid, 0, 0, BorderMode::Wrap));
     showText("out2(0,0) breakdown with Reflect", sumKernelBreakdown(grid, 0, 0, BorderMode::Reflect));
-    grid.convolve(sumKernel, out2, BorderMode::Clamp);
+    ndl::convolve(grid, out2, sumKernel, BorderMode::Clamp);
     int clampCorner = out2(0, 0);
-    grid.convolve(sumKernel, out2, BorderMode::Wrap);
+    ndl::convolve(grid, out2, sumKernel, BorderMode::Wrap);
     int wrapCorner = out2(0, 0);
-    grid.convolve(sumKernel, out2, BorderMode::Reflect);
+    ndl::convolve(grid, out2, sumKernel, BorderMode::Reflect);
     int reflectCorner = out2(0, 0);
     showText("out2(0,0) with Clamp", std::to_string(clampCorner) + "  (should match the Clamp breakdown above)");
     showText("out2(0,0) with Wrap", std::to_string(wrapCorner) + "  (should match the Wrap breakdown above)");
@@ -360,11 +362,11 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 3: gaussian_blur() ===\n";
 
-    step("impulse.gaussian_blur(1.0, response)   // impulse is all 0 except one center pixel",
+    step("ndl::gaussian_blur(impulse, response, 1.0)   // impulse is all 0 except one center pixel",
         "Convolution has a classic way to *see* a kernel: feed it an image that's all zero except one\n"
         "             pixel, and the output at every position is just that kernel's own weight there\n"
         "             (multiplying a single value by each weight and summing changes nothing else).\n"
-        "             Image::gaussian_blur(sigma, output) builds a Gaussian-weighted kernel sized by sigma\n"
+        "             ndl::gaussian_blur(src, dst, sigma) builds a Gaussian-weighted kernel sized by sigma\n"
         "             (radius = ceil(3*sigma), so sigma=1.0 gives a 7x7 kernel here) and calls convolve()\n"
         "             with it -- so blurring a single bright dot traces out that kernel's actual shape,\n"
         "             printed below as numbers.");
@@ -372,7 +374,7 @@ int main()
     impulse = 0.0;
     impulse(5, 5) = 1000.0;
     OwnedImage<double, 2> response({ 11, 11 });
-    impulse.gaussian_blur(1.0, response);
+    ndl::gaussian_blur(impulse, response, 1.0);
     showArray("response (the Gaussian kernel's own shape, scaled by 1000)", response);
 
     OwnedImage<uint8_t, 3> gauss1(photoExtent);
@@ -443,7 +445,7 @@ int main()
     OwnedImage<double, 2> sobelX({ 3, 3 }, { -1,0,1,  -2,0,2,  -1,0,1 });
     OwnedImage<double, 2> sobelY({ 3, 3 }, { -1,-2,-1,  0,0,0,  1,2,1 });
 
-    step("grey.convolve(sobelX, gx, BorderMode::Reflect); grey.convolve(sobelY, gy, BorderMode::Reflect)",
+    step("ndl::convolve(grey, gx, sobelX, BorderMode::Reflect); ndl::convolve(grey, gy, sobelY, BorderMode::Reflect)",
         "Two more 3x3 kernels -- proof convolve() takes any weights, not just symmetric blur-style\n"
         "             ones. sobelX responds to horizontal brightness change (vertical edges), sobelY to\n"
         "             vertical change (horizontal edges); a flat region gives 0 from both, which is why\n"
@@ -452,8 +454,8 @@ int main()
     showArray("sobelY", sobelY);
 
     auto gx = OwnedImage<double, 2>::like(grey), gy = OwnedImage<double, 2>::like(grey);
-    grey.convolve(sobelX, gx, BorderMode::Reflect);
-    grey.convolve(sobelY, gy, BorderMode::Reflect);
+    ndl::convolve(grey, gx, sobelX, BorderMode::Reflect);
+    ndl::convolve(grey, gy, sobelY, BorderMode::Reflect);
 
     step("gx.multiply(gx, gx2); gy.multiply(gy, gy2); gx2.add(gy2, magSq); then sqrt() elementwise",
         "Gradient magnitude is sqrt(gx^2 + gy^2) -- built here from the non-mutating arithmetic\n"
@@ -513,14 +515,14 @@ int main()
     std::cout << "\n\n=== PART 6: the frequency domain ===\n";
 
     step("Image<uint8_t,3> crop = marbles.view({0,290,186}, {2,439,297});   // 150x112, all 3 channels -- deliberately NOT a power of two",
-        "fftn() used to require every dimension's extent to be an exact power of two; it no longer does --\n"
-        "             fftn()/ifftn() now handle ANY extent, via Bluestein's algorithm (the chirp-z transform;\n"
-        "             see FFTBluestein in fft.h) for whichever axes aren't already a power of two. This crop is\n"
-        "             still here, but for two much more mundane reasons: keeping this demo's pixel-by-pixel\n"
-        "             comparison and the timing benchmark below fast, and keeping the log-magnitude spectrum\n"
-        "             image a comfortable size to look at -- not because fftn() needs it. To prove that, this\n"
-        "             crop is deliberately 150x112: NOT a power of two in either dimension (128x128 would have\n"
-        "             been). marbles rather than photo on purpose here, same reason Part 4 switched to it for\n"
+        "fftn()/ifftn() handle ANY extent, via Bluestein's algorithm (the chirp-z transform; see\n"
+        "             FFTBluestein in fft.h) for whichever axes aren't already a power of two. This crop is\n"
+        "             smaller than the full marbles image for two much more mundane reasons: keeping this demo's\n"
+        "             pixel-by-pixel comparison and the timing benchmark below fast, and keeping the log-magnitude\n"
+        "             spectrum image a comfortable size to look at. Its exact size, 150x112, is deliberately NOT a\n"
+        "             power of two in either dimension (128x128 would have been) -- specifically so the fftn()\n"
+        "             calls below exercise the arbitrary-size Bluestein path rather than the direct power-of-two\n"
+        "             one. marbles rather than photo on purpose here, same reason Part 4 switched to it for\n"
         "             Sobel: photo's real film-grain noise spreads energy across every frequency roughly\n"
         "             evenly, which swamps the log-magnitude spectrum below into near-uniform static rather\n"
         "             than showing readable structure -- marbles' cleaner per-pixel contrast doesn't have that\n"

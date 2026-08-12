@@ -1,6 +1,6 @@
 # Convolution Tutorial {#convolution_tutorial}
 
-This demo teaches Image::convolve() (and gaussian_blur(), which is built on it) the same way demo/multiview teaches view()/slice(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo whose results you check by *looking at the saved PNG*. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/convolution/output
+This demo teaches ndl::convolve() (and ndl::gaussian_blur(), which is built on it) the same way demo/multiview teaches view()/slice(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo whose results you check by *looking at the saved PNG*. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/convolution/output
 
 ## PART 1: how convolve() works
 
@@ -22,10 +22,10 @@ A plain 5x5 grid, x fastest. convolve() computes one output value per input posi
 
 ### Step 2
 ```cpp
-grid.convolve(identityKernel, out1)
+ndl::convolve(grid, out1, identityKernel)
 ```
 
-convolve(kernel, output) centers `kernel` on every position of *this in turn, multiplies each kernel weight by the input value under it, and sums: output(coord) = sum over kernel taps of kernel(k) * input(coord + k - center). A kernel that's 1 at its own center and 0 everywhere else reproduces exactly the value already there -- convolving with it is a no-op, the simplest possible check that the machinery above does what it says.
+convolve(src, dst, kernel) centers `kernel` on every position of `src` in turn, multiplies each kernel weight by the input value under it, and sums: dst(coord) = sum over kernel taps of kernel(k) * src(coord + k - center). A kernel that's 1 at its own center and 0 everywhere else reproduces exactly the value already there -- convolving with it is a no-op, the simplest possible check that the machinery above does what it says.
 
 ```text
     identityKernel:
@@ -45,7 +45,7 @@ convolve(kernel, output) centers `kernel` on every position of *this in turn, mu
 
 ### Step 3
 ```cpp
-grid.convolve(sumKernel, out2)   // sumKernel is 3x3, all 1s
+ndl::convolve(grid, out2, sumKernel)   // sumKernel is 3x3, all 1s
 ```
 
 Every weight is 1, so each output value is just the SUM of the 3x3 neighborhood around it. For an INTERIOR position like (2,2), every tap is a real, in-bounds grid element: reading straight off the grid above (row y=1 gives x=1..3 -> 7,8,9; row y=2 -> 12,13,14; row y=3 -> 17,18,19), out2(2,2) = 7+8+9 + 12+13+14 + 17+18+19 = 117. For a CORNER like (0,0), some of the 3x3's taps (x,y in {-1,0,1}x{-1,0,1}) fall outside the grid entirely -- this call passes no BorderMode, so it uses convolve()'s default, BorderMode::Clamp, which substitutes the nearest in-bounds pixel for any out-of-bounds one (so both x=-1 and y=-1 become 0). The breakdown printed below spells out exactly which 9 grid values that produces and what they sum to -- read it alongside out2(0,0) to see the same 27 land in both places.
@@ -74,7 +74,7 @@ out2(0,0):   27  (should match the breakdown above)
 
 ### Step 4
 ```cpp
-grid.convolve(sumKernel, out2, BorderMode::Clamp / Wrap / Reflect)
+ndl::convolve(grid, out2, sumKernel, BorderMode::Clamp / Wrap / Reflect)
 ```
 
 Redoing that same corner, out2(0,0), under all three border modes -- the breakdowns below are built from the exact same _clamp()/_wrap()/_reflect() functions convolve() itself calls (mathHelpers.h), so they're a real trace of the computation, not a paraphrase of it. Clamp repeats the nearest in-bounds pixel for an out-of-bounds tap (x=-1 -> 0, y=-1 -> 0). Wrap treats the 5-wide/5-tall grid as periodic, so x=-1/y=-1 wrap to the OPPOSITE edge (index 4), pulling in row/column 4's much larger values instead -- that's why Wrap's total (99) is so much bigger than Clamp's (27). Reflect mirrors a tap back into the grid using -x-1 (so x=-1 -> 0 too, same as Clamp) -- for THIS specific case (a radius-1 kernel, so the only out-of-bounds offset that ever occurs is -1) Clamp and Reflect are mathematically guaranteed to agree, which is why both read 27 below; they'd diverge for a wider kernel whose taps reach 2+ steps out of bounds (there, Reflect mirrors past the edge instead of repeating it).
@@ -130,10 +130,10 @@ box-blurred photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/02_
 
 ### Step 7
 ```cpp
-impulse.gaussian_blur(1.0, response)   // impulse is all 0 except one center pixel
+ndl::gaussian_blur(impulse, response, 1.0)   // impulse is all 0 except one center pixel
 ```
 
-Convolution has a classic way to *see* a kernel: feed it an image that's all zero except one pixel, and the output at every position is just that kernel's own weight there (multiplying a single value by each weight and summing changes nothing else). Image::gaussian_blur(sigma, output) builds a Gaussian-weighted kernel sized by sigma (radius = ceil(3*sigma), so sigma=1.0 gives a 7x7 kernel here) and calls convolve() with it -- so blurring a single bright dot traces out that kernel's actual shape, printed below as numbers.
+Convolution has a classic way to *see* a kernel: feed it an image that's all zero except one pixel, and the output at every position is just that kernel's own weight there (multiplying a single value by each weight and summing changes nothing else). ndl::gaussian_blur(src, dst, sigma) builds a Gaussian-weighted kernel sized by sigma (radius = ceil(3*sigma), so sigma=1.0 gives a 7x7 kernel here) and calls convolve() with it -- so blurring a single bright dot traces out that kernel's actual shape, printed below as numbers.
 
 ```text
   response (the Gaussian kernel's own shape, scaled by 1000):
@@ -207,7 +207,7 @@ greyU8:   extent {710, 501}, single channel
 
 ### Step 12
 ```cpp
-grey.convolve(sobelX, gx, BorderMode::Reflect); grey.convolve(sobelY, gy, BorderMode::Reflect)
+ndl::convolve(grey, gx, sobelX, BorderMode::Reflect); ndl::convolve(grey, gy, sobelY, BorderMode::Reflect)
 ```
 
 Two more 3x3 kernels -- proof convolve() takes any weights, not just symmetric blur-style ones. sobelX responds to horizontal brightness change (vertical edges), sobelY to vertical change (horizontal edges); a flat region gives 0 from both, which is why this runs on double-precision grey rather than uint8_t -- the results are signed.
@@ -291,7 +291,7 @@ embossed photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/08_emb
 Image<uint8_t,3> crop = marbles.view({0,290,186}, {2,439,297});   // 150x112, all 3 channels -- deliberately NOT a power of two
 ```
 
-fftn() used to require every dimension's extent to be an exact power of two; it no longer does -- fftn()/ifftn() now handle ANY extent, via Bluestein's algorithm (the chirp-z transform; see FFTBluestein in fft.h) for whichever axes aren't already a power of two. This crop is still here, but for two much more mundane reasons: keeping this demo's pixel-by-pixel comparison and the timing benchmark below fast, and keeping the log-magnitude spectrum image a comfortable size to look at -- not because fftn() needs it. To prove that, this crop is deliberately 150x112: NOT a power of two in either dimension (128x128 would have been). marbles rather than photo on purpose here, same reason Part 4 switched to it for Sobel: photo's real film-grain noise spreads energy across every frequency roughly evenly, which swamps the log-magnitude spectrum below into near-uniform static rather than showing readable structure -- marbles' cleaner per-pixel contrast doesn't have that problem. Every step below works on this crop.
+fftn()/ifftn() handle ANY extent, via Bluestein's algorithm (the chirp-z transform; see FFTBluestein in fft.h) for whichever axes aren't already a power of two. This crop is smaller than the full marbles image for two much more mundane reasons: keeping this demo's pixel-by-pixel comparison and the timing benchmark below fast, and keeping the log-magnitude spectrum image a comfortable size to look at. Its exact size, 150x112, is deliberately NOT a power of two in either dimension (128x128 would have been) -- specifically so the fftn() calls below exercise the arbitrary-size Bluestein path rather than the direct power-of-two one. marbles rather than photo on purpose here, same reason Part 4 switched to it for Sobel: photo's real film-grain noise spreads energy across every frequency roughly evenly, which swamps the log-magnitude spectrum below into near-uniform static rather than showing readable structure -- marbles' cleaner per-pixel contrast doesn't have that problem. Every step below works on this crop.
 
 ![convolution_tutorial_09_crop.png](images/convolution_tutorial/convolution_tutorial_09_crop.png)
 
@@ -356,10 +356,10 @@ timing: spatial convolve() vs FFT correlation, at two very different kernel size
 convolve()'s cost scales with image size TIMES kernel size (every output pixel visits every kernel tap); fftn()'s cost scales with image size alone (kernel size only changes how the kernel gets *built*, not the transform cost) -- so which one wins depends entirely on the kernel. A 3x3 kernel is 9 taps; the 5x5 one already used above for the visual comparison is 25, ~2.8x more spatial work for the exact same image, while the FFT side barely changes (same 7 image-sized transforms either way -- 1 for the kernel, 2 per channel). Averaged over a few repetitions below.
 
 ```text
-3x3 kernel  -- spatial convolve():   2.305771 ms/call
-3x3 kernel  -- FFT correlation:   5.216178 ms/call
-5x5 kernel -- spatial convolve():   6.341619 ms/call
-5x5 kernel -- FFT correlation:   5.186499 ms/call
+3x3 kernel  -- spatial convolve():   2.158397 ms/call
+3x3 kernel  -- FFT correlation:   4.975679 ms/call
+5x5 kernel -- spatial convolve():   6.073415 ms/call
+5x5 kernel -- FFT correlation:   4.945346 ms/call
 ```
 
 All outputs written to: /home/nathanpackard/git/ndl/build/demo/convolution/output Open 01_original.png alongside the rest to compare by eye: 02/03/04 should look progressively softer. 06 should show bright edges on a dark background -- compare it to 05, marbles' own unmodified original. 07 should look crisper than the original, and 08 should look like a grey relief carving. 10 is what the 150x112 crop (09) looks like in the frequency domain -- a bright center fading outward, with any strong directional texture in the crop showing up as streaks through it. 11 and 12 should be visually indistinguishable -- a 5-pixel box blur, computed two independent ways (frequency domain and spatial domain), that agree to within a pixel or two of rounding.

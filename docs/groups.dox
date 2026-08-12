@@ -9,10 +9,19 @@
 /// operations (view()/slice()/swap_axes()/mirror()) shared by all of them.
 
 /// @defgroup morphology_filtering Morphology & Filtering
-/// convolve()/erode()/dilate()/median_filter()/percentile_filter()/threshold()/
-/// gaussian_blur()/otsu_threshold() -- the free-function algorithms (image/algorithms.h)
-/// and the Image member functions that forward to them, plus the structuring-element
-/// helpers (make_box_kernel()/make_cross_kernel()) and BorderMode.
+/// erode()/dilate()/median_filter()/percentile_filter()/threshold()/otsu_threshold() --
+/// free functions (morphology.h) over any minimal-interface image type (Image or
+/// PackedBitImage), a toolkit built on top of Image rather than part of it -- plus the
+/// structuring-element helpers (make_box_kernel()/make_cross_kernel()) and BorderMode.
+
+/// @defgroup convolution Convolution
+/// convolve()/gaussian_blur() -- free functions (convolution.h), a toolkit built on
+/// top of Image rather than part of it, same relationship morphology.h's functions
+/// have. Kept separate from Morphology & Filtering above: both groups walk a kernel
+/// over every position, but convolution combines the values under it into a weighted
+/// sum, where morphology picks a single one (min/max/percentile) -- a different
+/// family of operation, even though they share BorderMode and the same kernel-tap
+/// machinery underneath.
 
 /// @defgroup fft FFT
 /// Complex/real power-of-two FFT (FFT, FFTReal), arbitrary-size FFT via Bluestein's

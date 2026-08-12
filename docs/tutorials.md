@@ -9,5 +9,5 @@ regenerated every time the docs are built, so they can never drift from what the
 library actually does.
 
 - \subpage multiview_tutorial -- Image::view()/slice()/mirror()/swap_axes(): building zero-copy views of the same memory.
-- \subpage convolution_tutorial -- Image::convolve()/gaussian_blur(), arbitrary kernels, border handling, and the FFT-domain equivalent.
-- \subpage morphology_tutorial -- Image::erode()/dilate()/median_filter()/percentile_filter(), thresholding, and PackedBitImage.
+- \subpage convolution_tutorial -- convolve()/gaussian_blur() (convolution.h), arbitrary kernels, border handling, and the FFT-domain equivalent.
+- \subpage morphology_tutorial -- erode()/dilate()/median_filter()/percentile_filter() (morphology.h), thresholding, and PackedBitImage.

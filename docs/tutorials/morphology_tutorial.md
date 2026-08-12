@@ -1,6 +1,6 @@
 # Morphology Tutorial {#morphology_tutorial}
 
-This demo teaches Image::erode()/dilate()/median_filter()/percentile_filter() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on real images whose results you check by *looking at the saved PNG*. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/morphology/output
+This demo teaches ndl::erode()/ndl::dilate()/ndl::median_filter()/ndl::percentile_filter() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on real images whose results you check by *looking at the saved PNG*. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/morphology/output
 
 ## PART 1: how erode()/dilate()/median_filter() work
 
@@ -43,7 +43,7 @@ Two structuring-element shapes, built once and reused below for both morphology 
 
 ### Step 3
 ```cpp
-grid.erode(box3, out1)   // == grid.min(box3, out1) -- same operation, two names
+ndl::erode(grid, out1, box3)
 ```
 
 erode() replaces each value with the MINIMUM of its neighborhood -- out1(2,2) should be the smallest of the 3x3 block around grid's center (7,8,9,12,13,14,17,18,19): 7. Bright regions shrink, dark regions grow -- the classic morphological reading.
@@ -63,7 +63,7 @@ out1(2,2):   7  (expected 7)
 
 ### Step 4
 ```cpp
-grid.dilate(box3, out1)   // == grid.max(box3, out1)
+ndl::dilate(grid, out1, box3)
 ```
 
 dilate() is the mirror image: the MAXIMUM of the neighborhood. out1(2,2) should be 19, the largest of that same 3x3 block.
@@ -83,7 +83,7 @@ out1(2,2):   19  (expected 19)
 
 ### Step 5
 ```cpp
-grid.median_filter(box3, out1)   // == grid.percentile_filter(box3, out1, 50.0)
+ndl::median_filter(grid, out1, box3)   // == ndl::percentile_filter(grid, out1, box3, 50.0)
 ```
 
 The middle value of the sorted 3x3 neighborhood (1,7,8,9,12,13,14,17,18,19 minus the one that isn't included -- 9 values, so the 5th) -- 13, the same value the center already held here, since this grid has no outliers. median_filter() only gets interesting on noisy data, which Part 3 below gets to.
@@ -103,7 +103,7 @@ out1(2,2):   13  (expected 13)
 
 ### Step 6
 ```cpp
-grid.erode(cross3, out1) vs grid.erode(box3, out1)   // shape changes the answer
+ndl::erode(grid, out1, cross3) vs ndl::erode(grid, out1, box3)   // shape changes the answer
 ```
 
 Swapping the box for the cross changes which 5 values (not 9) are considered: only 8,12,13,14,18 (center plus its 4-neighbors) -- so out1(2,2) is still checkable by hand, but from a smaller, differently-shaped set.
@@ -117,7 +117,7 @@ out1(2,2) with cross3:   18  (expected 18, max of 8,12,13,14,18)
 
 ### Step 7
 ```cpp
-dot.dilate(box5, boxGrown) vs dot.dilate(cross5, crossGrown)   // radius-2 kernels
+ndl::dilate(dot, boxGrown, box5) vs ndl::dilate(dot, crossGrown, cross5)   // radius-2 kernels
 ```
 
 Dilating a single 1-pixel dot with a structuring element traces out that element's own shape exactly (same idea as demo/convolution's impulse-response step for gaussian_blur() -- the dilation of one point by a shape is just that shape, translated to the point): a box grows the dot into a solid 5x5 SQUARE, a cross grows it into a thin 5-long PLUS SIGN, not a filled diamond -- only the 4 axis arms turn on, the diagonal-adjacent cells stay 0, printed below side by side.
@@ -228,7 +228,7 @@ median-cleaned: /home/nathanpackard/git/ndl/build/demo/morphology/output/06_medi
 
 ### Step 12
 ```cpp
-gaussianBlurColor-style: noisy.slice(0,c).gaussian_blur(1.5, ..., BorderMode::Clamp) per channel
+gaussianBlurColor-style: ndl::gaussian_blur(noisy.slice(0,c), ..., 1.5, BorderMode::Clamp) per channel
 ```
 
 For comparison: the same noisy image run through demo/convolution's Part 3 tool instead. A gaussian blur averages every pixel with its neighbors, including the 0s and 255s -- so instead of removing the noise it smears each corrupted pixel into a soft grey/white smudge over its neighborhood, and blurs real edges at the same time. Compare 06_median_cleaned.png (sharp) against 07_gaussian_cleaned.png (smudged) directly.
@@ -313,7 +313,7 @@ otsu_threshold()/threshold() work on one scalar per pixel, so both the clean cro
 
 ### Step 17
 ```cpp
-uint8_t t = greyNoisy.otsu_threshold(); greyNoisy.threshold(t, binaryNoisy, 255, 0);
+uint8_t t = ndl::otsu_threshold(greyNoisy); ndl::threshold(greyNoisy, binaryNoisy, t, 255, 0);
 ```
 
 otsu_threshold() still finds *a* split on the noisy greyscale, but the salt-and-pepper corruption pushes individual pixels across that split regardless of what's actually underneath them, so the binary result should be full of isolated stray black/white speckles rather than clean regions -- the same corruption Part 4 introduced, now breaking a *different* operation than the blur it was shown against there.
@@ -331,7 +331,7 @@ binary (thresholded directly, noisy): /home/nathanpackard/git/ndl/build/demo/mor
 
 ### Step 18
 ```cpp
-greyNoisy.median_filter(box3, greyDenoised, Clamp);   // then otsu_threshold()
+ndl::median_filter(greyNoisy, greyDenoised, box3, Clamp);   // then ndl::otsu_threshold()
 ```
 
 Denoising first (median_filter(), Part 4's own tool for this exact corruption) removes most of the salt-and-pepper noise before Otsu ever sees it, so the resulting threshold should split the image into far cleaner, more connected regions -- one pass of the same 3x3 kernel Part 4 used is enough here, since salt-and-pepper noise (unlike, say, heavy film grain) is exactly what median_filter() is good at removing outright. Compare 13_binary_noisy.png against 15_binary_denoised.png directly, and both against 14_binary_clean.png -- the Otsu result on the never-corrupted crop, the ground truth both are approximating.
@@ -357,10 +357,10 @@ pixels disagreeing with the clean-crop ground truth, denoised threshold:   1655 
 
 ### Step 19
 ```cpp
-binaryDenoisedChannel.erode(box3, erodedBinary, Clamp); .dilate(box3, dilatedBinary, Clamp);
+ndl::erode(binaryDenoisedChannel, erodedBinary, box3, Clamp); ndl::dilate(binaryDenoisedChannel, dilatedBinary, box3, Clamp);
 ```
 
-The same erode()/dilate() from Parts 1 and 3, now on a genuinely binary (0/255) image instead of continuous pixel data: erode() shrinks the white regions and thickens the black ones, dilate() does the opposite -- the classic "binary morphology" operations from any image processing textbook, built from the exact same two methods this demo already used on real-valued images.
+The same erode()/dilate() from Parts 1 and 3, now on a genuinely binary (0/255) image instead of continuous pixel data: erode() shrinks the white regions and thickens the black ones, dilate() does the opposite -- the classic "binary morphology" operations from any image processing textbook, built from the exact same two functions this demo already used on real-valued images.
 
 ![morphology_tutorial_16_binary_eroded.png](images/morphology_tutorial/morphology_tutorial_16_binary_eroded.png)
 
@@ -404,7 +404,7 @@ binary closed: /home/nathanpackard/git/ndl/build/demo/morphology/output/19_binar
 PackedBitImage<2> packedDenoised(greyDenoised.extent()); ndl::threshold(greyDenoised, packedDenoised, tDenoised);
 ```
 
-erode()/dilate()/median_filter()/threshold() are each implemented exactly once, as free functions (ndl::erode() etc., in image.h) written against any type exposing extent()/at()/coordinates() -- Image satisfied that from the start, and PackedBitImage (1 bit of real storage per pixel, instead of a whole byte) is built to satisfy the same contract, so the exact same calls below run against it completely unmodified, no PackedBitImage-specific code needed.
+erode()/dilate()/median_filter()/threshold() are each implemented exactly once, as free functions (ndl::erode() etc., in morphology.h) written against any type exposing extent()/at()/coordinates() -- Image satisfied that from the start, and PackedBitImage (1 bit of real storage per pixel, instead of a whole byte) is built to satisfy the same contract, so the exact same calls below run against it completely unmodified, no PackedBitImage-specific code needed.
 
 ### Step 22
 ```cpp

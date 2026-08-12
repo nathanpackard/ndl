@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
+#include <ndl/morphology.h>
 
 #include "testHelpers.h"
 
@@ -25,7 +26,7 @@ TEST(OwnedImage, OwnedImage) {
 	OwnedImage<double, 2> box({ 3, 3 });
 	make_box_kernel(box);
 	OwnedImage<int, 2> eroded({ 4, 3 });
-	a.erode(box, eroded, BorderMode::Clamp);
+	ndl::erode(a, eroded, box, BorderMode::Clamp);
 	// 3x3 neighborhood around (2,1) is x=1..3,y=0..2 -> {2,3,4,6,7,8,10,11,12}, min=2
 	passfail << "OwnedImage works directly as both source and output of an inherited method (erode()): " << (eroded(2, 1) == 2 ? "Pass" : "Fail") << std::endl;
 
@@ -71,7 +72,7 @@ TEST(OwnedImage, PerChannel) {
 	std::vector<double> boxData(9, 1.0);
 	Image<double, 2> box(boxData.data(), { 3, 3 });
 	OwnedImage<int, 3> eroded = OwnedImage<int, 3>::like(img);
-	per_channel(img, eroded, 0, [&](const auto& s, auto& d) { s.erode(box, d, BorderMode::Clamp); });
+	per_channel(img, eroded, 0, [&](const auto& s, auto& d) { ndl::erode(s, d, box, BorderMode::Clamp); });
 
 	// Same hand-derived expectation as testOwnedImage's erode() check (min of
 	// the 3x3 neighborhood around (2,1) is the block's own +2), just offset

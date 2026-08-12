@@ -1,4 +1,6 @@
 #include <ndl/image.h>
+#include <ndl/morphology.h>
+#include <ndl/convolution.h>
 #include <ndl/imageIO.h>
 #include <iostream>
 #include <filesystem>
@@ -11,12 +13,12 @@
 using namespace ndl;
 namespace fs = std::filesystem;
 
-// A step-by-step tour of Image::erode()/dilate()/median_filter()/
-// percentile_filter() (plus the min()/max() overloads erode/dilate are just
-// names for), in the same spirit as demo/convolution: each step shows the
-// code, explains it, and shows the result -- first on a small hand-checkable
-// grid, then on real images, saved as PNGs for visual inspection alongside
-// the numbers.
+// A step-by-step tour of ndl::erode()/ndl::dilate()/ndl::median_filter()/
+// ndl::percentile_filter() -- free functions, morphology.h, not Image
+// members: see image/core.h's own comment for why -- in the same spirit as
+// demo/convolution: each step shows the code, explains it, and shows the
+// result -- first on a small hand-checkable grid, then on real images,
+// saved as PNGs for visual inspection alongside the numbers.
 
 int stepNumber = 0;
 
@@ -55,19 +57,19 @@ void saveForInspection(const std::string& label, const Image<T, DIM>& img, const
 // sharpen/emboss needed in demo/convolution.
 void erodeColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, BorderMode border)
 {
-    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.erode(kernel, d, border); });
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { ndl::erode(s, d, kernel, border); });
 }
 void dilateColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, BorderMode border)
 {
-    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.dilate(kernel, d, border); });
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { ndl::dilate(s, d, kernel, border); });
 }
 void medianColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, BorderMode border)
 {
-    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.median_filter(kernel, d, border); });
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { ndl::median_filter(s, d, kernel, border); });
 }
 void percentileColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kernel, Image<uint8_t, 3>& dst, double percentile, BorderMode border)
 {
-    per_channel(src, dst, 0, [&](const auto& s, auto& d) { s.percentile_filter(kernel, d, percentile, border); });
+    per_channel(src, dst, 0, [&](const auto& s, auto& d) { ndl::percentile_filter(s, d, kernel, percentile, border); });
 }
 
 // Shrinks src by `factor` in x and y: gaussian_blur() so the pixels the
@@ -80,7 +82,7 @@ void percentileColor(const Image<uint8_t, 3>& src, const Image<double, 2>& kerne
 OwnedImage<uint8_t, 3> downsampleColor(const Image<uint8_t, 3>& src, int factor)
 {
     auto blurred = OwnedImage<uint8_t, 3>::like(src);
-    per_channel(src, blurred, 0, [&](const auto& s, auto& d) { s.gaussian_blur(factor * 0.5, d, BorderMode::Clamp); });
+    per_channel(src, blurred, 0, [&](const auto& s, auto& d) { ndl::gaussian_blur(s, d, factor * 0.5, BorderMode::Clamp); });
     return OwnedImage<uint8_t, 3>(blurred.view({}, {}, { 1, factor, factor }));
 }
 
@@ -112,8 +114,8 @@ int main()
     std::string dataDir = NDL_TEST_DATA_DIR;
 
     std::cout <<
-        "This demo teaches Image::erode()/dilate()/median_filter()/percentile_filter() the\n"
-        "same way demo/convolution teaches convolve(): each step shows the code, explains\n"
+        "This demo teaches ndl::erode()/ndl::dilate()/ndl::median_filter()/ndl::percentile_filter()\n"
+        "the same way demo/convolution teaches convolve(): each step shows the code, explains\n"
         "it, and shows the result -- first on small numbers you can check by hand, then on\n"
         "real images whose results you check by *looking at the saved PNG*. Output PNGs\n"
         "land in:\n    " << outputDir << "\n";
@@ -148,23 +150,23 @@ int main()
 
     OwnedImage<int, 2> out1({ 5, 5 });
 
-    step("grid.erode(box3, out1)   // == grid.min(box3, out1) -- same operation, two names",
+    step("ndl::erode(grid, out1, box3)",
         "erode() replaces each value with the MINIMUM of its neighborhood -- out1(2,2) should\n"
         "             be the smallest of the 3x3 block around grid's center (7,8,9,12,13,14,17,18,19):\n"
         "             7. Bright regions shrink, dark regions grow -- the classic morphological reading.");
-    grid.erode(box3, out1);
+    ndl::erode(grid, out1, box3);
     showArray("out1 (box erode)", out1);
     showText("out1(2,2)", std::to_string(out1(2, 2)) + "  (expected 7)");
 
-    grid.dilate(box3, out1);
-    step("grid.dilate(box3, out1)   // == grid.max(box3, out1)",
+    ndl::dilate(grid, out1, box3);
+    step("ndl::dilate(grid, out1, box3)",
         "dilate() is the mirror image: the MAXIMUM of the neighborhood. out1(2,2) should be 19,\n"
         "             the largest of that same 3x3 block.");
     showArray("out1 (box dilate)", out1);
     showText("out1(2,2)", std::to_string(out1(2, 2)) + "  (expected 19)");
 
-    grid.median_filter(box3, out1);
-    step("grid.median_filter(box3, out1)   // == grid.percentile_filter(box3, out1, 50.0)",
+    ndl::median_filter(grid, out1, box3);
+    step("ndl::median_filter(grid, out1, box3)   // == ndl::percentile_filter(grid, out1, box3, 50.0)",
         "The middle value of the sorted 3x3 neighborhood (1,7,8,9,12,13,14,17,18,19 minus the\n"
         "             one that isn't included -- 9 values, so the 5th) -- 13, the same value the\n"
         "             center already held here, since this grid has no outliers. median_filter() only\n"
@@ -172,13 +174,13 @@ int main()
     showArray("out1 (median)", out1);
     showText("out1(2,2)", std::to_string(out1(2, 2)) + "  (expected 13)");
 
-    step("grid.erode(cross3, out1) vs grid.erode(box3, out1)   // shape changes the answer",
+    step("ndl::erode(grid, out1, cross3) vs ndl::erode(grid, out1, box3)   // shape changes the answer",
         "Swapping the box for the cross changes which 5 values (not 9) are considered: only\n"
         "             8,12,13,14,18 (center plus its 4-neighbors) -- so out1(2,2) is still checkable\n"
         "             by hand, but from a smaller, differently-shaped set.");
-    grid.erode(cross3, out1);
+    ndl::erode(grid, out1, cross3);
     showText("out1(2,2) with cross3", std::to_string(out1(2, 2)) + "  (expected 8, min of 8,12,13,14,18)");
-    grid.dilate(cross3, out1);
+    ndl::dilate(grid, out1, cross3);
     showText("out1(2,2) with cross3", std::to_string(out1(2, 2)) + "  (expected 18, max of 8,12,13,14,18)");
 
     // ------------------------------------------------------------------
@@ -194,7 +196,7 @@ int main()
     OwnedImage<double, 2> cross5({ 5, 5 });
     make_cross_kernel(cross5);
 
-    step("dot.dilate(box5, boxGrown) vs dot.dilate(cross5, crossGrown)   // radius-2 kernels",
+    step("ndl::dilate(dot, boxGrown, box5) vs ndl::dilate(dot, crossGrown, cross5)   // radius-2 kernels",
         "Dilating a single 1-pixel dot with a structuring element traces out that element's own\n"
         "             shape exactly (same idea as demo/convolution's impulse-response step for\n"
         "             gaussian_blur() -- the dilation of one point by a shape is just that shape,\n"
@@ -202,9 +204,9 @@ int main()
         "             grows it into a thin 5-long PLUS SIGN, not a filled diamond -- only the 4 axis\n"
         "             arms turn on, the diagonal-adjacent cells stay 0, printed below side by side.");
     OwnedImage<int, 2> boxGrown({ 11, 11 });
-    dot.dilate(box5, boxGrown);
+    ndl::dilate(dot, boxGrown, box5);
     OwnedImage<int, 2> crossGrown({ 11, 11 });
-    dot.dilate(cross5, crossGrown);
+    ndl::dilate(dot, crossGrown, cross5);
     showArray("boxGrown (square)", boxGrown);
     showArray("crossGrown (plus sign)", crossGrown);
 
@@ -265,14 +267,14 @@ int main()
     saveForInspection("median-cleaned", medianCleaned, "06_median_cleaned.png");
 
     OwnedImage<uint8_t, 3> gaussianCleaned(crop.extent());
-    step("gaussianBlurColor-style: noisy.slice(0,c).gaussian_blur(1.5, ..., BorderMode::Clamp) per channel",
+    step("gaussianBlurColor-style: ndl::gaussian_blur(noisy.slice(0,c), ..., 1.5, BorderMode::Clamp) per channel",
         "For comparison: the same noisy image run through demo/convolution's Part 3 tool instead.\n"
         "             A gaussian blur averages every pixel with its neighbors, including the 0s and\n"
         "             255s -- so instead of removing the noise it smears each corrupted pixel into a\n"
         "             soft grey/white smudge over its neighborhood, and blurs real edges at the same\n"
         "             time. Compare 06_median_cleaned.png (sharp) against 07_gaussian_cleaned.png\n"
         "             (smudged) directly.");
-    per_channel(noisy, gaussianCleaned, 0, [](const auto& s, auto& d) { s.gaussian_blur(1.5, d, BorderMode::Clamp); });
+    per_channel(noisy, gaussianCleaned, 0, [](const auto& s, auto& d) { ndl::gaussian_blur(s, d, 1.5, BorderMode::Clamp); });
     saveForInspection("gaussian-cleaned", gaussianCleaned, "07_gaussian_cleaned.png");
 
     long medianDiff = 0, gaussianDiff = 0;
@@ -343,20 +345,20 @@ int main()
     Image<uint8_t, 2> greyClean = greyClean3.slice(0, 0);
     Image<uint8_t, 2> greyNoisy = greyNoisy3.slice(0, 0);
 
-    step("uint8_t t = greyNoisy.otsu_threshold(); greyNoisy.threshold(t, binaryNoisy, 255, 0);",
+    step("uint8_t t = ndl::otsu_threshold(greyNoisy); ndl::threshold(greyNoisy, binaryNoisy, t, 255, 0);",
         "otsu_threshold() still finds *a* split on the noisy greyscale, but the salt-and-pepper\n"
         "             corruption pushes individual pixels across that split regardless of what's actually\n"
         "             underneath them, so the binary result should be full of isolated stray black/white\n"
         "             speckles rather than clean regions -- the same corruption Part 4 introduced, now\n"
         "             breaking a *different* operation than the blur it was shown against there.");
-    uint8_t tNoisy = greyNoisy.otsu_threshold();
+    uint8_t tNoisy = ndl::otsu_threshold(greyNoisy);
     showText("otsu_threshold() on the noisy greyscale", std::to_string((int)tNoisy));
     OwnedImage<uint8_t, 3> binaryNoisy({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> binaryNoisyChannel = binaryNoisy.slice(0, 0);
-    greyNoisy.threshold(tNoisy, binaryNoisyChannel, (uint8_t)255, (uint8_t)0);
+    ndl::threshold(greyNoisy, binaryNoisyChannel, tNoisy, (uint8_t)255, (uint8_t)0);
     saveForInspection("binary (thresholded directly, noisy)", binaryNoisy, "13_binary_noisy.png");
 
-    step("greyNoisy.median_filter(box3, greyDenoised, Clamp);   // then otsu_threshold()",
+    step("ndl::median_filter(greyNoisy, greyDenoised, box3, Clamp);   // then ndl::otsu_threshold()",
         "Denoising first (median_filter(), Part 4's own tool for this exact corruption) removes\n"
         "             most of the salt-and-pepper noise before Otsu ever sees it, so the resulting threshold\n"
         "             should split the image into far cleaner, more connected regions -- one pass of the\n"
@@ -366,19 +368,26 @@ int main()
         "             14_binary_clean.png -- the Otsu result on the never-corrupted crop, the ground truth\n"
         "             both are approximating.");
     OwnedImage<uint8_t, 2> greyDenoised(greyNoisy.extent());
-    greyNoisy.median_filter(box3, greyDenoised, BorderMode::Clamp);
+    // Explicit ImageT: greyNoisy is an Image<uint8_t,2> (a slice()'d view),
+    // greyDenoised an OwnedImage<uint8_t,2> (its own concrete type, even
+    // though it IS-A Image) -- template deduction can't unify two different
+    // types for the same ImageT on its own, the same reason add()/multiply()/
+    // etc. need an is_image_like guard elsewhere in this codebase. Naming
+    // ImageT explicitly resolves it via ordinary derived-to-base reference
+    // binding for greyDenoised.
+    ndl::median_filter<Image<uint8_t, 2>>(greyNoisy, greyDenoised, box3, BorderMode::Clamp);
 
-    uint8_t tClean = greyClean.otsu_threshold();
+    uint8_t tClean = ndl::otsu_threshold(greyClean);
     OwnedImage<uint8_t, 3> binaryClean({ 1, greyClean.extent()[0], greyClean.extent()[1] });
     Image<uint8_t, 2> binaryCleanChannel = binaryClean.slice(0, 0);
-    greyClean.threshold(tClean, binaryCleanChannel, (uint8_t)255, (uint8_t)0);
+    ndl::threshold(greyClean, binaryCleanChannel, tClean, (uint8_t)255, (uint8_t)0);
     saveForInspection("binary (clean crop, ground truth)", binaryClean, "14_binary_clean.png");
 
-    uint8_t tDenoised = greyDenoised.otsu_threshold();
+    uint8_t tDenoised = ndl::otsu_threshold(greyDenoised);
     showText("otsu_threshold(): clean / noisy / denoised", std::to_string((int)tClean) + " / " + std::to_string((int)tNoisy) + " / " + std::to_string((int)tDenoised));
     OwnedImage<uint8_t, 3> binaryDenoised({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> binaryDenoisedChannel = binaryDenoised.slice(0, 0);
-    greyDenoised.threshold(tDenoised, binaryDenoisedChannel, (uint8_t)255, (uint8_t)0);
+    ndl::threshold(greyDenoised, binaryDenoisedChannel, tDenoised, (uint8_t)255, (uint8_t)0);
     saveForInspection("binary (denoised first)", binaryDenoised, "15_binary_denoised.png");
 
     // Quantify the visual difference against the ground truth: how many
@@ -400,18 +409,18 @@ int main()
     // ------------------------------------------------------------------
     std::cout << "\n\n=== PART 8: binary morphology ===\n";
 
-    step("binaryDenoisedChannel.erode(box3, erodedBinary, Clamp); .dilate(box3, dilatedBinary, Clamp);",
+    step("ndl::erode(binaryDenoisedChannel, erodedBinary, box3, Clamp); ndl::dilate(binaryDenoisedChannel, dilatedBinary, box3, Clamp);",
         "The same erode()/dilate() from Parts 1 and 3, now on a genuinely binary (0/255) image\n"
         "             instead of continuous pixel data: erode() shrinks the white regions and thickens the\n"
         "             black ones, dilate() does the opposite -- the classic \"binary morphology\" operations\n"
-        "             from any image processing textbook, built from the exact same two methods this demo\n"
+        "             from any image processing textbook, built from the exact same two functions this demo\n"
         "             already used on real-valued images.");
     OwnedImage<uint8_t, 3> erodedBinaryImg({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     OwnedImage<uint8_t, 3> dilatedBinaryImg({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> erodedBinaryChannel = erodedBinaryImg.slice(0, 0);
     Image<uint8_t, 2> dilatedBinaryChannel = dilatedBinaryImg.slice(0, 0);
-    binaryDenoisedChannel.erode(box3, erodedBinaryChannel, BorderMode::Clamp);
-    binaryDenoisedChannel.dilate(box3, dilatedBinaryChannel, BorderMode::Clamp);
+    ndl::erode(binaryDenoisedChannel, erodedBinaryChannel, box3, BorderMode::Clamp);
+    ndl::dilate(binaryDenoisedChannel, dilatedBinaryChannel, box3, BorderMode::Clamp);
     saveForInspection("binary eroded", erodedBinaryImg, "16_binary_eroded.png");
     saveForInspection("binary dilated", dilatedBinaryImg, "17_binary_dilated.png");
 
@@ -424,16 +433,16 @@ int main()
     OwnedImage<uint8_t, 3> opened2Img({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> openStage2Channel = openStage2Img.slice(0, 0);
     Image<uint8_t, 2> opened2Channel = opened2Img.slice(0, 0);
-    binaryDenoisedChannel.erode(box3, openStage2Channel, BorderMode::Clamp);
-    openStage2Channel.dilate(box3, opened2Channel, BorderMode::Clamp);
+    ndl::erode(binaryDenoisedChannel, openStage2Channel, box3, BorderMode::Clamp);
+    ndl::dilate(openStage2Channel, opened2Channel, box3, BorderMode::Clamp);
     saveForInspection("binary opened", opened2Img, "18_binary_opened.png");
 
     OwnedImage<uint8_t, 3> closeStage2Img({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     OwnedImage<uint8_t, 3> closed2Img({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> closeStage2Channel = closeStage2Img.slice(0, 0);
     Image<uint8_t, 2> closed2Channel = closed2Img.slice(0, 0);
-    binaryDenoisedChannel.dilate(box3, closeStage2Channel, BorderMode::Clamp);
-    closeStage2Channel.erode(box3, closed2Channel, BorderMode::Clamp);
+    ndl::dilate(binaryDenoisedChannel, closeStage2Channel, box3, BorderMode::Clamp);
+    ndl::erode(closeStage2Channel, closed2Channel, box3, BorderMode::Clamp);
     saveForInspection("binary closed", closed2Img, "19_binary_closed.png");
 
     // ------------------------------------------------------------------
@@ -443,7 +452,7 @@ int main()
 
     step("PackedBitImage<2> packedDenoised(greyDenoised.extent()); ndl::threshold(greyDenoised, packedDenoised, tDenoised);",
         "erode()/dilate()/median_filter()/threshold() are each implemented exactly once, as free functions\n"
-        "             (ndl::erode() etc., in image.h) written against any type exposing extent()/at()/coordinates() --\n"
+        "             (ndl::erode() etc., in morphology.h) written against any type exposing extent()/at()/coordinates() --\n"
         "             Image satisfied that from the start, and PackedBitImage (1 bit of real storage per pixel,\n"
         "             instead of a whole byte) is built to satisfy the same contract, so the exact same calls\n"
         "             below run against it completely unmodified, no PackedBitImage-specific code needed.");

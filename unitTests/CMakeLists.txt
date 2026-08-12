@@ -54,7 +54,7 @@ ndl_add_test_executable(fft_tests               fft_tests.cpp)
 ndl_add_test_executable(type_coverage_tests     type_coverage_tests.cpp)
 
 # Negative-compilation regression tests: confirm the static_assert-based
-# type restrictions in image/core.h, image/algorithms.h, and image/owned.h
+# type restrictions in image/core.h, morphology.h, and image/owned.h
 # stay in place. A static_assert is a hard compile error, not a SFINAE
 # substitution failure (confirmed empirically -- even just asking
 # std::is_constructible_v<OwnedImage<bool,2>, ...> fails the whole

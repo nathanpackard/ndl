@@ -4,8 +4,15 @@
 #include <algorithm>
 #include <cmath>
 #include <type_traits>
-#include "border_mode.h"
-#include "detail.h"
+#include "image/border_mode.h"
+#include "image/detail.h"
+
+// The morphology/thresholding toolkit: erode()/dilate()/median_filter()/
+// percentile_filter()/threshold()/otsu_threshold(), as free functions over
+// any minimal-interface image type. A sibling of fft.h/matrix.h/
+// convolution.h, not part of image.h's core Image object -- #include this
+// directly if you use these; #include <ndl/image.h> alone does not pull
+// it in, the same way it doesn't pull in fft.h.
 
 namespace ndl
 {
@@ -14,15 +21,13 @@ namespace ndl
 	// (const, returning a value convertible to the pixel type; non-const,
 	// returning something assignable from it), and coordinates() (-> an
 	// iterable range of std::array<int,DIM> visiting every position) --
-	// not just Image. Image satisfies this today (and its own erode()/
-	// dilate()/median_filter()/percentile_filter()/threshold() members,
-	// in image/core.h, just forward to these), and it's the exact contract
-	// PackedBitImage (image/packed_bit.h) is built to satisfy too,
-	// without literally deriving from Image -- its bit-packed storage and
-	// proxy bit-references make a real is-a relationship with Image
-	// impossible (see PackedBitImage's own comment). This is what lets
-	// the same erode()/dilate()/threshold() call work unmodified whether
-	// `src`/`dst` are a normal Image or a bit-packed one.
+	// Image<T,DIM> (image/core.h) satisfies this, and so does PackedBitImage
+	// (image/packed_bit.h), without PackedBitImage literally deriving from
+	// Image -- its bit-packed storage and proxy bit-references make a real
+	// is-a relationship with Image impossible (see PackedBitImage's own
+	// comment). This is what lets the same erode()/dilate()/threshold()
+	// call work unmodified whether `src`/`dst` are a normal Image or a
+	// bit-packed one.
 	//
 	// src and dst must be the same concrete type (e.g. both
 	// Image<uint8_t,2>, or both PackedBitImage<2>); kernel can be any
@@ -32,8 +37,7 @@ namespace ndl
 	// erode/dilate/percentile_filter (and median_filter, which is just
 	// percentile_filter at 50) all need to order ImageT::value_type values
 	// against each other -- gated on is_arithmetic_v rather than left to
-	// fail deep inside the comparison/std::nth_element, same reasoning as
-	// the ordering-dependent Image members in core.h. is_arithmetic_v<bool>
+	// fail deep inside the comparison/std::nth_element. is_arithmetic_v<bool>
 	// is true, so these still work unmodified for a PackedBitImage (whose
 	// value_type is bool) -- erosion/dilation reduce to AND/OR there.
 	/// Morphological erosion: replaces each element with the minimum of its `kernel`-shaped neighborhood. Works on Image or PackedBitImage.
@@ -144,7 +148,7 @@ namespace ndl
 
 	// Binarizes src into dst: onValue where src's value is greater than
 	// thresholdValue, offValue otherwise (strictly greater-than, matching
-	// Image::otsu_threshold()'s own class split: background is values <=
+	// otsu_threshold()'s own class split, below: background is values <=
 	// the threshold, foreground is values above it). src and dst need
 	// not be the same concrete type -- e.g. thresholding an
 	// Image<uint8_t,DIM> greyscale source directly into a compact
@@ -185,5 +189,91 @@ namespace ndl
 	{
 		using DstT = typename DstImageT::value_type;
 		threshold(src, dst, thresholdValue, DstT(1), DstT(0));
+	}
+
+	// Otsu's method: the value that maximizes between-class variance of
+	// src's own histogram -- equivalently, the split that separates the two
+	// classes of values (below/above it) as cleanly as possible. The
+	// standard automatic threshold for turning a grayscale image into a
+	// binary one without picking a cutoff by hand (Otsu, N., 1979, "A
+	// threshold selection method from gray-level histograms"). Generic over
+	// ImageT::value_type: the histogram spans src's own [min,max] range
+	// (scanned directly via extent()/at()/coordinates() -- the same minimal
+	// interface every other function in this file uses, rather than relying
+	// on Image's own min()/max()/begin()/end(), so this works unmodified for
+	// any minimal-interface image type) divided into `bins` equal-width
+	// buckets (default 256 -- enough resolution for classic 8-bit imagery,
+	// and a reasonable default for anything else). A noisy image widens
+	// both classes' spread and can shift where they overlap, so Otsu still
+	// works on it directly, but denoising first (e.g. median_filter())
+	// generally finds a cleaner split -- see demo/morphology.
+	/// Otsu's method: the threshold value that maximizes between-class variance of src's own histogram.
+	/// @tparam ImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic (needs ordering and a double conversion).
+	/// @param  src    Source image.
+	/// @param  bins   Histogram resolution; the value range is src's own [min,max], divided into this many equal-width buckets.
+	/// @return The threshold value, in ImageT::value_type's own range -- pass directly to threshold().
+	/// @ingroup morphology_filtering
+	template<class ImageT>
+	typename ImageT::value_type otsu_threshold(const ImageT& src, int bins = 256)
+	{
+		using T = typename ImageT::value_type;
+		static_assert(std::is_arithmetic_v<T>, "ndl::otsu_threshold() requires an arithmetic value_type (needs a total order and a double conversion) -- not valid for e.g. std::complex<T>");
+		assert(bins > 1);
+
+		auto coords = src.coordinates();
+		assert(!coords.empty());
+		T lo = src.at(coords[0]);
+		T hi = lo;
+		for (const auto& coord : coords)
+		{
+			T v = src.at(coord);
+			if (v < lo) lo = v;
+			if (v > hi) hi = v;
+		}
+		if (lo == hi) return lo; // degenerate: only one value present, nothing to split
+
+		double range = static_cast<double>(hi) - static_cast<double>(lo);
+		auto bucketOf = [&](T value) {
+			int b = (int)((static_cast<double>(value) - static_cast<double>(lo)) / range * bins);
+			return b < 0 ? 0 : (b >= bins ? bins - 1 : b);
+		};
+
+		std::vector<std::size_t> histogram(bins, 0);
+		for (const auto& coord : coords) histogram[bucketOf(src.at(coord))]++;
+
+		std::size_t total = coords.size();
+		double sumAll = 0;
+		for (int i = 0; i < bins; i++) sumAll += (double)i * histogram[i];
+
+		std::size_t weightBackground = 0;
+		double sumBackground = 0;
+		double bestVariance = -1;
+		int bestBucket = 0;
+		for (int b = 0; b < bins; b++)
+		{
+			weightBackground += histogram[b];
+			if (weightBackground == 0) continue;
+			std::size_t weightForeground = total - weightBackground;
+			if (weightForeground == 0) break;
+
+			sumBackground += (double)b * histogram[b];
+			double meanBackground = sumBackground / weightBackground;
+			double meanForeground = (sumAll - sumBackground) / weightForeground;
+
+			double diff = meanBackground - meanForeground;
+			double variance = (double)weightBackground * (double)weightForeground * diff * diff;
+			if (variance > bestVariance)
+			{
+				bestVariance = variance;
+				bestBucket = b;
+			}
+		}
+
+		// Map the winning bucket back to a value in T's own range -- its
+		// upper edge, so "value <= threshold" / "value > threshold"
+		// reproduce the same background/foreground split the bucket
+		// boundary represented.
+		double thresholdValue = static_cast<double>(lo) + range * static_cast<double>(bestBucket + 1) / static_cast<double>(bins);
+		return static_cast<T>(thresholdValue);
 	}
 }

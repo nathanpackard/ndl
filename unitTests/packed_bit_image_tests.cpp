@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
+#include <ndl/morphology.h>
 
 #include "testHelpers.h"
 
@@ -48,10 +49,10 @@ TEST(PackedBitImage, PackedBitImage) {
 	passfail << "copying a PackedBitImage is a real deep copy, not aliasing: " << (bits(1, 1) == false && copy(1, 1) == true ? "Pass" : "Fail") << std::endl;
 
 	// Cross-check: the same free ndl::erode()/dilate()/median_filter()/
-	// threshold() functions Image's own erode()/dilate()/etc. forward to,
-	// run directly against a PackedBitImage, should give bit-for-bit the
-	// same answer as running the identical operation on an equivalent 0/1
-	// Image<uint8_t,2> -- same algorithm, two storage backends.
+	// threshold() functions (morphology.h) that also run against a plain
+	// Image, run directly against a PackedBitImage, should give bit-for-bit
+	// the same answer as running the identical operation on an equivalent
+	// 0/1 Image<uint8_t,2> -- same algorithm, two storage backends.
 	std::array<int, 2> ext = { 7, 7 };
 	PackedBitImage<2> srcBits(ext);
 	OwnedImage<uint8_t, 2> srcBytes(ext);

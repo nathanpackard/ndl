@@ -63,7 +63,7 @@ namespace ndl
 	// this per color channel, so channels don't bleed into each other"
 	// helper (blur, convolve, erode, ...): `fn` receives
 	// (srcChannel, dstChannel), both Image<T,DIM-1>, and is expected to
-	// write dstChannel however it likes (e.g. `s.gaussian_blur(2.0, d,
+	// write dstChannel however it likes (e.g. `ndl::gaussian_blur(s, d, 2.0,
 	// BorderMode::Clamp)`). Since slice() shares memory rather than copying,
 	// this costs nothing beyond the operation `fn` itself performs.
 	/// Applies `fn(srcChannel, dstChannel)` independently to each index along `channelAxis` (e.g. running a filter per color channel).
@@ -73,7 +73,7 @@ namespace ndl
 	/// @param  src         Source image.
 	/// @param  dst         Destination image; must already exist with `src`'s own extent.
 	/// @param  channelAxis Dimension to iterate over, calling `fn` once per index with a slice()'d (DIM-1)-dimensional view.
-	/// @param  fn          Per-channel operation, e.g. `[](auto s, auto d){ s.gaussian_blur(2.0, d, BorderMode::Clamp); }`.
+	/// @param  fn          Per-channel operation, e.g. `[](auto s, auto d){ ndl::gaussian_blur(s, d, 2.0, BorderMode::Clamp); }`.
 	/// @ingroup morphology_filtering
 	template<class T, int DIM, class Fn>
 	void per_channel(const Image<T, DIM>& src, Image<T, DIM>& dst, int channelAxis, Fn&& fn)

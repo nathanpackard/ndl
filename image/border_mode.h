@@ -8,8 +8,9 @@ namespace ndl
 	/// neighborhood offset that falls outside the image: Clamp to the nearest edge
 	/// pixel, Wrap around to the opposite edge, or Reflect back into the image.
 	/// @ingroup morphology_filtering
-	// Border handling for Image::convolve() -- reuses the same _clamp/_wrap/_reflect
-	// primitives the iterator's clamp()/wrap()/reflect() accessors use for the same purpose.
+	// Border handling for convolve()/erode()/dilate()/etc. (convolution.h/morphology.h)
+	// -- reuses the same _clamp/_wrap/_reflect primitives the iterator's
+	// clamp()/wrap()/reflect() accessors use for the same purpose.
 	enum class BorderMode
 	{
 		Clamp,   ///< Out-of-bounds reads return the nearest in-bounds element (edge repeats).
