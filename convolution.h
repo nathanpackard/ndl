@@ -205,4 +205,57 @@ namespace ndl
 			dst.at(coord) = static_cast<DstT>(v < 0.0 ? 0.0 : (v > hi ? hi : v));
 		}
 	}
+
+	// The spatial gradient, one central-difference partial derivative per
+	// axis, written into a destination with an extra leading "component"
+	// axis of size DIM -- the same {component, ...spatial} shape this
+	// library's own color images already use ({channel, x, y}), so a single
+	// component is just dst.slice(0, axis) away, and the whole thing plugs
+	// straight into per_channel()/slice()/etc. without any gradient-specific
+	// plumbing elsewhere.
+	//
+	// Computed via convolve() itself, not a hand-written pixel loop: a
+	// central difference along one axis is exactly what a kernel shaped
+	// {..., 1 (other axes), 3 (this axis), 1 (other axes), ...} with taps
+	// {-0.5, 0, +0.5} along that one axis already computes, one axis-sized
+	// convolve() call at a time -- so this reuses convolve()'s own
+	// BorderMode handling for free instead of re-deriving how each border
+	// mode remaps an out-of-bounds neighbor.
+	/// The spatial gradient of `src`: dst.slice(0,axis) is the central-difference partial derivative along `axis`, for every axis.
+	/// @tparam SrcImageT Any minimal-interface image type whose value_type converts to double.
+	/// @tparam DstImageT Any minimal-interface image type with exactly one more axis than SrcImageT (a leading component axis of size DIM); may differ from SrcImageT otherwise.
+	/// @param  src    Source image.
+	/// @param  dst    Destination; must already exist, extent {DIM, ...src's own extent}.
+	/// @param  border How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Reflect (the natural choice for a derivative -- Clamp would flatten it to 0 right at the border).
+	/// @ingroup convolution
+	template<class SrcImageT, class DstImageT>
+	void gradient(const SrcImageT& src, DstImageT& dst, BorderMode border = BorderMode::Reflect)
+	{
+		using SrcT = typename SrcImageT::value_type;
+		static_assert(std::is_arithmetic_v<SrcT>, "ndl::gradient() requires a value_type convertible to double -- not valid for e.g. std::complex<T> (it calls convolve() internally)");
+
+		auto extent = src.extent();
+		constexpr int DIM = std::tuple_size<decltype(extent)>::value;
+		auto dstExtent = dst.extent();
+		constexpr int DstDIM = std::tuple_size<decltype(dstExtent)>::value;
+		static_assert(DstDIM == DIM + 1, "ndl::gradient() requires a destination with exactly one more axis than the source (a leading component axis of size DIM)");
+		assert(dstExtent[0] == DIM);
+		for (int d = 0; d < DIM; d++) assert(dstExtent[d + 1] == extent[d]);
+
+		for (int axis = 0; axis < DIM; axis++)
+		{
+			std::array<int, DIM> kernelExtent;
+			for (int d = 0; d < DIM; d++) kernelExtent[d] = (d == axis) ? 3 : 1;
+			std::vector<double> kernelData(Image<double, DIM>::size(kernelExtent), 0.0);
+			Image<double, DIM> kernel(kernelData.data(), kernelExtent);
+			std::array<int, DIM> negCoord{}, posCoord{};
+			negCoord[axis] = 0;
+			posCoord[axis] = 2;
+			kernel.at(negCoord) = -0.5;
+			kernel.at(posCoord) = 0.5;
+
+			auto dstChannel = dst.slice(0, axis);
+			convolve(src, dstChannel, kernel, border);
+		}
+	}
 }

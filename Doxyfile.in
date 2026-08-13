@@ -28,6 +28,8 @@ INPUT                   = @CMAKE_SOURCE_DIR@/README.md \
                            @CMAKE_SOURCE_DIR@/distance_transform.h \
                            @CMAKE_SOURCE_DIR@/summed_area_table.h \
                            @CMAKE_SOURCE_DIR@/visualize.h \
+                           @CMAKE_SOURCE_DIR@/optical_flow.h \
+                           @CMAKE_SOURCE_DIR@/feature_detection.h \
                            @CMAKE_SOURCE_DIR@/fft.h \
                            @CMAKE_SOURCE_DIR@/matrix.h \
                            @CMAKE_SOURCE_DIR@/imageIO.h \

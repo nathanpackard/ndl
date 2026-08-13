@@ -114,3 +114,48 @@ TEST(ImageConvolution, ToDisplayable) {
 	reportPassFail(passfail);
 }
 
+TEST(ImageConvolution, Gradient) {
+	std::stringstream passfail;
+
+	std::cout << std::endl << "GRADIENT" << std::endl;
+
+	// f(x) = x: interior central difference should be exactly 1.0 everywhere.
+	std::vector<double> data1(10);
+	for (int i = 0; i < 10; i++) data1[i] = (double)i;
+	Image<double, 1> src1(data1.data(), { 10 });
+	std::vector<double> gradData1(10);
+	Image<double, 2> grad1(gradData1.data(), { 1, 10 });
+	gradient(src1, grad1, BorderMode::Reflect);
+	Image<double, 1> gx1 = grad1.slice(0, 0);
+	bool rampOk = true;
+	for (int i = 1; i < 9; i++) if (std::abs(gx1(i) - 1.0) > 1e-9) rampOk = false;
+	passfail << "gradient() of a 1D ramp is 1.0 everywhere in the interior: " << (rampOk ? "Pass" : "Fail") << std::endl;
+
+	// f(x,y) = 2x + 3y: interior gradient should be exactly (2,3) everywhere.
+	const int W = 10, H = 10;
+	std::vector<double> data2(W * H);
+	Image<double, 2> src2(data2.data(), { W, H });
+	for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) src2(x, y) = 2.0 * x + 3.0 * y;
+	std::vector<double> gradData2(2 * W * H);
+	Image<double, 3> grad2(gradData2.data(), { 2, W, H });
+	gradient(src2, grad2, BorderMode::Reflect);
+	Image<double, 2> gx2 = grad2.slice(0, 0);
+	Image<double, 2> gy2 = grad2.slice(0, 1);
+	bool planeOk = true;
+	for (int y = 1; y < H - 1; y++)
+		for (int x = 1; x < W - 1; x++)
+		{
+			if (std::abs(gx2(x, y) - 2.0) > 1e-9) planeOk = false;
+			if (std::abs(gy2(x, y) - 3.0) > 1e-9) planeOk = false;
+		}
+	passfail << "gradient() of a 2D linear ramp matches its known (2,3) gradient in the interior: " << (planeOk ? "Pass" : "Fail") << std::endl;
+
+	// Cross-type: SrcImageT/DstImageT deduce independently.
+	OwnedImage<double, 3> grad3(std::array<int, 3>{2, W, H});
+	gradient(src2, grad3, BorderMode::Reflect);
+	Image<double, 2> gx3 = grad3.slice(0, 0);
+	passfail << "gradient() works with an OwnedImage destination and an Image source: " << (std::abs(gx3(5, 5) - 2.0) < 1e-9 ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+

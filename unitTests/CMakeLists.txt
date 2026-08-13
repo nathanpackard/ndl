@@ -56,6 +56,8 @@ ndl_add_test_executable(histogram_tests         histogram_tests.cpp)
 ndl_add_test_executable(distance_transform_tests distance_transform_tests.cpp)
 ndl_add_test_executable(summed_area_table_tests summed_area_table_tests.cpp)
 ndl_add_test_executable(visualize_tests         visualize_tests.cpp)
+ndl_add_test_executable(optical_flow_tests      optical_flow_tests.cpp)
+ndl_add_test_executable(feature_detection_tests feature_detection_tests.cpp)
 
 # Negative-compilation regression tests: confirm the static_assert-based
 # type restrictions in image/core.h, morphology.h, and image/owned.h

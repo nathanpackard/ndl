@@ -27,7 +27,10 @@
 /// Nth position along every axis except a caller-chosen channelAxis, returning a new,
 /// already-sized OwnedImage. to_displayable() clamps a wider-range result (a kernel
 /// with negative weights, a signed gradient magnitude) into a narrower directly-viewable
-/// type's own range, optionally re-centered by a bias first.
+/// type's own range, optionally re-centered by a bias first. gradient() computes the
+/// spatial gradient (one central-difference partial derivative per axis, via convolve()
+/// itself) into a destination with an extra leading component axis -- the foundation
+/// optical_flow.h's lucas_kanade_flow() is built on.
 
 /// @defgroup visualize Visualize
 /// bar_chart()/heatmap() (visualize.h) -- render any 1D/2D minimal-interface
@@ -67,6 +70,45 @@
 /// always-in-bounds table position, rather than by making rectangle_sum() itself
 /// border-aware.
 
+/// @defgroup optical_flow Optical Flow
+/// lucas_kanade_flow() (optical_flow.h) -- dense per-pixel displacement estimation
+/// between two frames, generalized to any DIM via the classic structure-tensor
+/// formulation: a per-pixel DIM x DIM least-squares system (solved via
+/// detail::solveLinearSystem()), whose windowed sums are themselves computed via
+/// box_blur() (Summed-Area Table, above) rather than an explicit per-pixel window
+/// loop. A flow field is an ordinary Image<double,DIM+1> with a leading component
+/// axis of size DIM -- the same {channel,x,y} shape this library's color images
+/// already use -- so it needs no flow-specific plumbing anywhere else in the
+/// library. to_complex()/from_complex(), also here, convert a 2D flow field
+/// to/from Image<std::complex<double>,2> specifically -- complex doesn't
+/// generalize past 2D, but is a genuinely idiomatic 2D-only representation this
+/// library already has full support for (FFT, above).
+///
+/// @defgroup features Feature Detection & Matching
+/// detect_keypoints()/compute_descriptors()/match_descriptors()/sift_flow()
+/// (feature_detection.h) -- a SIFT-*inspired* scale-invariant feature pipeline,
+/// generalized to any DIM. The scale-space extrema detection (a Difference-of-
+/// Gaussians pyramid built from gaussian_blur(), searched for extrema over the
+/// full spatial+scale neighborhood) is a genuine, unambiguous N-dimensional
+/// generalization of the real published algorithm. The descriptor is not: the
+/// classic SIFT descriptor's 128-dimensional, 4x4-grid-of-8-orientation-bins
+/// design has no natural N-D extension (published "3D SIFT" work invents an
+/// entirely different descriptor, e.g. spherical histograms, rather than
+/// mechanically generalizing the 2D one) -- so this library trades literal
+/// fidelity to the published algorithm for genuine any-DIM support, using a
+/// numCellsPerAxis^DIM grid of Gaussian-weighted, per-axis signed-gradient bins
+/// instead of orientation histograms. Rotation invariance -- SIFT's own single
+/// dominant-orientation ANGLE -- generalizes too, just not via an angle: any
+/// N-D rotation decomposes into simple rotations of 2-D planes (the spectral
+/// theorem), so compute_descriptors() instead aligns each keypoint's sampling
+/// grid to the eigenbasis of its own local structure tensor (Matrix<double,DIM>,
+/// eigen_decomposition() -- matrix.h), the same tensor lucas_kanade_flow()
+/// (Optical Flow, below) builds densely. See compute_descriptors()' own comment
+/// for the real, inherent (not bugs) loose ends this leaves: eigenvector sign
+/// ambiguity (resolved via majority gradient projection) and instability at
+/// degenerate/isotropic keypoints (which have no real preferred direction to
+/// align to regardless).
+///
 /// @defgroup fft FFT
 /// Complex/real power-of-two FFT (FFT, FFTReal), arbitrary-size FFT via Bluestein's
 /// algorithm (FFTBluestein), and the N-dimensional Image-based entry points

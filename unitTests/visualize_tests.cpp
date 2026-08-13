@@ -104,3 +104,34 @@ TEST(Visualize, HeatmapMultiChannel) {
 
 	reportPassFail(passfail);
 }
+
+TEST(Visualize, FlowToColor) {
+	std::stringstream passfail;
+	std::cout << std::endl << "FLOW_TO_COLOR" << std::endl;
+
+	const int W = 4, H = 4;
+	std::vector<double> flowData(2 * W * H, 0.0);
+	Image<double, 3> flow(flowData.data(), { 2, W, H });
+	// (0,0): pure rightward (angle 0), at the field's own max magnitude.
+	flow(0, 0, 0) = 5.0;
+	flow(1, 0, 0) = 0.0;
+	// (1,1): zero flow -- should render as black regardless of hue.
+
+	OwnedImage<uint8_t, 3> color({ 3, W, H });
+	flow_to_color(flow, color, (uint8_t)255);
+
+	bool zeroIsBlack = color(0, 1, 1) == 0 && color(1, 1, 1) == 0 && color(2, 1, 1) == 0;
+	passfail << "zero-magnitude flow renders as black regardless of hue: " << (zeroIsBlack ? "Pass" : "Fail") << std::endl;
+
+	int maxChannel = std::max({ (int)color(0, 0, 0), (int)color(1, 0, 0), (int)color(2, 0, 0) });
+	passfail << "the field's own max-magnitude position reaches full brightness: " << (maxChannel >= 250 ? "Pass" : "Fail") << std::endl;
+
+	// Rightward flow (angle 0) maps to hue 0.5 (cyan: R=0, G=B=max) under
+	// this function's own (angle+pi)/(2*pi) convention -- checked directly
+	// rather than just "some color came out", so a hue-mapping regression
+	// (e.g. an accidental sign flip) would actually be caught.
+	bool correctHue = color(0, 0, 0) == 0 && color(1, 0, 0) > 250 && color(2, 0, 0) > 250;
+	passfail << "rightward flow (angle 0) maps to cyan (hue 0.5), matching this function's own angle convention: " << (correctHue ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}

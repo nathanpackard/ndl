@@ -14,3 +14,4 @@ library actually does.
 - \subpage histogram_tutorial -- Histogram<VDIM> and histogram_equalize() (histogram.h), joint histograms, and the Histogram-backed otsu_threshold().
 - \subpage distance_transform_tutorial -- distance_transform()/distance_transform_squared() (distance_transform.h), and pairing it with invert() for distance-to-foreground.
 - \subpage summed_area_table_tutorial -- summed_area_table()/rectangle_sum() (summed_area_table.h), and O(1) box filtering timed against convolve().
+- \subpage motion_tutorial -- lucas_kanade_flow() (optical_flow.h) and sift_flow() (feature_detection.h): dense vs. sparse-then-interpolated displacement estimation, and flow_to_color() visualization, on a real Middlebury benchmark frame pair.

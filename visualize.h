@@ -133,4 +133,90 @@ namespace ndl
 			dst.at(coord) = (DstT)(v * (double)peakValue);
 		}
 	}
+
+	namespace detail
+	{
+		// h,s,v each in [0,1] -> r,g,b each in [0,1]. The standard sector-based
+		// HSV->RGB conversion (identical in every graphics text/library);
+		// lives here rather than in mathHelpers.h since flow_to_color() below
+		// is its only caller.
+		inline void hsvToRgb(double h, double s, double v, double& r, double& g, double& b)
+		{
+			double i = std::floor(h * 6.0);
+			double f = h * 6.0 - i;
+			double p = v * (1.0 - s);
+			double q = v * (1.0 - f * s);
+			double t = v * (1.0 - (1.0 - f) * s);
+			switch (((int)i % 6 + 6) % 6)
+			{
+				case 0: r = v; g = t; b = p; break;
+				case 1: r = q; g = v; b = p; break;
+				case 2: r = p; g = v; b = t; break;
+				case 3: r = p; g = q; b = v; break;
+				case 4: r = t; g = p; b = v; break;
+				default: r = v; g = p; b = q; break;
+			}
+		}
+	}
+
+	// Visualizes a 2D flow field (the {2,W,H} representation optical_flow.h's
+	// lucas_kanade_flow()/feature_detection.h's sift_flow() both produce) as
+	// a color image: hue encodes direction (a full color wheel over the
+	// angle atan2(dy,dx)), brightness encodes magnitude (scaled to the
+	// field's own max, same "scale to max" convention as heatmap()) -- the
+	// standard way to make a 2D vector field readable at a glance in a
+	// single image, the same convention the Middlebury optical-flow
+	// benchmark's own reference visualizations use.
+	//
+	// 2D-only, unlike bar_chart()/heatmap() above: hue is a single angle,
+	// which only means "direction" for a 2-component vector -- there's no
+	// analogous single-angle encoding for a 3+ component displacement (the
+	// same reason optical_flow.h's to_complex()/from_complex() are 2D-only
+	// too). For any other DIM, visualize each component separately instead
+	// -- flow.slice(0,axis) is an ordinary DIM-dimensional numeric array,
+	// so heatmap() already renders it directly, no flow-specific code
+	// needed for that case.
+	/// Visualizes a 2D flow field as a color wheel image: hue = direction, brightness = magnitude (scaled to the field's own max).
+	/// @tparam SrcImageT Any minimal-interface image type with a leading component axis of size 2 (e.g. lucas_kanade_flow()'s own output).
+	/// @tparam DstImageT Any minimal-interface image type with a leading channel axis of size 3 (R,G,B), matching src's own spatial extent.
+	/// @param  flow      Source flow field, extent {2, W, H}.
+	/// @param  dst       Destination; must already exist, extent {3, W, H}.
+	/// @param  peakValue Pixel value at full brightness (the field's own max magnitude). Defaults to 1 -- pass e.g. 255 for a directly-viewable 8-bit image.
+	/// @ingroup visualize
+	template<class SrcImageT, class DstImageT>
+	void flow_to_color(const SrcImageT& flow, DstImageT& dst, typename DstImageT::value_type peakValue = typename DstImageT::value_type(1))
+	{
+		using DstT = typename DstImageT::value_type;
+		static_assert(std::is_arithmetic_v<DstT>, "ndl::flow_to_color() requires an arithmetic destination value_type -- not valid for e.g. std::complex<T>");
+
+		auto flowExtent = flow.extent();
+		assert(flowExtent[0] == 2);
+		auto dstExtent = dst.extent();
+		assert(dstExtent[0] == 3 && dstExtent[1] == flowExtent[1] && dstExtent[2] == flowExtent[2]);
+
+		auto dx = flow.slice(0, 0);
+		auto dy = flow.slice(0, 1);
+
+		double maxMag = 0;
+		for (const auto& coord : dx.coordinates())
+		{
+			double vx = dx.at(coord), vy = dy.at(coord);
+			maxMag = std::max(maxMag, std::sqrt(vx * vx + vy * vy));
+		}
+
+		for (const auto& coord : dx.coordinates())
+		{
+			double vx = dx.at(coord), vy = dy.at(coord);
+			double mag = std::sqrt(vx * vx + vy * vy);
+			double hue = (std::atan2(vy, vx) + M_PI) / (2.0 * M_PI); // [0,1)
+			double value = maxMag > 0 ? mag / maxMag : 0.0;
+
+			double r, g, b;
+			detail::hsvToRgb(hue, 1.0, value, r, g, b);
+
+			dst.at(std::array<int, 3>{0, coord[0], coord[1]}) = static_cast<DstT>(r * (double)peakValue);
+			dst.at(std::array<int, 3>{1, coord[0], coord[1]}) = static_cast<DstT>(g * (double)peakValue);
+			dst.at(std::array<int, 3>{2, coord[0], coord[1]}) = static_cast<DstT>(b * (double)peakValue);
+		}
+	}
 }

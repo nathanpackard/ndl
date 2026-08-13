@@ -9,3 +9,4 @@ These regenerate automatically for [the hosted Doxygen site](https://nathanpacka
 - [Histogram Tutorial](histogram_tutorial.md)
 - [Distance Transform Tutorial](distance_transform_tutorial.md)
 - [Summed-Area Table Tutorial](summed_area_table_tutorial.md)
+- [Motion (Optical Flow / SIFT) Tutorial](motion_tutorial.md)
