@@ -32,6 +32,10 @@ INPUT                   = @CMAKE_SOURCE_DIR@/README.md \
                            @CMAKE_SOURCE_DIR@/feature_detection.h \
                            @CMAKE_SOURCE_DIR@/fft.h \
                            @CMAKE_SOURCE_DIR@/matrix.h \
+                           @CMAKE_SOURCE_DIR@/matrix \
+                           @CMAKE_SOURCE_DIR@/interpolation.h \
+                           @CMAKE_SOURCE_DIR@/sampling.h \
+                           @CMAKE_SOURCE_DIR@/projection.h \
                            @CMAKE_SOURCE_DIR@/imageIO.h \
                            @CMAKE_SOURCE_DIR@/utility.h \
                            @CMAKE_SOURCE_DIR@/mathHelpers.h \
@@ -41,6 +45,7 @@ INPUT                   = @CMAKE_SOURCE_DIR@/README.md \
 USE_MDFILE_AS_MAINPAGE  = @CMAKE_SOURCE_DIR@/README.md
 RECURSIVE                = YES
 IMAGE_PATH               = @CMAKE_BINARY_DIR@/docs/generated/images
+HTML_EXTRA_STYLESHEET   = @CMAKE_SOURCE_DIR@/docs/tutorial.css
 
 # The existing comments throughout ndl's headers are plain "//" prose
 # (extensive "why, not just what" explanations), not Doxygen-tagged

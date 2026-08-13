@@ -15,3 +15,5 @@ library actually does.
 - \subpage distance_transform_tutorial -- distance_transform()/distance_transform_squared() (distance_transform.h), and pairing it with invert() for distance-to-foreground.
 - \subpage summed_area_table_tutorial -- summed_area_table()/rectangle_sum() (summed_area_table.h), and O(1) box filtering timed against convolve().
 - \subpage motion_tutorial -- lucas_kanade_flow() (optical_flow.h) and sift_flow() (feature_detection.h): dense vs. sparse-then-interpolated displacement estimation, and flow_to_color() visualization, on a real Middlebury benchmark frame pair.
+- \subpage ct_reconstruction_tutorial -- forward_project()/back_project() (projection.h), ray-marched CT-style projection built to be an exact adjoint pair, and an iterative Shepp-Logan phantom reconstruction built on nothing else.
+- \subpage ct_reconstruction_3d_tutorial -- the 3D, cone/fan-beam sibling: a genuinely perspective ProjectionMatrix<Real,3> (matrix/projection.h), a 128^3 3D Shepp-Logan phantom, spatially-variable automatic anti-aliasing, and reconstruction through a 64x64 detector.

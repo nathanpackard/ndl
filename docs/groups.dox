@@ -38,7 +38,13 @@
 /// respectively), scaled to the array's own max value. Exists so nothing else in
 /// this library needs its own one-off ASCII-art rendering: histogram_image()
 /// (Histogram, below) is a thin dispatch straight to these, not separate drawing
-/// code.
+/// code. percentile()/percentile_range()/windowed_heatmap(), also here, exist for
+/// when that "scale to the array's own max" convention is the wrong call: a
+/// single outlier value can otherwise dominate the whole displayed range, crushing
+/// everything else in the image toward black. windowed_heatmap() scales to a
+/// [lowPercentile,highPercentile] window instead (values outside it simply
+/// saturate), and flow_to_color()'s own optional magnitudeCap parameter lets a
+/// caller apply the same idea to a vector field's magnitude.
 
 /// @defgroup histogram Histogram
 /// Histogram<VDIM>, histogram_equalize(), and histogram_image() (histogram.h) --
@@ -120,7 +126,71 @@
 
 /// @defgroup matrix Matrix
 /// Fixed-size, compile-time-dimensioned NxN matrices and the geometric transforms
-/// (scale/translate/rotate/project) built on them.
+/// (scale/translate/rotate/project) built on them, plus ProjectionMatrix<Real,D>
+/// (matrix/projection.h) -- a D x (D+1) homogeneous matrix covering both
+/// parallel-beam and cone/fan-beam projection geometry, and camera_center()/
+/// ray_for_pixel(), which recover a projection matrix's own center of
+/// projection (a finite source point, or a direction at infinity) and a
+/// detector pixel's corresponding ray purely from the matrix itself, via its
+/// null space (reusing this group's own SVD<Real,N>). What Projection, below,
+/// is built on.
+///
+/// @defgroup interpolation Interpolation
+/// Nearest/Linear/Quadratic/Cubic interpolator tags and sample()
+/// (interpolation.h) -- reads a minimal-interface image at a fractional,
+/// real-valued position via a separable weighted blend of its nearby
+/// integer-indexed taps, border handling shared with convolve()/box_blur()
+/// via detail::kernelTapCoord(). scatter_add(), also here, is sample()'s
+/// exact adjoint (same weights, but adding a value INTO the nearby taps
+/// rather than reading a blend of them OUT) -- what makes Projection, below,
+/// able to implement forward/back projection as a genuinely (not just
+/// approximately) matched operator pair.
+///
+/// @defgroup sampling Sampling
+/// sample_image() (sampling.h) -- general N-to-N image resampling through an
+/// arbitrary homogeneous Matrix<Real,DIM+1> transform (affine or projective),
+/// backward-mapped (the transform maps destination coordinates to source
+/// coordinates, the standard convention that avoids holes). Automatically
+/// anti-aliases when downsampling: the transform's own Jacobian (exact, via
+/// closed-form differentiation of the same perspective-divide
+/// transform_point() itself performs, not a finite-difference
+/// approximation) sizes a box prefilter from basic sampling theory, applied
+/// via Summed-Area Table's box_filter_query() when the resulting footprint
+/// would otherwise alias, skipped entirely (plain interpolation.h::sample())
+/// when it wouldn't.
+///
+/// @defgroup projection Projection
+/// forward_project()/back_project() (projection.h) -- CT-style projection
+/// between a D-dimensional volume and a (D-1)-dimensional-per-view sinogram,
+/// driven by one Matrix ProjectionMatrix<Real,D> (matrix/projection.h) per
+/// view. forward_project() ray-marches (via ray_for_pixel()'s resolved ray)
+/// and accumulates interpolation.h::sample()'d volume values into each
+/// sinogram cell, a direct discretization of the Radon transform's line
+/// integral; automatic anti-aliasing (see Sampling, above, for the general
+/// idea) prefilters the volume per view, sized from the view's own Jacobian,
+/// when the volume's resolution would otherwise alias against the
+/// detector's -- genuinely spatially-VARIABLE for cone/fan-beam geometry
+/// (a voxel's footprint on the detector depends on its own distance from
+/// the source), not just spatially-uniform the way Sampling's own
+/// affine-transform case is. back_project() is built to be
+/// forward_project()'s EXACT adjoint, not merely a good approximation of
+/// one (the more common "voxel-driven gather" back-projector is not,
+/// despite looking similar) -- it re-walks the identical rays via the same
+/// detail::planRaySamples(), scattering (interpolation.h::scatter_add(),
+/// the exact adjoint of sample()) each sinogram value back with the same
+/// per-sample weight forward_project() used to read it. Verified directly
+/// via a dot-product test (<forward_project(x),y> == <x,back_project(y)>),
+/// not just asserted -- see unitTests/projection_tests.cpp and
+/// demo/ct_reconstruction, an iterative Shepp-Logan phantom reconstruction
+/// built on nothing but this adjoint pair. max_density_bound(), also here,
+/// derives a per-voxel upper density bound directly from a measured sinogram
+/// (the non-negativity assumption real CT reconstruction already relies on,
+/// applied to forward_project()'s own Riemann-sum structure) -- clamping an
+/// iterative reconstruction to [0, max_density_bound(sinogram)] each
+/// iteration ("projected" Landweber/gradient descent, demo/ct_reconstruction
+/// and demo/ct_reconstruction_3d both do this) is what keeps background
+/// voxels the sinogram shows a clear line of sight through from drifting
+/// into the bright overshoot artifacts unconstrained iteration is prone to.
 
 /// @defgroup image_io Image I/O
 /// Loading and saving images in bitmap/PNG/JPEG/DICOM/NRRD/raw formats.

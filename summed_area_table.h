@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <vector>
 #include <type_traits>
+#include <cmath>
+#include <algorithm>
 #include "image.h"
 
 // The summed-area-table toolkit: summed_area_table()/rectangle_sum(), as
@@ -148,6 +150,50 @@ namespace ndl
 			total = static_cast<T>(total + sign * table.at(coord));
 		}
 		return total;
+	}
+
+	// Same idea as rectangle_sum() above but for a caller that doesn't have
+	// fixed integer corners in hand -- sampling.h/projection.h's automatic
+	// anti-aliasing needs a box average centered at an arbitrary fractional
+	// position, with a half-width that varies from query to query (a
+	// perspective/cone-beam projection's footprint changes with depth along
+	// each ray, unlike an affine transform's constant one -- see
+	// projection.h's own comment). Snaps outward (floor/ceil, never
+	// inward) so the queried box is never smaller than what was asked for
+	// -- erring toward slightly more blur is the safe direction for
+	// anti-aliasing, where under-filtering (not over-) is what causes
+	// aliasing. This is exactly the use case summed-area tables were
+	// originally invented for (Crow, 1984, "Summed-Area Tables for Texture
+	// Mapping"): O(1) arbitrary-size box filtering under a spatially
+	// varying footprint, not a new capability bolted on afterward.
+	/// Average value over an arbitrary-position, arbitrary-size axis-aligned box, in O(1) via one rectangle_sum() query -- a variable-size sibling of box_blur()'s own fixed-radius window. The box [center-halfWidth, center+halfWidth] is snapped outward to the nearest enclosing integer cells, then clamped to the table's own extent -- clamped, not reflected/wrapped/padded like box_blur()'s BorderMode, since a per-query variable width can't be bounded in advance to build a padded copy against.
+	/// @tparam TableImageT Any minimal-interface image type; its value_type must be signed (needs subtraction, same requirement as rectangle_sum()).
+	/// @tparam DIM         Deduced from center/halfWidth.
+	/// @param  table       A summed-area table, as built by summed_area_table() above.
+	/// @param  center      Box center, one fractional coordinate per axis.
+	/// @param  halfWidth   Box half-width, one per axis; must be >= 0.
+	/// @ingroup summed_area_table
+	template<class TableImageT, std::size_t DIM>
+	double box_filter_query(const TableImageT& table, const std::array<double, DIM>& center, const std::array<double, DIM>& halfWidth)
+	{
+		using T = typename TableImageT::value_type;
+		static_assert(std::is_signed_v<T>, "ndl::box_filter_query() requires a signed value_type (needs subtraction) -- floating-point or a signed integer accumulator");
+
+		auto extent = table.extent();
+		std::array<int, DIM> corner0, corner1;
+		double count = 1.0;
+		for (std::size_t i = 0; i < DIM; i++)
+		{
+			assert(halfWidth[i] >= 0);
+			int c0 = (int)std::floor(center[i] - halfWidth[i]);
+			int c1 = (int)std::ceil(center[i] + halfWidth[i]);
+			if (c1 < c0) c1 = c0;
+			c0 = std::max(0, std::min(c0, extent[i] - 1));
+			c1 = std::max(0, std::min(c1, extent[i] - 1));
+			corner0[i] = c0; corner1[i] = c1;
+			count *= (double)(c1 - c0 + 1);
+		}
+		return static_cast<double>(rectangle_sum(table, corner0, corner1)) / count;
 	}
 
 	// Averages every position over a (2*radius+1)^DIM window in O(1) per

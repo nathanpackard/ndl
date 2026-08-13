@@ -57,14 +57,14 @@ image_io::load_owned("rubberwhale/frame10.png"); ...frame11.png; downsample(...,
 
 The Middlebury RubberWhale pair (see this file's own top comment for the citation) -- downsampled 2x purely to keep this demo's saved images (and runtime -- sift_flow() below is by far the most expensive step in this whole demo) reasonable, the same reason demo/convolution/demo/morphology downsample marbles.bmp.
 
-![motion_tutorial_01_frame0.png](images/motion_tutorial/motion_tutorial_01_frame0.png)
+[![motion_tutorial_01_frame0.png](images/motion_tutorial/motion_tutorial_01_frame0.png)](images/motion_tutorial/motion_tutorial_01_frame0.png)
 
 ```text
 frame0: /home/nathanpackard/git/ndl/build/demo/motion/output/01_frame0.png
     extent = {4, 292, 194}   min=3  max=254  mean=157.46
 ```
 
-![motion_tutorial_02_frame1.png](images/motion_tutorial/motion_tutorial_02_frame1.png)
+[![motion_tutorial_02_frame1.png](images/motion_tutorial/motion_tutorial_02_frame1.png)](images/motion_tutorial/motion_tutorial_02_frame1.png)
 
 ```text
 frame1: /home/nathanpackard/git/ndl/build/demo/motion/output/02_frame1.png
@@ -85,7 +85,7 @@ flow_to_color(lkFlow, lkFlowColor, 255)
 
 hue = direction, brightness = magnitude (scaled to the field's own max). RubberWhale is a small sideways camera pan across a scene with real depth -- the closer foreground toys (bottom-left) and the nearer sweater (right) shift differently from the farther striped backdrop during that pan, which is exactly motion PARALLAX, not noise: 03_lk_flow_color.png should show a handful of distinct color regions -- one per rough depth layer -- rather than one single uniform hue across the whole frame.
 
-![motion_tutorial_03_lk_flow_color.png](images/motion_tutorial/motion_tutorial_03_lk_flow_color.png)
+[![motion_tutorial_03_lk_flow_color.png](images/motion_tutorial/motion_tutorial_03_lk_flow_color.png)](images/motion_tutorial/motion_tutorial_03_lk_flow_color.png)
 
 ```text
 Lucas-Kanade flow, color-coded: /home/nathanpackard/git/ndl/build/demo/motion/output/03_lk_flow_color.png
@@ -120,7 +120,7 @@ keypoints in frame0 / frame1:   85 / 85
 matched pairs (nearest-neighbor + Lowe's ratio test):   74
 ```
 
-![motion_tutorial_05_sift_keypoints.png](images/motion_tutorial/motion_tutorial_05_sift_keypoints.png)
+[![motion_tutorial_05_sift_keypoints.png](images/motion_tutorial/motion_tutorial_05_sift_keypoints.png)](images/motion_tutorial/motion_tutorial_05_sift_keypoints.png)
 
 ```text
 frame0 with matched keypoints marked in red: /home/nathanpackard/git/ndl/build/demo/motion/output/05_sift_keypoints.png
@@ -134,16 +134,27 @@ sift_flow(f0grey, f1grey, siftFlow)
 
 Propagates those sparse matched displacements to a dense per-pixel field via inverse- distance-weighted interpolation (feature_detection.h's own comment has the details) -- 06_sift_flow_color.png should be broadly similar in hue to 03_lk_flow_color.png (both are measuring the same real motion) but visibly smoother/blockier, since it's interpolated from 74 points rather than measured at every pixel independently.
 
-![motion_tutorial_06_sift_flow_color.png](images/motion_tutorial/motion_tutorial_06_sift_flow_color.png)
+### Step 9
+```cpp
+flow_to_color(siftFlow, siftFlowColor, 255, magnitudeCap)   // magnitudeCap = 95th percentile magnitude
+```
+
+flow_to_color()'s default "scale brightness to the field's own true max magnitude" is exactly the failure mode windowed_heatmap() (visualize.h) exists to avoid: a single stray match -- interpolated across a wide area by sift_flow()'s own inverse-distance weighting, see above -- can produce one wildly large displacement that dwarfs every real one, crushing the rest of the field to near-black. Capping brightness at the 95th percentile magnitude instead (that one outlier simply saturates at full brightness) keeps the real motion visible; percentile() is the same building block windowed_heatmap() itself uses.
 
 ```text
-SIFT-inspired flow, color-coded: /home/nathanpackard/git/ndl/build/demo/motion/output/06_sift_flow_color.png
-    extent = {3, 292, 194}   min=0  max=255  mean=2.53
+95th-percentile flow magnitude (used as the color-coding cap):   1.331241 px
+```
+
+[![motion_tutorial_06_sift_flow_color.png](images/motion_tutorial/motion_tutorial_06_sift_flow_color.png)](images/motion_tutorial/motion_tutorial_06_sift_flow_color.png)
+
+```text
+SIFT-inspired flow, color-coded (95th-percentile-capped): /home/nathanpackard/git/ndl/build/demo/motion/output/06_sift_flow_color.png
+    extent = {3, 292, 194}   min=0  max=255  mean=57.98
 ```
 
 ## PART 6: comparing the two flow fields, and the 2D complex representation
 
-### Step 9
+### Step 10
 ```cpp
 average per-pixel Euclidean distance between lkFlow and siftFlow
 ```
@@ -154,7 +165,7 @@ Both are estimating the same real underlying motion two completely independent w
 mean |lucas_kanade_flow - sift_flow|:   0.822362 px
 ```
 
-### Step 10
+### Step 11
 ```cpp
 to_complex(lkFlow, lkFlowComplex); std::abs(...)/std::arg(...)
 ```

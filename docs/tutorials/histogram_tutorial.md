@@ -39,7 +39,7 @@ histogram_image(hist, dst, 255, 0)
 
 The same Histogram<1>, rendered as an actual image instead of text: bar_chart() (visualize.h) draws one vertical bar per bin, scaled to the tallest bin, and histogram_image() is a thin dispatch straight to it -- hist.counts() is already a real minimal-interface image (an OwnedImage<std::size_t,1>), so there's no Histogram-specific drawing code at all. 00_small_hist.png should show 4 bars: short, none, tall, and a short one, matching count(0..3) = 5, 0, 4, 1 above.
 
-![histogram_tutorial_00_small_hist.png](images/histogram_tutorial/histogram_tutorial_00_small_hist.png)
+[![histogram_tutorial_00_small_hist.png](images/histogram_tutorial/histogram_tutorial_00_small_hist.png)](images/histogram_tutorial/histogram_tutorial_00_small_hist.png)
 
 ```text
 small histogram, as an image: /home/nathanpackard/git/ndl/build/demo/histogram/output/00_small_hist.png
@@ -67,7 +67,7 @@ width * height: 168000
 size: 504000
 ```
 
-![histogram_tutorial_01_original.png](images/histogram_tutorial/histogram_tutorial_01_original.png)
+[![histogram_tutorial_01_original.png](images/histogram_tutorial/histogram_tutorial_01_original.png)](images/histogram_tutorial/histogram_tutorial_01_original.png)
 
 ```text
 photo: /home/nathanpackard/git/ndl/build/demo/histogram/output/01_original.png
@@ -81,7 +81,7 @@ Histogram<1> photoHist(grey);   // default 256 bins -- no reason to coarsen it n
 
 The same Histogram<1>, now over a real photo's greyscale values, at the default 256-bin resolution -- unlike an ASCII bar chart (one line per bin), an image has no reason to coarsen the resolution just to keep it readable.
 
-![histogram_tutorial_02_photo_histogram.png](images/histogram_tutorial/histogram_tutorial_02_photo_histogram.png)
+[![histogram_tutorial_02_photo_histogram.png](images/histogram_tutorial/histogram_tutorial_02_photo_histogram.png)](images/histogram_tutorial/histogram_tutorial_02_photo_histogram.png)
 
 ```text
 photo histogram: /home/nathanpackard/git/ndl/build/demo/histogram/output/02_photo_histogram.png
@@ -97,21 +97,21 @@ histogram_equalize(grey, equalized)
 
 Remaps grey's values so their cumulative distribution is closer to uniform across its own [min,max] range -- the classic contrast-stretching operation for a photo whose values cluster in a narrow sub-range instead of using the full range. Compare 03_grey_original.png (the unequalized greyscale photo) against 04_equalized.png, and the two histogram images below: the equalized one should look visibly flatter/more spread out across its bins than the original's, which likely has a few tall spikes.
 
-![histogram_tutorial_03_grey_original.png](images/histogram_tutorial/histogram_tutorial_03_grey_original.png)
+[![histogram_tutorial_03_grey_original.png](images/histogram_tutorial/histogram_tutorial_03_grey_original.png)](images/histogram_tutorial/histogram_tutorial_03_grey_original.png)
 
 ```text
 grey (unequalized): /home/nathanpackard/git/ndl/build/demo/histogram/output/03_grey_original.png
     extent = {560, 300}   min=0  max=255  mean=120.765
 ```
 
-![histogram_tutorial_04_equalized.png](images/histogram_tutorial/histogram_tutorial_04_equalized.png)
+[![histogram_tutorial_04_equalized.png](images/histogram_tutorial/histogram_tutorial_04_equalized.png)](images/histogram_tutorial/histogram_tutorial_04_equalized.png)
 
 ```text
 equalized: /home/nathanpackard/git/ndl/build/demo/histogram/output/04_equalized.png
     extent = {560, 300}   min=0  max=255  mean=127.585
 ```
 
-![histogram_tutorial_05_equalized_histogram.png](images/histogram_tutorial/histogram_tutorial_05_equalized_histogram.png)
+[![histogram_tutorial_05_equalized_histogram.png](images/histogram_tutorial/histogram_tutorial_05_equalized_histogram.png)](images/histogram_tutorial/histogram_tutorial_05_equalized_histogram.png)
 
 ```text
 equalized histogram: /home/nathanpackard/git/ndl/build/demo/histogram/output/05_equalized_histogram.png
@@ -131,7 +131,7 @@ Histogram<VDIM> generalizes over VDIM the same way Image<T,DIM> generalizes over
 joint.total():   168000  (expected: one per pixel)
 ```
 
-![histogram_tutorial_06_joint_histogram.png](images/histogram_tutorial/histogram_tutorial_06_joint_histogram.png)
+[![histogram_tutorial_06_joint_histogram.png](images/histogram_tutorial/histogram_tutorial_06_joint_histogram.png)](images/histogram_tutorial/histogram_tutorial_06_joint_histogram.png)
 
 ```text
 joint red/green histogram: /home/nathanpackard/git/ndl/build/demo/histogram/output/06_joint_histogram.png

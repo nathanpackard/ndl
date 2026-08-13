@@ -133,5 +133,53 @@ TEST(Visualize, FlowToColor) {
 	bool correctHue = color(0, 0, 0) == 0 && color(1, 0, 0) > 250 && color(2, 0, 0) > 250;
 	passfail << "rightward flow (angle 0) maps to cyan (hue 0.5), matching this function's own angle convention: " << (correctHue ? "Pass" : "Fail") << std::endl;
 
+	// A single outlier-magnitude vector shouldn't wash out every other
+	// vector's brightness when an explicit magnitudeCap sidesteps it --
+	// the same problem windowed_heatmap() (below) solves for a plain
+	// scalar array.
+	flow(0, 2, 2) = 1000.0; // one wild outlier vector at (2,2)
+	flow(1, 2, 2) = 0.0;
+	OwnedImage<uint8_t, 3> autoColor({ 3, W, H });
+	flow_to_color(flow, autoColor, (uint8_t)255);
+	OwnedImage<uint8_t, 3> cappedColor({ 3, W, H });
+	flow_to_color(flow, cappedColor, (uint8_t)255, /*magnitudeCap=*/5.0);
+	int autoBrightness = autoColor(1, 0, 0) + autoColor(2, 0, 0); // (0,0)'s own cyan channels
+	int cappedBrightness = cappedColor(1, 0, 0) + cappedColor(2, 0, 0);
+	passfail << "an outlier vector elsewhere in the field crushes auto-scaled brightness at (0,0) (" << autoBrightness << "): " << (autoBrightness < 20 ? "Pass" : "Fail") << std::endl;
+	passfail << "an explicit magnitudeCap keeps (0,0) at full brightness (" << cappedBrightness << ") despite the outlier: " << (cappedBrightness > 500 ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
+TEST(Visualize, PercentileAndWindowedHeatmap) {
+	std::stringstream passfail;
+	std::cout << std::endl << "PERCENTILE / WINDOWED_HEATMAP" << std::endl;
+
+	// percentile(): a known 0..99 distribution has unambiguous percentile
+	// values (numpy's default "linear" interpolation convention).
+	std::vector<double> rampData(100);
+	for (int i = 0; i < 100; i++) rampData[i] = i;
+	Image<double, 1> ramp(rampData.data(), { 100 });
+	double p0 = percentile(ramp, 0.0), p50 = percentile(ramp, 50.0), p100 = percentile(ramp, 100.0);
+	bool percentilesOk = std::abs(p0 - 0.0) < 1e-9 && std::abs(p50 - 49.5) < 1e-9 && std::abs(p100 - 99.0) < 1e-9;
+	passfail << "percentile() matches known values on a 0..99 ramp (p0=" << p0 << ", p50=" << p50 << ", p100=" << p100 << "): " << (percentilesOk ? "Pass" : "Fail") << std::endl;
+
+	// windowed_heatmap(): a mostly-uniform field with one huge outlier --
+	// plain heatmap() crushes the uniform region to near-black (dominated
+	// by the outlier's own max); the 5th-95th percentile window should
+	// keep it clearly visible instead.
+	const int W = 20, H = 20;
+	std::vector<double> data(W * H, 10.0);
+	data[0] = 100000.0; // one wild outlier
+	Image<double, 2> img(data.data(), { W, H });
+
+	OwnedImage<uint8_t, 2> plainHeat({ W, H });
+	heatmap(img, plainHeat, (uint8_t)255);
+	OwnedImage<uint8_t, 2> windowedHeat({ W, H });
+	windowed_heatmap(img, windowedHeat, 5.0, 95.0, (uint8_t)255);
+
+	passfail << "plain heatmap() crushes a normal pixel near-black under one outlier (value=" << (int)plainHeat(5, 5) << "): " << (plainHeat(5, 5) < 5 ? "Pass" : "Fail") << std::endl;
+	passfail << "windowed_heatmap() keeps that same pixel clearly visible (value=" << (int)windowedHeat(5, 5) << "): " << (windowedHeat(5, 5) > 200 ? "Pass" : "Fail") << std::endl;
+
 	reportPassFail(passfail);
 }

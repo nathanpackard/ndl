@@ -25,7 +25,7 @@ out_dir="${repo_root}/docs/tutorials"
 if [ ! -f "${build_dir}/CMakeCache.txt" ]; then
     cmake -B "${build_dir}" -DNDL_BUILD_TESTS=OFF -DNDL_BUILD_DEMOS=ON
 fi
-cmake --build "${build_dir}" --target multiview convolution morphology histogram distance_transform summed_area_table motion -j"$(nproc)"
+cmake --build "${build_dir}" --target multiview convolution morphology histogram distance_transform summed_area_table motion ct_reconstruction ct_reconstruction_3d -j"$(nproc)"
 
 rm -rf "${out_dir}"
 mkdir -p "${out_dir}" "${build_dir}/docs/captured"
@@ -38,9 +38,11 @@ declare -A titles=(
     [distance_transform_tutorial]="Distance Transform Tutorial"
     [summed_area_table_tutorial]="Summed-Area Table Tutorial"
     [motion_tutorial]="Motion (Optical Flow / SIFT) Tutorial"
+    [ct_reconstruction_tutorial]="CT Reconstruction Tutorial"
+    [ct_reconstruction_3d_tutorial]="3D Cone-Beam CT Reconstruction Tutorial"
 )
 
-for target in multiview convolution morphology histogram distance_transform summed_area_table motion; do
+for target in multiview convolution morphology histogram distance_transform summed_area_table motion ct_reconstruction ct_reconstruction_3d; do
     label="${target}_tutorial"
     bin_dir="${build_dir}/demo/${target}"
     capture_file="${build_dir}/docs/captured/${target}.txt"
@@ -63,6 +65,8 @@ done
     echo "- [Distance Transform Tutorial](distance_transform_tutorial.md)"
     echo "- [Summed-Area Table Tutorial](summed_area_table_tutorial.md)"
     echo "- [Motion (Optical Flow / SIFT) Tutorial](motion_tutorial.md)"
+    echo "- [CT Reconstruction Tutorial](ct_reconstruction_tutorial.md)"
+    echo "- [3D Cone-Beam CT Reconstruction Tutorial](ct_reconstruction_3d_tutorial.md)"
 } > "${out_dir}/README.md"
 
 echo "wrote ${out_dir}"

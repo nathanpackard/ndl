@@ -39,6 +39,15 @@
 //                             make_ortho_projection_matrix()/
 //                             transform_point() -- free functions building/
 //                             applying homogeneous-coordinate transforms.
+//   matrix/projection.h     - ProjectionMatrix<Real,D> (a D x (D+1)
+//                             homogeneous matrix mapping D-dimensional
+//                             source points to (D-1)-dimensional
+//                             destination points, covering both
+//                             parallel-beam and cone/fan-beam projection
+//                             geometry), project_point(),
+//                             camera_center(), and ray_for_pixel() --
+//                             what projection.h's forward_project()/
+//                             back_project() are built on.
 //
 // #include this file for everything at once; #include one of the pieces
 // above directly if you only need that part (e.g. optical_flow.h only ever
@@ -48,3 +57,4 @@
 #include "matrix/core.h"
 #include "matrix/decomposition.h"
 #include "matrix/transform.h"
+#include "matrix/projection.h"

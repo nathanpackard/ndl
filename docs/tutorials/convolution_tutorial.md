@@ -105,7 +105,7 @@ image_io::load_owned("ng_bwgirl_crop.jpg")
 
 A real photo: extent {channel, x, y}, channel-interleaved, loaded exactly like every other image_io-supported format. Saved right back out unmodified first, so you have an unblurred reference to compare every later step against.
 
-![convolution_tutorial_01_original.png](images/convolution_tutorial/convolution_tutorial_01_original.png)
+[![convolution_tutorial_01_original.png](images/convolution_tutorial/convolution_tutorial_01_original.png)](images/convolution_tutorial/convolution_tutorial_01_original.png)
 
 ```text
 photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/01_original.png
@@ -119,7 +119,7 @@ convolveColor(photo, boxKernel, boxBlurred, BorderMode::Clamp)   // boxKernel is
 
 The exact same sumKernel idea from Part 1, just normalized (weights sum to 1 instead of 9) so brightness is preserved instead of tripled, applied one color channel at a time -- convolveColor() slices off red/green/blue and convolves each separately, so colors don't bleed into each other. A small, mild blur.
 
-![convolution_tutorial_02_box_blur.png](images/convolution_tutorial/convolution_tutorial_02_box_blur.png)
+[![convolution_tutorial_02_box_blur.png](images/convolution_tutorial/convolution_tutorial_02_box_blur.png)](images/convolution_tutorial/convolution_tutorial_02_box_blur.png)
 
 ```text
 box-blurred photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/02_box_blur.png
@@ -157,7 +157,7 @@ gaussianBlurColor(photo, 2.0, gauss1, BorderMode::Clamp)
 
 The same gaussian_blur() call, on the real photo, per channel. sigma=2.0 gives a wider, softer blur than Part 2's 3x3 box -- compare 02_box_blur.png and 03_gaussian_sigma2.png side by side.
 
-![convolution_tutorial_03_gaussian_sigma2.png](images/convolution_tutorial/convolution_tutorial_03_gaussian_sigma2.png)
+[![convolution_tutorial_03_gaussian_sigma2.png](images/convolution_tutorial/convolution_tutorial_03_gaussian_sigma2.png)](images/convolution_tutorial/convolution_tutorial_03_gaussian_sigma2.png)
 
 ```text
 gaussian-blurred (sigma=2.0): /home/nathanpackard/git/ndl/build/demo/convolution/output/03_gaussian_sigma2.png
@@ -171,7 +171,7 @@ gaussianBlurColor(photo, 6.0, gauss2, BorderMode::Clamp)
 
 A much larger sigma -- the radius grows with it too (ceil(3*6.0)=18, a 37x37 kernel), so this is a heavy blur, the kind used to approximate depth-of-field or to build an image pyramid.
 
-![convolution_tutorial_04_gaussian_sigma6.png](images/convolution_tutorial/convolution_tutorial_04_gaussian_sigma6.png)
+[![convolution_tutorial_04_gaussian_sigma6.png](images/convolution_tutorial/convolution_tutorial_04_gaussian_sigma6.png)](images/convolution_tutorial/convolution_tutorial_04_gaussian_sigma6.png)
 
 ```text
 gaussian-blurred (sigma=6.0): /home/nathanpackard/git/ndl/build/demo/convolution/output/04_gaussian_sigma6.png
@@ -187,7 +187,7 @@ image_io::load_owned("marbles.bmp"); ndl::downsample(marblesRaw, 2)
 
 The start image for this Part and the frequency-domain Part 6 below -- saved on its own, same as photo was in Part 2, so 06_sobel_edges.png further down has an unmodified 'before' to be compared against instead of only showing the 'after'. Downsampled 2x from the raw file (see ndl::downsample(), convolution.h) purely to keep this demo's saved images (and the docs generated from them) a reasonable size -- unrelated to convolve() or Sobel themselves.
 
-![convolution_tutorial_05_marbles_original.png](images/convolution_tutorial/convolution_tutorial_05_marbles_original.png)
+[![convolution_tutorial_05_marbles_original.png](images/convolution_tutorial/convolution_tutorial_05_marbles_original.png)](images/convolution_tutorial/convolution_tutorial_05_marbles_original.png)
 
 ```text
 marbles: /home/nathanpackard/git/ndl/build/demo/convolution/output/05_marbles_original.png
@@ -233,7 +233,7 @@ gx.multiply(gx, gx2); gy.multiply(gy, gy2); gx2.add(gy2, magSq); then sqrt() ele
 
 Gradient magnitude is sqrt(gx^2 + gy^2) -- built here from the non-mutating arithmetic methods (multiply/add) added alongside convolve(), rather than a hand-written loop, then a sqrt+clamp pass (ndl::to_displayable()) converts back to a displayable 8-bit image, saved as a single-channel (greyscale) PNG.
 
-![convolution_tutorial_06_sobel_edges.png](images/convolution_tutorial/convolution_tutorial_06_sobel_edges.png)
+[![convolution_tutorial_06_sobel_edges.png](images/convolution_tutorial/convolution_tutorial_06_sobel_edges.png)](images/convolution_tutorial/convolution_tutorial_06_sobel_edges.png)
 
 ```text
 Sobel edge magnitude: /home/nathanpackard/git/ndl/build/demo/convolution/output/06_sobel_edges.png
@@ -256,7 +256,7 @@ convolve() places no restriction on kernel weights -- here center=5, neighbors=-
  0.00, -1.00,  0.00, 
 ```
 
-![convolution_tutorial_07_sharpen.png](images/convolution_tutorial/convolution_tutorial_07_sharpen.png)
+[![convolution_tutorial_07_sharpen.png](images/convolution_tutorial/convolution_tutorial_07_sharpen.png)](images/convolution_tutorial/convolution_tutorial_07_sharpen.png)
 
 ```text
 sharpened photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/07_sharpen.png
@@ -277,7 +277,7 @@ An asymmetric kernel: it responds to change along one diagonal and is flat along
  0.00,  1.00,  2.00, 
 ```
 
-![convolution_tutorial_08_emboss.png](images/convolution_tutorial/convolution_tutorial_08_emboss.png)
+[![convolution_tutorial_08_emboss.png](images/convolution_tutorial/convolution_tutorial_08_emboss.png)](images/convolution_tutorial/convolution_tutorial_08_emboss.png)
 
 ```text
 embossed photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/08_emboss.png
@@ -293,7 +293,7 @@ Image<uint8_t,3> crop = marbles.view({0,290,186}, {2,439,297});   // 150x112, al
 
 fftn()/ifftn() handle ANY extent, via Bluestein's algorithm (the chirp-z transform; see FFTBluestein in fft.h) for whichever axes aren't already a power of two. This crop is smaller than the full marbles image for two much more mundane reasons: keeping this demo's pixel-by-pixel comparison and the timing benchmark below fast, and keeping the log-magnitude spectrum image a comfortable size to look at. Its exact size, 150x112, is deliberately NOT a power of two in either dimension (128x128 would have been) -- specifically so the fftn() calls below exercise the arbitrary-size Bluestein path rather than the direct power-of-two one. marbles rather than photo on purpose here, same reason Part 4 switched to it for Sobel: photo's real film-grain noise spreads energy across every frequency roughly evenly, which swamps the log-magnitude spectrum below into near-uniform static rather than showing readable structure -- marbles' cleaner per-pixel contrast doesn't have that problem. Every step below works on this crop.
 
-![convolution_tutorial_09_crop.png](images/convolution_tutorial/convolution_tutorial_09_crop.png)
+[![convolution_tutorial_09_crop.png](images/convolution_tutorial/convolution_tutorial_09_crop.png)](images/convolution_tutorial/convolution_tutorial_09_crop.png)
 
 ```text
 crop: /home/nathanpackard/git/ndl/build/demo/convolution/output/09_crop.png
@@ -307,7 +307,7 @@ fftn<double,2>(greyCropDbl, freq)   // greyscale, so there's one spectrum to loo
 
 The magnitude of each complex output value says how much of that frequency is present in the crop -- low frequencies (slow brightness changes, like the overall lighting) near the corners of the raw output, high frequencies (sharp edges, fine texture) further out. Displaying that directly is unreadable: fftshift() below recenters it (a numpy.fft convention -- DC in the middle, not the corner) and a log(1+magnitude) scale tames its enormous dynamic range (the DC term alone is the sum of every one of the crop's 16800 pixels) so faint high-frequency detail doesn't just disappear next to it.
 
-![convolution_tutorial_10_spectrum.png](images/convolution_tutorial/convolution_tutorial_10_spectrum.png)
+[![convolution_tutorial_10_spectrum.png](images/convolution_tutorial/convolution_tutorial_10_spectrum.png)](images/convolution_tutorial/convolution_tutorial_10_spectrum.png)
 
 ```text
 log-magnitude spectrum (fftshifted): /home/nathanpackard/git/ndl/build/demo/convolution/output/10_spectrum.png
@@ -326,21 +326,21 @@ ifftn<double,2>(product, blurredChannel);          // spectrum -> back to pixels
 
 The crop shown again just above is this comparison's starting point. fftCorrelateColor() takes each channel to the frequency domain, multiplies by the kernel's spectrum (conjugated -- convolve() computes a correlation, not a textbook convolution; see the comment on fftCorrelateColor() in this file, or testFFTMatchesSpatialConvolution in unitTests.cpp, for the exact identity and why), and transforms back -- the 5 lines above are that function's real body, not a paraphrase of it. That's a real, independent computation of the *same* answer Part 2's convolveColor(crop, box5Kernel, ..., BorderMode::Wrap) would give -- computed below for direct comparison rather than taken on faith.
 
-![convolution_tutorial_09_crop.png](images/convolution_tutorial/convolution_tutorial_09_crop.png)
+[![convolution_tutorial_09_crop.png](images/convolution_tutorial/convolution_tutorial_09_crop.png)](images/convolution_tutorial/convolution_tutorial_09_crop.png)
 
 ```text
 crop (this comparison's starting point, shown again for convenience): /home/nathanpackard/git/ndl/build/demo/convolution/output/09_crop.png
     extent = {3, 150, 112}   min=18  max=254  mean=141.32
 ```
 
-![convolution_tutorial_11_fft_box_blur.png](images/convolution_tutorial/convolution_tutorial_11_fft_box_blur.png)
+[![convolution_tutorial_11_fft_box_blur.png](images/convolution_tutorial/convolution_tutorial_11_fft_box_blur.png)](images/convolution_tutorial/convolution_tutorial_11_fft_box_blur.png)
 
 ```text
 FFT-domain box blur: /home/nathanpackard/git/ndl/build/demo/convolution/output/11_fft_box_blur.png
     extent = {3, 150, 112}   min=25  max=254  mean=140.82
 ```
 
-![convolution_tutorial_12_spatial_box_blur_wrap.png](images/convolution_tutorial/convolution_tutorial_12_spatial_box_blur_wrap.png)
+[![convolution_tutorial_12_spatial_box_blur_wrap.png](images/convolution_tutorial/convolution_tutorial_12_spatial_box_blur_wrap.png)](images/convolution_tutorial/convolution_tutorial_12_spatial_box_blur_wrap.png)
 
 ```text
 spatial-domain box blur (BorderMode::Wrap, for a fair comparison): /home/nathanpackard/git/ndl/build/demo/convolution/output/12_spatial_box_blur_wrap.png
@@ -356,10 +356,10 @@ timing: spatial convolve() vs FFT correlation, at two very different kernel size
 convolve()'s cost scales with image size TIMES kernel size (every output pixel visits every kernel tap); fftn()'s cost scales with image size alone (kernel size only changes how the kernel gets *built*, not the transform cost) -- so which one wins depends entirely on the kernel. A 3x3 kernel is 9 taps; the 5x5 one already used above for the visual comparison is 25, ~2.8x more spatial work for the exact same image, while the FFT side barely changes (same 7 image-sized transforms either way -- 1 for the kernel, 2 per channel). Averaged over a few repetitions below.
 
 ```text
-3x3 kernel  -- spatial convolve():   2.128470 ms/call
-3x3 kernel  -- FFT correlation:   4.845805 ms/call
-5x5 kernel -- spatial convolve():   5.922883 ms/call
-5x5 kernel -- FFT correlation:   5.151333 ms/call
+3x3 kernel  -- spatial convolve():   2.278422 ms/call
+3x3 kernel  -- FFT correlation:   4.769998 ms/call
+5x5 kernel -- spatial convolve():   5.669151 ms/call
+5x5 kernel -- FFT correlation:   5.411983 ms/call
 ```
 
 All outputs written to: /home/nathanpackard/git/ndl/build/demo/convolution/output Open 01_original.png alongside the rest to compare by eye: 02/03/04 should look progressively softer. 06 should show bright edges on a dark background -- compare it to 05, marbles' own unmodified original. 07 should look crisper than the original, and 08 should look like a grey relief carving. 10 is what the 150x112 crop (09) looks like in the frequency domain -- a bright center fading outward, with any strong directional texture in the crop showing up as streaks through it. 11 and 12 should be visually indistinguishable -- a 5-pixel box blur, computed two independent ways (frequency domain and spatial domain), that agree to within a pixel or two of rounding.

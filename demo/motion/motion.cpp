@@ -223,9 +223,26 @@ int main()
         "             interpolated from " + std::to_string(matches.size()) + " points rather than measured at every pixel independently.");
     OwnedImage<double, 3> siftFlow({ 2, extent2D[0], extent2D[1] });
     sift_flow(f0grey, f1grey, siftFlow);
+
+    step("flow_to_color(siftFlow, siftFlowColor, 255, magnitudeCap)   // magnitudeCap = 95th percentile magnitude",
+        "flow_to_color()'s default \"scale brightness to the field's own true max magnitude\" is\n"
+        "             exactly the failure mode windowed_heatmap() (visualize.h) exists to avoid: a single stray\n"
+        "             match -- interpolated across a wide area by sift_flow()'s own inverse-distance weighting,\n"
+        "             see above -- can produce one wildly large displacement that dwarfs every real one, crushing\n"
+        "             the rest of the field to near-black. Capping brightness at the 95th percentile magnitude\n"
+        "             instead (that one outlier simply saturates at full brightness) keeps the real motion\n"
+        "             visible; percentile() is the same building block windowed_heatmap() itself uses.");
+    Image<double, 2> siftfxForCap = siftFlow.slice(0, 0), siftfyForCap = siftFlow.slice(0, 1);
+    std::vector<double> siftMagData(extent2D[0] * extent2D[1]);
+    Image<double, 2> siftMag(siftMagData.data(), extent2D);
+    for (const auto& c : siftfxForCap.coordinates())
+        siftMag.at(c) = std::sqrt(std::pow(siftfxForCap.at(c), 2) + std::pow(siftfyForCap.at(c), 2));
+    double siftMagCap = percentile(siftMag, 95.0);
+    showText("95th-percentile flow magnitude (used as the color-coding cap)", std::to_string(siftMagCap) + " px");
+
     OwnedImage<uint8_t, 3> siftFlowColor({ 3, extent2D[0], extent2D[1] });
-    flow_to_color(siftFlow, siftFlowColor, (uint8_t)255);
-    saveForInspection("SIFT-inspired flow, color-coded", siftFlowColor, "06_sift_flow_color.png");
+    flow_to_color(siftFlow, siftFlowColor, (uint8_t)255, siftMagCap);
+    saveForInspection("SIFT-inspired flow, color-coded (95th-percentile-capped)", siftFlowColor, "06_sift_flow_color.png");
 
     // ------------------------------------------------------------------
     // PART 6: comparing the two, and the 2D complex representation

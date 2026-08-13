@@ -1,0 +1,366 @@
+#include <gtest/gtest.h>
+#include <cmath>
+#include <array>
+#include <sstream>
+#include <iostream>
+#include <random>
+
+#include <ndl/image.h>
+#include <ndl/matrix.h>
+#include <ndl/projection.h>
+
+#include "testHelpers.h"
+
+using namespace ndl;
+
+namespace
+{
+	std::vector<ProjectionMatrix<double, 2>> buildParallelGeometry(int numViews, double volCenterX, double volCenterY, double detCenter)
+	{
+		std::vector<ProjectionMatrix<double, 2>> geometry;
+		for (int v = 0; v < numViews; v++)
+		{
+			double theta = M_PI * v / numViews; // 0..180 degrees
+			Matrix<double, 2> rotation;
+			make_rotate_matrix(rotation, theta);
+			double translation0 = detCenter - (rotation(0, 0) * volCenterX + rotation(0, 1) * volCenterY);
+			std::array<double, 1> translation{ translation0 };
+			ProjectionMatrix<double, 2> pm;
+			make_parallel_projection_matrix(pm, rotation, translation);
+			geometry.push_back(pm);
+		}
+		return geometry;
+	}
+
+	// Circular-orbit cone-beam geometry, matching demo/ct_reconstruction_3d's
+	// own buildConeBeamGeometry() (kept as an independent copy here rather
+	// than shared -- unit tests deliberately don't depend on demo code).
+	// See that demo's own comment for the recentering-shift derivation.
+	std::vector<ProjectionMatrix<double, 3>> buildConeBeamGeometry(int numViews, const std::array<double, 3>& volCenter, double sourceDistance, double detectorDistance, int detW, int detH, double detPixelSpacing)
+	{
+		double focalLength = sourceDistance + detectorDistance;
+		std::vector<ProjectionMatrix<double, 3>> geometry;
+		for (int v = 0; v < numViews; v++)
+		{
+			double theta = 2 * M_PI * v / numViews;
+			std::array<double, 3> d{ std::cos(theta), std::sin(theta), 0.0 };
+			std::array<double, 3> eu{ -std::sin(theta), std::cos(theta), 0.0 };
+			std::array<double, 3> ev{ 0.0, 0.0, 1.0 };
+			std::array<double, 3> source{
+				volCenter[0] - sourceDistance * d[0],
+				volCenter[1] - sourceDistance * d[1],
+				volCenter[2] - sourceDistance * d[2]
+			};
+			Matrix<double, 3> rotation;
+			for (int c = 0; c < 3; c++)
+			{
+				rotation(0, c) = eu[c] / detPixelSpacing;
+				rotation(1, c) = ev[c] / detPixelSpacing;
+				rotation(2, c) = d[c];
+			}
+			ProjectionMatrix<double, 3> pm;
+			make_cone_beam_projection_matrix(pm, source, rotation, focalLength);
+			for (int c = 0; c < 4; c++)
+			{
+				pm(0, c) += (detW / 2.0) * pm(2, c);
+				pm(1, c) += (detH / 2.0) * pm(2, c);
+			}
+			geometry.push_back(pm);
+		}
+		return geometry;
+	}
+}
+
+TEST(Projection, ProjectionMatrixAndCameraCenter) {
+	std::stringstream passfail;
+	std::cout << std::endl << "PROJECTION -- ProjectionMatrix / camera_center / ray_for_pixel" << std::endl;
+
+	// Parallel-beam: camera_center() should recover atInfinity=true with
+	// a direction matching the rotation's own ray-direction row (up to
+	// sign, since it's a null-space vector), and ray_for_pixel() should
+	// produce a genuine ray landing on the requested detector coordinate
+	// at every ray parameter t, not just at one point.
+	{
+		double theta = 0.4;
+		Matrix<double, 2> rotation;
+		make_rotate_matrix(rotation, theta);
+		std::array<double, 1> translation{ 1.5 };
+		ProjectionMatrix<double, 2> pm;
+		make_parallel_projection_matrix(pm, rotation, translation);
+
+		double X[2] = { 3.0, -2.0 };
+		double u[1];
+		project_point(pm, X, u);
+		double expected = rotation(0, 0) * X[0] + rotation(0, 1) * X[1] + translation[0];
+		passfail << "parallel-beam project_point matches the detector-axis dot product: " << (std::abs(u[0] - expected) < 1e-9 ? "Pass" : "Fail") << std::endl;
+
+		auto center = camera_center(pm);
+		double dot = center.point[0] * rotation(1, 0) + center.point[1] * rotation(1, 1);
+		passfail << "parallel-beam camera_center is at infinity, direction matches the ray-direction row: " << (center.atInfinity && std::abs(std::abs(dot) - 1.0) < 1e-6 ? "Pass" : "Fail") << std::endl;
+
+		std::array<double, 1> detCoord{ 2.7 };
+		auto ray = ray_for_pixel(pm, center, detCoord);
+		bool rayOk = true;
+		for (double t : { -5.0, 0.0, 3.0, 10.0 })
+		{
+			double Xp[2] = { ray.origin[0] + t * ray.direction[0], ray.origin[1] + t * ray.direction[1] };
+			double up[1];
+			project_point(pm, Xp, up);
+			if (std::abs(up[0] - detCoord[0]) > 1e-7) rayOk = false;
+		}
+		passfail << "parallel-beam ray_for_pixel produces a genuine ray landing on the requested detector coordinate: " << (rayOk ? "Pass" : "Fail") << std::endl;
+	}
+
+	// Cone-beam: camera_center() should recover the exact finite source
+	// position, and ray_for_pixel()'s origin should match it, with the
+	// whole ray converging correctly.
+	{
+		Matrix<double, 2> rotation;
+		make_rotate_matrix(rotation, 0.9);
+		std::array<double, 2> source{ 50.0, -30.0 };
+		double focalLength = 80.0;
+		ProjectionMatrix<double, 2> pm;
+		make_cone_beam_projection_matrix(pm, source, rotation, focalLength);
+
+		auto center = camera_center(pm);
+		bool centerOk = !center.atInfinity
+			&& std::abs(center.point[0] - source[0]) < 1e-6
+			&& std::abs(center.point[1] - source[1]) < 1e-6;
+		passfail << "cone-beam camera_center recovers the exact finite source position: " << (centerOk ? "Pass" : "Fail") << std::endl;
+
+		std::array<double, 1> detCoord{ -12.3 };
+		auto ray = ray_for_pixel(pm, center, detCoord);
+		bool originOk = std::abs(ray.origin[0] - source[0]) < 1e-6 && std::abs(ray.origin[1] - source[1]) < 1e-6;
+		bool rayOk = true;
+		for (double t : { 1.0, 20.0, 60.0, 150.0 })
+		{
+			double Xp[2] = { ray.origin[0] + t * ray.direction[0], ray.origin[1] + t * ray.direction[1] };
+			double up[1];
+			project_point(pm, Xp, up);
+			if (std::abs(up[0] - detCoord[0]) > 1e-6) rayOk = false;
+		}
+		passfail << "cone-beam ray_for_pixel originates at the true source: " << (originOk ? "Pass" : "Fail") << std::endl;
+		passfail << "cone-beam ray_for_pixel lands on the requested detector coordinate along the whole ray: " << (rayOk ? "Pass" : "Fail") << std::endl;
+	}
+
+	reportPassFail(passfail);
+}
+
+TEST(Projection, ForwardAndBackProjectAreExactAdjoints) {
+	std::stringstream passfail;
+	std::cout << std::endl << "PROJECTION -- forward_project()/back_project() ADJOINTNESS" << std::endl;
+
+	// The centerpiece correctness check: <forward_project(x), y> should
+	// equal <x, back_project(y)> for random x, y -- see projection.h's own
+	// top comment for why this holds to near machine precision (the
+	// ray-driven scatter construction, not voxel-driven gather) as long
+	// as autoAA doesn't engage (documented scope).
+	const int W = 32, H = 32;
+	const int numViews = 40;
+	const int numDet = 47;
+	double volCenterX = (W - 1) / 2.0, volCenterY = (H - 1) / 2.0;
+	double detCenter = (numDet - 1) / 2.0;
+	auto geometry = buildParallelGeometry(numViews, volCenterX, volCenterY, detCenter);
+
+	std::mt19937 rng(7);
+	std::uniform_real_distribution<double> dist(-1.0, 1.0);
+
+	std::vector<double> xData(W * H);
+	Image<double, 2> x(xData.data(), { W, H });
+	for (auto& v : xData) v = dist(rng);
+
+	std::vector<double> yData(numViews * numDet);
+	Image<double, 2> y(yData.data(), { numViews, numDet });
+	for (auto& v : yData) v = dist(rng);
+
+	std::vector<double> pxData(numViews * numDet);
+	Image<double, 2> px(pxData.data(), { numViews, numDet });
+	forward_project(x, px, geometry, Linear{}, /*autoAA=*/false);
+
+	std::vector<double> ptyData(W * H);
+	Image<double, 2> pty(ptyData.data(), { W, H });
+	back_project(y, pty, geometry, Linear{}, /*autoAA=*/false);
+
+	double lhs = 0;
+	for (int i = 0; i < numViews * numDet; i++) lhs += pxData[i] * yData[i];
+	double rhs = 0;
+	for (int i = 0; i < W * H; i++) rhs += xData[i] * ptyData[i];
+	double relErr = std::abs(lhs - rhs) / (std::abs(lhs) + std::abs(rhs) + 1e-30);
+
+	passfail << "<forward_project(x),y> = " << lhs << ", <x,back_project(y)> = " << rhs << ", relative error = " << relErr << std::endl;
+	passfail << "forward_project()/back_project() are exact adjoints (relative error < 1e-9): " << (relErr < 1e-9 ? "Pass" : "Fail") << std::endl;
+
+	// AA-enabled forward projection is out of the exact-adjointness scope
+	// (documented in projection.h), but should still produce a finite,
+	// non-degenerate result.
+	std::vector<double> unifData(W * H);
+	std::uniform_real_distribution<double> posDist(0, 1);
+	for (auto& v : unifData) v = posDist(rng);
+	Image<double, 2> unif(unifData.data(), { W, H });
+	std::vector<double> sinoData(numViews * numDet);
+	Image<double, 2> sino(sinoData.data(), { numViews, numDet });
+	forward_project(unif, sino, geometry, Linear{}, /*autoAA=*/true);
+	bool aaFinite = true;
+	double aaSum = 0;
+	for (auto v : sinoData) { if (!std::isfinite(v)) aaFinite = false; aaSum += v; }
+	passfail << "AA-enabled forward projection produces a finite, non-degenerate result: " << (aaFinite && aaSum > 0 ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
+TEST(Projection, PointSourceForwardProjectionTracksGeometry) {
+	std::stringstream passfail;
+	std::cout << std::endl << "PROJECTION -- POINT-SOURCE SANITY CHECK" << std::endl;
+
+	// A single nonzero voxel's forward projection should peak, at every
+	// view, exactly where that voxel's own project_point() lands -- the
+	// whole ray-marching + accumulation pipeline concentrating its mass
+	// at the geometrically correct detector location.
+	const int W = 32, H = 32;
+	const int numViews = 40;
+	const int numDet = 47;
+	double volCenterX = (W - 1) / 2.0, volCenterY = (H - 1) / 2.0;
+	double detCenter = (numDet - 1) / 2.0;
+	auto geometry = buildParallelGeometry(numViews, volCenterX, volCenterY, detCenter);
+
+	std::vector<double> xData(W * H, 0.0);
+	Image<double, 2> x(xData.data(), { W, H });
+	int vx = 20, vy = 8;
+	x(vx, vy) = 1.0;
+
+	std::vector<double> sinoData(numViews * numDet);
+	Image<double, 2> sino(sinoData.data(), { numViews, numDet });
+	forward_project(x, sino, geometry, Linear{}, /*autoAA=*/false, /*stepSize=*/0.25);
+
+	int mismatches = 0;
+	for (int view = 0; view < numViews; view++)
+	{
+		double p[2] = { (double)vx, (double)vy };
+		double expected[1];
+		project_point(geometry[view], p, expected);
+
+		int bestDet = 0; double bestVal = -1;
+		for (int d = 0; d < numDet; d++) if (sino(view, d) > bestVal) { bestVal = sino(view, d); bestDet = d; }
+
+		if (std::abs(bestDet - expected[0]) > 1.5) mismatches++;
+	}
+	passfail << "point-source forward-projection peaks track project_point() across all " << numViews << " views (" << mismatches << " mismatches): " << (mismatches == 0 ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
+TEST(Projection, ForwardAndBackProject3DConeBeamAreExactAdjoints) {
+	std::stringstream passfail;
+	std::cout << std::endl << "PROJECTION -- 3D CONE-BEAM ADJOINTNESS" << std::endl;
+
+	// The same dot-product test as ForwardAndBackProjectAreExactAdjoints
+	// above, but for a genuinely PERSPECTIVE (cone-beam) 3D geometry --
+	// confirms the exact-adjoint guarantee (projection.h's own top
+	// comment) doesn't depend on DIM or on the projection being affine
+	// (parallel-beam); demo/ct_reconstruction_3d relies on this holding
+	// for its own 128^3/cone-beam reconstruction.
+	const int W = 24;
+	const int numViews = 30, detW = 16, detH = 16;
+	std::array<double, 3> volCenter{ (W - 1) / 2.0, (W - 1) / 2.0, (W - 1) / 2.0 };
+	auto geometry = buildConeBeamGeometry(numViews, volCenter, /*sourceDistance=*/60, /*detectorDistance=*/60, detW, detH, /*detPixelSpacing=*/1.5);
+
+	std::mt19937 rng(11);
+	std::uniform_real_distribution<double> dist(-1.0, 1.0);
+
+	std::vector<double> xData((std::size_t)W * W * W);
+	Image<double, 3> x(xData.data(), { W, W, W });
+	for (auto& v : xData) v = dist(rng);
+
+	std::vector<double> yData((std::size_t)numViews * detW * detH);
+	Image<double, 3> y(yData.data(), { numViews, detW, detH });
+	for (auto& v : yData) v = dist(rng);
+
+	std::vector<double> pxData((std::size_t)numViews * detW * detH);
+	Image<double, 3> px(pxData.data(), { numViews, detW, detH });
+	forward_project(x, px, geometry, Linear{}, /*autoAA=*/false);
+
+	std::vector<double> ptyData((std::size_t)W * W * W);
+	Image<double, 3> pty(ptyData.data(), { W, W, W });
+	back_project(y, pty, geometry, Linear{}, /*autoAA=*/false);
+
+	double lhs = 0;
+	for (std::size_t i = 0; i < pxData.size(); i++) lhs += pxData[i] * yData[i];
+	double rhs = 0;
+	for (std::size_t i = 0; i < xData.size(); i++) rhs += xData[i] * ptyData[i];
+	double relErr = std::abs(lhs - rhs) / (std::abs(lhs) + std::abs(rhs) + 1e-30);
+
+	passfail << "<forward_project(x),y> = " << lhs << ", <x,back_project(y)> = " << rhs << ", relative error = " << relErr << std::endl;
+	passfail << "3D cone-beam forward_project()/back_project() are exact adjoints (relative error < 1e-9): " << (relErr < 1e-9 ? "Pass" : "Fail") << std::endl;
+
+	// A voxel exactly on the source-detector axis (the volume's own
+	// center) must land on the detector's own center pixel at every view,
+	// regardless of the perspective divide -- the cone-beam analog of the
+	// parallel-beam point-source check above, and specifically what
+	// catches the "shift the numerator's translation entry instead of
+	// scaling by the whole w-row" mistake described in
+	// demo/ct_reconstruction_3d's buildConeBeamGeometry() comment.
+	bool centeredOk = true;
+	for (int view = 0; view < numViews; view++)
+	{
+		double p[3] = { volCenter[0], volCenter[1], volCenter[2] };
+		double u[2];
+		project_point(geometry[view], p, u);
+		if (std::abs(u[0] - detW / 2.0) > 1e-6 || std::abs(u[1] - detH / 2.0) > 1e-6) centeredOk = false;
+	}
+	passfail << "a voxel on the source-detector axis projects to the detector's own center at every view: " << (centeredOk ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
+TEST(Projection, MaxDensityBoundFromSinogram) {
+	std::stringstream passfail;
+	std::cout << std::endl << "PROJECTION -- MAX_DENSITY_BOUND" << std::endl;
+
+	// A small dense disc, well clear of the volume's own corners/edges.
+	const int W = 60, H = 60;
+	std::vector<double> volData(W * H, 0.0);
+	Image<double, 2> vol(volData.data(), { W, H });
+	double cx = 30, cy = 30, r = 8, density = 3.0;
+	for (int y = 0; y < H; y++) for (int x = 0; x < W; x++)
+	{
+		double dx = x - cx, dy = y - cy;
+		if (dx * dx + dy * dy <= r * r) vol(x, y) = density;
+	}
+
+	const int numViews = 60, numDet = 90;
+	double detCenter = (numDet - 1) / 2.0;
+	auto geometry = buildParallelGeometry(numViews, cx, cy, detCenter);
+
+	std::vector<double> sinoData(numViews * numDet);
+	Image<double, 2> sino(sinoData.data(), { numViews, numDet });
+	forward_project(vol, sino, geometry, Linear{}, /*autoAA=*/false, /*stepSize=*/1.0);
+
+	std::vector<double> boundData(W * H);
+	Image<double, 2> bound(boundData.data(), { W, H });
+	max_density_bound(sino, bound, geometry, /*stepSize=*/1.0);
+
+	// A far-corner background voxel (never overlaps the disc at any
+	// rotation) should get a bound close to 0 -- tight enough to actually
+	// suppress a reconstruction overshoot artifact there.
+	double cornerBound = bound(2, 2);
+	passfail << "far-background voxel gets a tight near-zero bound (" << cornerBound << "): " << (cornerBound < 0.5 ? "Pass" : "Fail") << std::endl;
+
+	// A voxel truly inside the disc must never be excluded by its own
+	// bound -- the bound must always be >= the true density there, or the
+	// constraint would corrupt genuine structure, not just artifacts.
+	double interiorBound = bound((int)cx, (int)cy);
+	passfail << "interior voxel's bound (" << interiorBound << ") never excludes its own true density (" << density << "): " << (interiorBound >= density - 1e-9 ? "Pass" : "Fail") << std::endl;
+
+	bool allNonNegative = true;
+	for (auto v : boundData) if (v < 0) allNonNegative = false;
+	passfail << "every voxel's bound is non-negative: " << (allNonNegative ? "Pass" : "Fail") << std::endl;
+
+	// Applying the bound as a clamp to a deliberately-corrupted
+	// reconstruction (a synthetic background overshoot spike) suppresses it.
+	std::vector<double> reconData = volData;
+	reconData[5 * W + 5] = 50.0;
+	reconData[5 * W + 5] = std::min(std::max(reconData[5 * W + 5], 0.0), boundData[5 * W + 5]);
+	passfail << "clamping to [0,bound] suppresses a synthetic background overshoot spike (was 50.0, now " << reconData[5 * W + 5] << "): " << (reconData[5 * W + 5] < 1.0 ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}

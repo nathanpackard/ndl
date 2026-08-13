@@ -10,3 +10,5 @@ These regenerate automatically for [the hosted Doxygen site](https://nathanpacka
 - [Distance Transform Tutorial](distance_transform_tutorial.md)
 - [Summed-Area Table Tutorial](summed_area_table_tutorial.md)
 - [Motion (Optical Flow / SIFT) Tutorial](motion_tutorial.md)
+- [CT Reconstruction Tutorial](ct_reconstruction_tutorial.md)
+- [3D Cone-Beam CT Reconstruction Tutorial](ct_reconstruction_3d_tutorial.md)

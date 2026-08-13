@@ -1,0 +1,20 @@
+/* Stretches embedded tutorial-demo images up to a readable size in the
+ * generated Doxygen HTML -- most demo output PNGs are small in native
+ * pixels (many well under 200px on a side), and Doxygen's own markdown
+ * image handling has no size-control syntax, so this is done via CSS
+ * instead (see docs/generate_tutorial.py's own comment on why the image
+ * itself has to stay a plain markdown reference, not raw HTML, to avoid
+ * a broken path).
+ *
+ * Scoped to just the tutorial images via a filename-substring selector
+ * (every one is named "<page_label>_tutorial_<demo file name>", so
+ * "_tutorial_" is always present) rather than a blanket ".contents img"
+ * rule, which would also stretch Doxygen's own auto-generated class/
+ * collaboration/include diagrams -- those should keep their own natural
+ * size, not be force-fit to this width.
+ */
+img[src*="_tutorial_"] {
+	width: 480px;
+	max-width: 100%;
+	height: auto;
+}

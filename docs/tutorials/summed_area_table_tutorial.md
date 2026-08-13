@@ -71,7 +71,7 @@ width * height: 168000
 size: 504000
 ```
 
-![summed_area_table_tutorial_01_original.png](images/summed_area_table_tutorial/summed_area_table_tutorial_01_original.png)
+[![summed_area_table_tutorial_01_original.png](images/summed_area_table_tutorial/summed_area_table_tutorial_01_original.png)](images/summed_area_table_tutorial/summed_area_table_tutorial_01_original.png)
 
 ```text
 photo: /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/01_original.png
@@ -96,7 +96,7 @@ heatmap(greyTable, dst, 255)   // the table itself, rendered as an image
 
 What does a summed-area table actually look like? heatmap() (visualize.h) renders any 2D minimal-interface numeric array as greyscale, scaled to the array's own max value -- the same tool histogram_image() is built on. Unlike grey itself (light/dark following the photo's own content), every value here is a RUNNING SUM of everything above and to the left of it, so the table only ever grows moving right or down: 02_sat_heatmap.png should look almost black in the top-left corner (barely anything summed in yet) and brighten smoothly toward solid white at the bottom-right corner (the full-image sum printed just above) -- a cumulative brightness map, not a picture of the photo itself.
 
-![summed_area_table_tutorial_02_sat_heatmap.png](images/summed_area_table_tutorial/summed_area_table_tutorial_02_sat_heatmap.png)
+[![summed_area_table_tutorial_02_sat_heatmap.png](images/summed_area_table_tutorial/summed_area_table_tutorial_02_sat_heatmap.png)](images/summed_area_table_tutorial/summed_area_table_tutorial_02_sat_heatmap.png)
 
 ```text
 summed-area table (0=barely summed, white=full running sum): /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/02_sat_heatmap.png
@@ -124,19 +124,19 @@ box_blur(grey, out, radius, BorderMode::Wrap)   vs.   convolve(grey, kernel, out
 convolve()'s cost scales with kernel size (every output pixel visits every kernel tap, (2*radius+1)^2 of them); box_blur()'s cost per pixel is always exactly one rectangle_sum() call -- 4 table lookups -- no matter how large radius gets, the same 'pay once, query cheaply' trade fftn() makes for repeated convolutions demo/convolution's own Part 6 times against spatial convolve(). Both are given the same BorderMode::Wrap here, so unlike a border-naive summed-area-table box blur (which would need to skip or fudge the border pixels its window can't fully reach), these two should now match pixel-for-pixel everywhere, border included -- checked below, not just eyeballed. The timings are the actual point.
 
 ```text
-radius=2 (5x5 kernel):   SAT box blur 5.348030 ms   vs   convolve() 12.021013 ms
-radius=8 (17x17 kernel):   SAT box blur 4.903431 ms   vs   convolve() 125.705348 ms
-radius=32 (65x65 kernel):   SAT box blur 6.261969 ms   vs   convolve() 1875.625913 ms
+radius=2 (5x5 kernel):   SAT box blur 5.441417 ms   vs   convolve() 12.427353 ms
+radius=8 (17x17 kernel):   SAT box blur 5.219905 ms   vs   convolve() 127.485210 ms
+radius=32 (65x65 kernel):   SAT box blur 6.285457 ms   vs   convolve() 1850.163926 ms
 ```
 
-![summed_area_table_tutorial_03_sat_box_blur.png](images/summed_area_table_tutorial/summed_area_table_tutorial_03_sat_box_blur.png)
+[![summed_area_table_tutorial_03_sat_box_blur.png](images/summed_area_table_tutorial/summed_area_table_tutorial_03_sat_box_blur.png)](images/summed_area_table_tutorial/summed_area_table_tutorial_03_sat_box_blur.png)
 
 ```text
 SAT box blur (radius=32, BorderMode::Wrap): /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/03_sat_box_blur.png
     extent = {560, 300}   min=37  max=222  mean=120.26
 ```
 
-![summed_area_table_tutorial_04_convolve_box_blur.png](images/summed_area_table_tutorial/summed_area_table_tutorial_04_convolve_box_blur.png)
+[![summed_area_table_tutorial_04_convolve_box_blur.png](images/summed_area_table_tutorial/summed_area_table_tutorial_04_convolve_box_blur.png)](images/summed_area_table_tutorial/summed_area_table_tutorial_04_convolve_box_blur.png)
 
 ```text
 convolve() box blur (radius=32, BorderMode::Wrap): /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/04_convolve_box_blur.png

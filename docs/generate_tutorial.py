@@ -6,6 +6,18 @@ as a real documentation page instead of terminal text.
 
 Usage: generate_tutorial.py <captured_output.txt> <page_label> <page_title>
                              <demo_output_image_dir> <generated_docs_dir>
+                             [link_images]
+
+link_images (default "1"): whether each embedded image is also wrapped in a
+link to itself (click-through to full resolution). Pass "0" when the caller
+is Doxygen's own build (the CMake `docs` target) -- Doxygen's IMAGE_PATH
+flattens every copied image into one directory regardless of the path
+written here, and its markdown processing rewrites `![]()` image paths to
+match that flattening automatically, but does NOT rewrite a plain markdown
+LINK's href the same way, so a self-link would 404 there. The GitHub-viewed
+snapshot (docs/update_tutorial_snapshots.sh) doesn't have this problem --
+its own copy step really does preserve the subdirectory a written-out href
+expects -- so it keeps the default (linked).
 
 Deliberately a small, format-specific parser (not a general terminal-output
 parser) -- it only needs to understand the one structured convention every
@@ -16,6 +28,11 @@ import re
 import shutil
 import sys
 from pathlib import Path
+
+# Display width for every embedded tutorial image is set via CSS
+# (docs/tutorial.css, HTML_EXTRA_STYLESHEET in Doxyfile.in) rather than
+# here -- see render_markdown()'s own comment on the SAVING_RE branch for
+# why an inline width attribute (raw HTML) can't be used in this file.
 
 CODE_RE = re.compile(r'^(?:\[(\d+)\]\s*)?code:\s*(.*)$')
 EXPLAIN_RE = re.compile(r'^\s{4}explain:\s*(.*)$')
@@ -36,7 +53,7 @@ def dedent(data_lines):
     return [l[common:] if len(l) >= common else l for l in data_lines]
 
 
-def render_markdown(lines, page_label, image_dir_rel):
+def render_markdown(lines, page_label, image_dir_rel, link_images=True):
     out = []
     data_buf = []
     seen_structure = [False]  # mutable cell, closed over by flush_data
@@ -139,7 +156,39 @@ def render_markdown(lines, page_label, image_dir_rel):
             # another there even though they're copied into separate
             # per-page source subdirectories below.
             dst_name = f'{page_label}_{src.name}'
-            out.append(f'![{dst_name}]({image_dir_rel}/{dst_name})')
+            img_path = f'{image_dir_rel}/{dst_name}'
+            # Plain markdown, NOT raw HTML: this exact page (the .md file
+            # generate_tutorial.py writes) is consumed by two different
+            # renderers -- Doxygen's own markdown-to-HTML pass (for the
+            # hosted docs site) and GitHub's markdown renderer (this same
+            # file also becomes docs/tutorials/*.md, viewed there
+            # directly) -- and only ONE of them rewrites an embedded
+            # image's path to match where the file actually ends up.
+            # Doxygen's IMAGE_PATH flattens every copied image into the
+            # SAME directory as the generated HTML pages themselves
+            # (regardless of the subdirectory structure under IMAGE_PATH),
+            # and its own markdown/`\image` processing knows to rewrite
+            # `![]()` paths to match that flattening -- but it does NOT
+            # rewrite paths inside raw `<img>` HTML, which it treats as
+            # opaque passthrough. A raw `<img src="images/x/y.png">` tag
+            # therefore 404s in the generated Doxygen site (the real file
+            # lands flat, at just "y.png") even though the identical path
+            # is exactly correct for GitHub's rendering of
+            # docs/tutorials/*.md, where update_tutorial_snapshots.sh's
+            # own copy step really does preserve that subdirectory.
+            # Plain markdown image, `![]()` -- no raw HTML -- so Doxygen's
+            # own path-rewriting stays in effect (fixing the 404 described
+            # above). Wrapped in a plain markdown link to itself,
+            # `[![alt](path)](path)`, ONLY when link_images is set (see
+            # this module's own top comment: Doxygen doesn't rewrite a
+            # link's href the way it rewrites an image's src, so the
+            # wrapper would 404 there specifically). Display width
+            # (docs/tutorial.css, HTML_EXTRA_STYLESHEET in Doxyfile.in) is
+            # applied separately -- CSS only reaches the Doxygen-rendered
+            # site, not GitHub's rendering of the raw .md file, but that
+            # only means GitHub shows images at native size, not broken.
+            image_md = f'![{dst_name}]({img_path})'
+            out.append(f'[{image_md}]({img_path})' if link_images else image_md)
             out.append('')
             i += 1
             continue
@@ -162,9 +211,10 @@ def render_markdown(lines, page_label, image_dir_rel):
 
 
 def main():
-    if len(sys.argv) != 6:
-        sys.exit(f"usage: {sys.argv[0]} <captured_output.txt> <page_label> <page_title> <demo_output_image_dir> <generated_docs_dir>")
-    captured_path, page_label, page_title, image_src_dir, generated_dir = sys.argv[1:]
+    if len(sys.argv) not in (6, 7):
+        sys.exit(f"usage: {sys.argv[0]} <captured_output.txt> <page_label> <page_title> <demo_output_image_dir> <generated_docs_dir> [link_images]")
+    captured_path, page_label, page_title, image_src_dir, generated_dir = sys.argv[1:6]
+    link_images = sys.argv[6] != '0' if len(sys.argv) == 7 else True
 
     generated_dir = Path(generated_dir)
     image_dst_dir = generated_dir / 'images' / page_label
@@ -180,7 +230,7 @@ def main():
     with open(captured_path) as f:
         lines = f.readlines()
 
-    body = render_markdown(lines, page_label, f'images/{page_label}')
+    body = render_markdown(lines, page_label, f'images/{page_label}', link_images)
 
     generated_dir.mkdir(parents=True, exist_ok=True)
     out_path = generated_dir / f'{page_label}.md'

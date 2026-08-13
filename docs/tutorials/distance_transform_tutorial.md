@@ -83,7 +83,7 @@ width * height: 168000
 size: 504000
 ```
 
-![distance_transform_tutorial_01_original.png](images/distance_transform_tutorial/distance_transform_tutorial_01_original.png)
+[![distance_transform_tutorial_01_original.png](images/distance_transform_tutorial/distance_transform_tutorial_01_original.png)](images/distance_transform_tutorial/distance_transform_tutorial_01_original.png)
 
 ```text
 photo: /home/nathanpackard/git/ndl/build/demo/distance_transform/output/01_original.png
@@ -104,7 +104,7 @@ uint8_t t = otsu_threshold(greySmooth); threshold(greySmooth, maskU8, t, 1, 0);
 
 distance_transform() needs a binary-ish source, so the smoothed greyscale photo is thresholded -- otsu_threshold() (morphology.h, Histogram<1>-backed, see demo/histogram) picks the cutoff automatically, the same way demo/morphology's Part 7 does.
 
-![distance_transform_tutorial_02_mask.png](images/distance_transform_tutorial/distance_transform_tutorial_02_mask.png)
+[![distance_transform_tutorial_02_mask.png](images/distance_transform_tutorial/distance_transform_tutorial_02_mask.png)](images/distance_transform_tutorial/distance_transform_tutorial_02_mask.png)
 
 ```text
 binary mask (smoothed, then otsu-thresholded): /home/nathanpackard/git/ndl/build/demo/distance_transform/output/02_mask.png
@@ -122,7 +122,7 @@ distance_transform()'s source doesn't need to literally be bool -- any arithmeti
 max distance found:   86.539009
 ```
 
-![distance_transform_tutorial_03_distance.png](images/distance_transform_tutorial/distance_transform_tutorial_03_distance.png)
+[![distance_transform_tutorial_03_distance.png](images/distance_transform_tutorial/distance_transform_tutorial_03_distance.png)](images/distance_transform_tutorial/distance_transform_tutorial_03_distance.png)
 
 ```text
 distance field (0=black, max=white): /home/nathanpackard/git/ndl/build/demo/distance_transform/output/03_distance.png
