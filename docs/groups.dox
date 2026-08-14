@@ -74,7 +74,14 @@
 /// implemented by building one border-extended copy of the source up front (via the
 /// same detail::kernelTapCoord() those use) so every downstream query lands on an
 /// always-in-bounds table position, rather than by making rectangle_sum() itself
-/// border-aware.
+/// border-aware. box_filter_query(), also here, is rectangle_sum()'s variable-position/
+/// variable-size sibling for an arbitrary fractional query center (Projection, below,
+/// is the main consumer); rectangle_scatter_add()/box_filter_scatter_add() are their
+/// exact adjoints -- not queries at all, but scatters into a delta array (the classic
+/// D-dimensional difference-array technique: one summed_area_table() pass over the
+/// accumulated deltas resolves every scatter at once), built to be the literal
+/// transpose of what the query reads rather than assuming a box blur is a symmetric
+/// operator (it isn't, right at an array's own boundary).
 
 /// @defgroup optical_flow Optical Flow
 /// lucas_kanade_flow() (optical_flow.h) -- dense per-pixel displacement estimation
@@ -167,30 +174,46 @@
 /// and accumulates interpolation.h::sample()'d volume values into each
 /// sinogram cell, a direct discretization of the Radon transform's line
 /// integral; automatic anti-aliasing (see Sampling, above, for the general
-/// idea) prefilters the volume per view, sized from the view's own Jacobian,
-/// when the volume's resolution would otherwise alias against the
-/// detector's -- genuinely spatially-VARIABLE for cone/fan-beam geometry
-/// (a voxel's footprint on the detector depends on its own distance from
-/// the source), not just spatially-uniform the way Sampling's own
-/// affine-transform case is. back_project() is built to be
-/// forward_project()'s EXACT adjoint, not merely a good approximation of
-/// one (the more common "voxel-driven gather" back-projector is not,
-/// despite looking similar) -- it re-walks the identical rays via the same
-/// detail::planRaySamples(), scattering (interpolation.h::scatter_add(),
-/// the exact adjoint of sample()) each sinogram value back with the same
-/// per-sample weight forward_project() used to read it. Verified directly
-/// via a dot-product test (<forward_project(x),y> == <x,back_project(y)>),
-/// not just asserted -- see unitTests/projection_tests.cpp and
-/// demo/ct_reconstruction, an iterative Shepp-Logan phantom reconstruction
-/// built on nothing but this adjoint pair. max_density_bound(), also here,
-/// derives a per-voxel upper density bound directly from a measured sinogram
-/// (the non-negativity assumption real CT reconstruction already relies on,
-/// applied to forward_project()'s own Riemann-sum structure) -- clamping an
-/// iterative reconstruction to [0, max_density_bound(sinogram)] each
-/// iteration ("projected" Landweber/gradient descent, demo/ct_reconstruction
-/// and demo/ct_reconstruction_3d both do this) is what keeps background
-/// voxels the sinogram shows a clear line of sight through from drifting
-/// into the bright overshoot artifacts unconstrained iteration is prone to.
+/// idea) replaces that sample() call with summed_area_table.h's
+/// box_filter_query() at each ray sample, sized from the view's own
+/// Jacobian, when the volume's resolution would otherwise alias against the
+/// detector's -- genuinely spatially-VARIABLE for cone/fan-beam geometry (a
+/// voxel's footprint on the detector depends on its own distance from the
+/// source), not just spatially-uniform the way Sampling's own affine-
+/// transform case is. back_project() is built to be forward_project()'s
+/// EXACT adjoint, not merely a good approximation of one (the more common
+/// "voxel-driven gather" back-projector is not, despite looking similar) --
+/// it re-walks the identical rays via the same detail::planRaySamples(),
+/// scattering each sinogram value back with the same per-sample weight
+/// forward_project() used to read it: interpolation.h::scatter_add() (the
+/// exact adjoint of sample()) on the unfiltered path, or
+/// summed_area_table.h::box_filter_scatter_add() (the exact adjoint of
+/// box_filter_query()) when autoAA is on -- matched at the level of the
+/// per-sample read/write itself, not a separate blur stage bolted on
+/// afterward, which is what keeps the two exact adjoints of each other
+/// (verified via a dot-product test, <forward_project(x),y> ==
+/// <x,back_project(y)>, not just asserted -- unitTests/projection_tests.cpp
+/// checks both the unfiltered AND the AA-enabled path, including data
+/// touching the volume's own boundary, all to ~1e-14 or tighter) whether or
+/// not autoAA is engaged. Both parallelize over views via std::execution::par
+/// when a parallel STL backend is available (TBB, the same optional
+/// dependency fft.h's fftn()/ifftn() already use) -- forward_project() is
+/// embarrassingly parallel (disjoint sinogram rows per view); back_project()
+/// chunks views across hardware_concurrency() workers, merging each chunk's
+/// own accumulated contribution into the shared volume once per chunk
+/// (mutex-protected) rather than once per view. max_density_bound(), also
+/// here, derives a per-voxel upper density bound directly from a measured
+/// sinogram (the non-negativity assumption real CT reconstruction already
+/// relies on, applied to forward_project()'s own Riemann-sum structure) --
+/// clamping an iterative reconstruction to [0, max_density_bound(sinogram)]
+/// each iteration ("projected" Landweber/gradient descent, demo/
+/// ct_reconstruction and demo/ct_reconstruction_3d both do this) is what
+/// keeps background voxels the sinogram shows a clear line of sight through
+/// from drifting into the bright overshoot artifacts unconstrained
+/// iteration is prone to -- and, for an underdetermined system (fewer
+/// detector measurements than volume voxels, demo/ct_reconstruction_3d's
+/// own case), fixes the semi-convergence (RMSE improving then later
+/// worsening) plain unconstrained Landweber exhibits there.
 
 /// @defgroup image_io Image I/O
 /// Loading and saving images in bitmap/PNG/JPEG/DICOM/NRRD/raw formats.

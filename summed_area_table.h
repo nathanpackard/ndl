@@ -196,6 +196,101 @@ namespace ndl
 		return static_cast<double>(rectangle_sum(table, corner0, corner1)) / count;
 	}
 
+	// The exact adjoint of rectangle_sum() -- not a query at all, but its
+	// transpose: instead of reading a signed combination of a table's own
+	// four (2^DIM, in general) corners, it ADDS a signed combination of
+	// `value` to a DELTA array. Applying this once per rectangle and then
+	// taking ONE summed_area_table() pass over the accumulated deltas (an
+	// ordinary per-axis running sum -- safe to call in place, src and dst
+	// aliased, since each axis pass only ever reads a
+	// not-yet-updated-for-THIS-axis value before writing it) recovers, at
+	// every position, the total of every rectangle-add whose rectangle
+	// covered it -- the classic "range update, single pass to resolve"
+	// D-dimensional difference-array technique: the familiar 1D
+	// diff[a]+=C; diff[b+1]-=C (then prefix-sum once) trick, generalized
+	// to D dimensions via the same 2^DIM corner enumeration rectangle_sum()
+	// uses. NOTE this is NOT simply "reuse rectangle_sum()'s own corner
+	// choice (corner1, corner0-1) as a write" -- that looks tempting but
+	// is a different (wrong) construction; the correct transpose adds at
+	// the LOW corner (corner0) and subtracts one PAST the high corner
+	// (corner1+1), the mirror image of which corner rectangle_sum() reads
+	// with which sign.
+	/// Adds `value` to a delta array such that a later summed_area_table() pass over it recovers `value` added to every position in [corner0,corner1] -- the exact adjoint of rectangle_sum().
+	/// @tparam TableImageT Any minimal-interface image type with a mutable at(); its value_type must be signed (needs subtraction).
+	/// @tparam DIM         Deduced from corner0/corner1.
+	/// @param  deltaTable  Delta array; must already exist, zero-initialized before the first scatter into it.
+	/// @param  corner0     One corner of the target rectangle, inclusive.
+	/// @param  corner1     The opposite corner, inclusive.
+	/// @param  value       Amount to add to every position in [corner0,corner1] (after the later summed_area_table() pass).
+	/// @ingroup summed_area_table
+	template<class TableImageT, std::size_t DIM>
+	void rectangle_scatter_add(TableImageT& deltaTable, std::array<int, DIM> corner0, std::array<int, DIM> corner1, typename TableImageT::value_type value)
+	{
+		using T = typename TableImageT::value_type;
+		static_assert(std::is_signed_v<T>, "ndl::rectangle_scatter_add() requires a signed value_type (needs subtraction) -- floating-point or a signed integer accumulator");
+
+		auto extent = deltaTable.extent();
+		int numCorners = 1 << DIM;
+		for (int mask = 0; mask < numCorners; mask++)
+		{
+			std::array<int, DIM> coord;
+			int sign = 1;
+			bool outOfBounds = false;
+			for (std::size_t i = 0; i < DIM; i++)
+			{
+				bool pickPastHigh = ((mask >> i) & 1) != 0;
+				coord[i] = pickPastHigh ? (corner1[i] + 1) : corner0[i];
+				if (pickPastHigh) sign = -sign;
+				if (pickPastHigh && coord[i] >= extent[i]) { outOfBounds = true; break; } // one-past-the-end marker beyond the table's own extent contributes nothing (an implicit zero border past the end, mirroring rectangle_sum()'s own implicit zero border before index 0)
+			}
+			if (outOfBounds) continue;
+			deltaTable.at(coord) = static_cast<T>(deltaTable.at(coord) + sign * value);
+		}
+	}
+
+	// The exact adjoint of box_filter_query() -- same window/count
+	// derivation (snap outward, clamp to the table's own extent), but
+	// scattering `value/count` into a delta array (rectangle_scatter_add()
+	// above) instead of reading an average back. O(2^DIM) per call, same
+	// as the read side -- NOT O(window size) the way naively adding to
+	// every voxel in the window individually would be; the window only
+	// ever gets materialized once its delta array is resolved via a
+	// single later summed_area_table() pass (see projection.h's
+	// back_project() for the actual caller: one box_filter_scatter_add()
+	// per ray sample, into a per-view delta buffer, then one
+	// summed_area_table() pass per view once every sample's been
+	// scattered -- not one per sample).
+	/// Scatters `value/count` (count = the box's own resolved cell count) into a delta array via rectangle_scatter_add() -- the exact adjoint of box_filter_query().
+	/// @tparam DstImageT Any minimal-interface image type with a mutable at(); its value_type must be signed.
+	/// @tparam DIM       Deduced from center/halfWidth.
+	/// @param  deltaTable Delta array; must already exist, zero-initialized before the first scatter into it.
+	/// @param  center     Box center, one fractional coordinate per axis.
+	/// @param  halfWidth  Box half-width, one per axis; must be >= 0.
+	/// @param  value      Value to scatter, distributed uniformly across the box by the same weighting box_filter_query() would use to read it back.
+	/// @ingroup summed_area_table
+	template<class DstImageT, std::size_t DIM>
+	void box_filter_scatter_add(DstImageT& deltaTable, const std::array<double, DIM>& center, const std::array<double, DIM>& halfWidth, double value)
+	{
+		using T = typename DstImageT::value_type;
+		static_assert(std::is_signed_v<T>, "ndl::box_filter_scatter_add() requires a signed value_type (needs subtraction) -- floating-point or a signed integer accumulator");
+
+		auto extent = deltaTable.extent();
+		std::array<int, DIM> corner0, corner1;
+		double count = 1.0;
+		for (std::size_t i = 0; i < DIM; i++)
+		{
+			assert(halfWidth[i] >= 0);
+			int c0 = (int)std::floor(center[i] - halfWidth[i]);
+			int c1 = (int)std::ceil(center[i] + halfWidth[i]);
+			if (c1 < c0) c1 = c0;
+			c0 = std::max(0, std::min(c0, extent[i] - 1));
+			c1 = std::max(0, std::min(c1, extent[i] - 1));
+			corner0[i] = c0; corner1[i] = c1;
+			count *= (double)(c1 - c0 + 1);
+		}
+		rectangle_scatter_add(deltaTable, corner0, corner1, static_cast<T>(value / count));
+	}
+
 	// Averages every position over a (2*radius+1)^DIM window in O(1) per
 	// pixel via rectangle_sum() -- unlike convolve()'s O(radius^DIM), the
 	// per-pixel cost here doesn't grow with radius at all. The window a

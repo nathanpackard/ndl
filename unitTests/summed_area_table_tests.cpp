@@ -136,3 +136,57 @@ TEST(SummedAreaTable, BoxBlur) {
 
 	reportPassFail(passfail);
 }
+
+TEST(SummedAreaTable, BoxFilterQueryAndScatterAddAreExactAdjoints) {
+	std::stringstream passfail;
+	std::cout << std::endl << "BOX_FILTER_QUERY / BOX_FILTER_SCATTER_ADD ADJOINTNESS" << std::endl;
+
+	// box_filter_scatter_add() exists specifically to be the exact adjoint
+	// of box_filter_query() (projection.h's forward_project()/
+	// back_project() rely on this for AA-enabled adjointness) -- verified
+	// directly via the dot-product identity <box_filter_query(x,p,hw), y>
+	// == <x, materialize(box_filter_scatter_add(0,p,hw,y))>, for random x
+	// and several random query positions/half-widths, including ones near
+	// the array's own boundary (where the query window gets clamped) --
+	// this is NOT just approximately true there; it's exact by
+	// construction (the D-dimensional difference-array technique, not an
+	// assumption that the box blur itself is a symmetric operator, which
+	// it isn't right at a boundary).
+	const int W = 20, H = 20;
+	std::mt19937 rng(9);
+	std::uniform_real_distribution<double> valDist(-3, 3);
+	std::uniform_real_distribution<double> posDist(0.0, 19.0);
+	std::uniform_real_distribution<double> hwDist(0.5, 3.0);
+
+	std::vector<double> xData(W * H);
+	for (auto& v : xData) v = valDist(rng);
+	Image<double, 2> x(xData.data(), { W, H });
+
+	std::vector<double> tableData(W * H);
+	Image<double, 2> table(tableData.data(), { W, H });
+	summed_area_table(x, table);
+
+	bool allPass = true;
+	int numTrials = 30;
+	for (int trial = 0; trial < numTrials; trial++)
+	{
+		std::array<double, 2> pos{ posDist(rng), posDist(rng) };
+		std::array<double, 2> hw{ hwDist(rng), hwDist(rng) };
+		double y = valDist(rng);
+
+		double lhs = y * box_filter_query(table, pos, hw);
+
+		std::vector<double> deltaData(W * H, 0.0);
+		Image<double, 2> delta(deltaData.data(), { W, H });
+		box_filter_scatter_add(delta, pos, hw, y);
+		summed_area_table(delta, delta); // in-place materialization
+
+		double rhs = 0;
+		for (int i = 0; i < W * H; i++) rhs += xData[i] * deltaData[i];
+
+		if (std::abs(lhs - rhs) > 1e-9 * (1 + std::abs(lhs))) allPass = false;
+	}
+	passfail << "box_filter_query()/box_filter_scatter_add() are exact adjoints across " << numTrials << " random (including boundary-touching) queries: " << (allPass ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}

@@ -312,6 +312,101 @@ TEST(Projection, ForwardAndBackProject3DConeBeamAreExactAdjoints) {
 	reportPassFail(passfail);
 }
 
+TEST(Projection, ForwardAndBackProjectWithAAAreExactAdjoints) {
+	std::stringstream passfail;
+	std::cout << std::endl << "PROJECTION -- AA-ENABLED ADJOINTNESS" << std::endl;
+
+	// The centerpiece check for the matched-AA-filter pair (projection.h's
+	// own top comment has the derivation): with autoAA on, back_project()
+	// swaps in box_filter_scatter_add() (summed_area_table.h) in place of
+	// scatter_add() at exactly the same per-sample point forward_project()
+	// swapped in box_filter_query() in place of sample() -- built to be
+	// box_filter_query()'s own exact adjoint directly (verified in
+	// isolation in unitTests/summed_area_table_tests.cpp), not by assuming
+	// the resulting box blur is a symmetric operator. detPixelSpacing=3.5
+	// at magnification 2 here (unlike the unfiltered tests above, whose
+	// geometry happens to have matched voxel/detector resolution and so
+	// never actually exercises the AA path at all) makes one detector
+	// pixel correspond to 1.75 volume-units -- confirmed, not just
+	// assumed, to actually trigger autoAA's filtering below.
+	const int W = 48;
+	const int numViews = 40, detW = 24, detH = 24;
+	std::array<double, 3> volCenter{ (W - 1) / 2.0, (W - 1) / 2.0, (W - 1) / 2.0 };
+	auto geometry = buildConeBeamGeometry(numViews, volCenter, /*sourceDistance=*/120, /*detectorDistance=*/120, detW, detH, /*detPixelSpacing=*/3.5);
+
+	std::mt19937 rng(13);
+	std::uniform_real_distribution<double> dist(-1.0, 1.0);
+
+	// Confirm AA actually triggers for this geometry first -- a point
+	// source's forward projection should differ between autoAA on/off; if
+	// it doesn't, the rest of this test would silently just be re-testing
+	// the already-covered unfiltered path.
+	std::vector<double> pointData((std::size_t)W * W * W, 0.0);
+	pointData[(std::size_t)(W / 2) * W * W + (std::size_t)(W / 2) * W + (W / 2)] = 1.0;
+	Image<double, 3> pointSrc(pointData.data(), { W, W, W });
+	std::vector<double> pxAAData((std::size_t)numViews * detW * detH), pxNoAAData((std::size_t)numViews * detW * detH);
+	Image<double, 3> pxAA(pxAAData.data(), { numViews, detW, detH }), pxNoAA(pxNoAAData.data(), { numViews, detW, detH });
+	forward_project(pointSrc, pxAA, geometry, Linear{}, /*autoAA=*/true);
+	forward_project(pointSrc, pxNoAA, geometry, Linear{}, /*autoAA=*/false);
+	double aaMaxDiff = 0;
+	for (std::size_t i = 0; i < pxAAData.size(); i++) aaMaxDiff = std::max(aaMaxDiff, std::abs(pxAAData[i] - pxNoAAData[i]));
+	passfail << "autoAA genuinely changes the forward projection for this geometry (max diff " << aaMaxDiff << "), confirming the test below exercises the AA path: " << (aaMaxDiff > 1e-6 ? "Pass" : "Fail") << std::endl;
+
+	// Case A: data with margin from the volume's own boundary.
+	{
+		std::vector<double> xData((std::size_t)W * W * W, 0.0);
+		Image<double, 3> x(xData.data(), { W, W, W });
+		for (int z = 8; z < W - 8; z++) for (int y = 8; y < W - 8; y++) for (int xx = 8; xx < W - 8; xx++) x(xx, y, z) = dist(rng);
+		std::vector<double> yData((std::size_t)numViews * detW * detH);
+		for (auto& v : yData) v = dist(rng);
+		Image<double, 3> y(yData.data(), { numViews, detW, detH });
+
+		std::vector<double> pxData((std::size_t)numViews * detW * detH);
+		Image<double, 3> px(pxData.data(), { numViews, detW, detH });
+		forward_project(x, px, geometry, Linear{}, /*autoAA=*/true);
+		std::vector<double> ptyData((std::size_t)W * W * W);
+		Image<double, 3> pty(ptyData.data(), { W, W, W });
+		back_project(y, pty, geometry, Linear{}, /*autoAA=*/true);
+
+		double lhs = 0;
+		for (std::size_t i = 0; i < pxData.size(); i++) lhs += pxData[i] * yData[i];
+		double rhs = 0;
+		for (std::size_t i = 0; i < xData.size(); i++) rhs += xData[i] * ptyData[i];
+		double relErr = std::abs(lhs - rhs) / (std::abs(lhs) + std::abs(rhs) + 1e-30);
+		passfail << "AA-enabled, volume with margin from boundary: relative error = " << relErr << (relErr < 1e-9 ? "  Pass" : "  Fail") << std::endl;
+	}
+
+	// Case B: data filling the whole volume, including its own boundary --
+	// isolates whether box_filter_query()'s boundary-clamped window
+	// (asymmetric as a raw operator, see projection.h's own comment)
+	// still yields an exact adjoint once box_filter_scatter_add() is
+	// built as its literal transpose rather than assumed self-adjoint.
+	{
+		std::vector<double> xData((std::size_t)W * W * W);
+		for (auto& v : xData) v = dist(rng);
+		Image<double, 3> x(xData.data(), { W, W, W });
+		std::vector<double> yData((std::size_t)numViews * detW * detH);
+		for (auto& v : yData) v = dist(rng);
+		Image<double, 3> y(yData.data(), { numViews, detW, detH });
+
+		std::vector<double> pxData((std::size_t)numViews * detW * detH);
+		Image<double, 3> px(pxData.data(), { numViews, detW, detH });
+		forward_project(x, px, geometry, Linear{}, /*autoAA=*/true);
+		std::vector<double> ptyData((std::size_t)W * W * W);
+		Image<double, 3> pty(ptyData.data(), { W, W, W });
+		back_project(y, pty, geometry, Linear{}, /*autoAA=*/true);
+
+		double lhs = 0;
+		for (std::size_t i = 0; i < pxData.size(); i++) lhs += pxData[i] * yData[i];
+		double rhs = 0;
+		for (std::size_t i = 0; i < xData.size(); i++) rhs += xData[i] * ptyData[i];
+		double relErr = std::abs(lhs - rhs) / (std::abs(lhs) + std::abs(rhs) + 1e-30);
+		passfail << "AA-enabled, volume touches its own boundary: relative error = " << relErr << (relErr < 1e-9 ? "  Pass" : "  Fail") << std::endl;
+	}
+
+	reportPassFail(passfail);
+}
+
 TEST(Projection, MaxDensityBoundFromSinogram) {
 	std::stringstream passfail;
 	std::cout << std::endl << "PROJECTION -- MAX_DENSITY_BOUND" << std::endl;

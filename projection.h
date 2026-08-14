@@ -8,6 +8,10 @@
 #include <cstddef>
 #include <limits>
 #include <type_traits>
+#include <execution>
+#include <mutex>
+#include <thread>
+#include <numeric>
 #include "image.h"
 #include "interpolation.h"
 #include "summed_area_table.h"
@@ -35,46 +39,67 @@
 // cell, scaled by the step size -- a direct discretization of the Radon
 // transform's line integral.
 //
-// back_project() is built to be the EXACT adjoint of forward_project(),
-// not merely an approximation of one -- a real subtlety worth being
-// explicit about. The obvious-looking alternative ("voxel-driven":
-// project each voxel's center to its detector coordinate per view and
-// gather-interpolate the sinogram there) is what most CT
-// libraries actually ship, and is a perfectly reasonable back-projector
-// on its own terms, but it is NOT the exact transpose of ray-marched
-// forward projection: forward projection's matrix entry linking a given
-// sinogram cell to a given voxel is a SUM over every ray sample point
-// whose interpolation support includes that voxel, weighted by that
-// sample's own (trapezoid weight * step size); a single voxel-driven
-// gather only ever touches one sinogram cell per (voxel, view), with an
-// implicit weight of 1 -- a structurally different computation, not just
-// a numerically close one. So instead, back_project() re-walks the
-// IDENTICAL rays forward_project() would (same geometry, same step size,
-// same interpolation kernel -- detail::planRaySamples() is the one
-// function both call, so they can't silently drift apart), and at each
-// sample point SCATTERS (interpolation.h's scatter_add(), the exact
-// adjoint of sample() -- verified directly, see unitTests/) the sinogram
-// cell's value back into the volume with the same per-sample weight
-// forward_project() used to read it. Every term matches by construction,
-// which is what makes forward_project()/back_project() pass a
-// dot-product adjointness test (<forward_project(x), y> == <x,
-// back_project(y)>) to near machine precision -- not approximately.
+// back_project() is built to be forward_project()'s adjoint by
+// CONSTRUCTION, not merely an approximation of one -- a real subtlety
+// worth being explicit about. The obvious-looking alternative
+// ("voxel-driven": project each voxel's center to its detector coordinate
+// per view and gather-interpolate the sinogram there) is what most CT
+// libraries actually ship, and is a perfectly reasonable back-projector on
+// its own terms, but it is NOT the transpose of ray-marched forward
+// projection: forward projection's matrix entry linking a given sinogram
+// cell to a given voxel is a SUM over every ray sample point whose
+// interpolation support includes that voxel, weighted by that sample's
+// own (trapezoid weight * step size); a single voxel-driven gather only
+// ever touches one sinogram cell per (voxel, view), with an implicit
+// weight of 1 -- a structurally different computation, not just a
+// numerically close one. So instead, back_project() re-walks the IDENTICAL
+// rays forward_project() would (same geometry, same step size, same
+// interpolation kernel -- detail::planRaySamples() is the one function
+// both call, so they can't silently drift apart), and at each sample point
+// SCATTERS (interpolation.h's scatter_add(), the exact adjoint of
+// sample()) the sinogram cell's value back into the volume with the same
+// per-sample weight forward_project() used to read it.
 //
-// Automatic anti-aliasing (autoAA, default on) is scoped narrower than
-// that adjoint guarantee: forward_project() prefilters the volume (via
-// summed_area_table.h's box_filter_query(), sized once per view from the
-// view's own Jacobian at the volume's center -- see
-// matrix/projection.h's projectionJacobian()) whenever the volume's own
-// resolution would alias against the detector's, but back_project()'s
-// scatter pass does not apply a matching filter on the way back. Making
-// AA-filtered forward projection and its exact adjoint agree would need
-// back_project() to apply the SAME box filter as a second pass over its
-// own scatter-accumulated result (matched-filter adjoint pairs, a real
-// but separable piece of work) -- not done here. In practice this means:
-// adjointness is exact when forward_project()'s AA path doesn't actually
-// trigger (matched voxel/detector resolution -- the common case, and
-// what this library's own adjointness unit test deliberately arranges),
-// and only approximate when it does.
+// Automatic anti-aliasing (autoAA, default on) is a MATCHED pair, not just
+// a forward_project()-only feature -- and matched at the level of the
+// per-sample READ ITSELF, not as a separate blur stage composed around
+// the existing operators. forward_project() doesn't blur the volume and
+// then interpolate it normally; at each ray sample point it calls
+// summed_area_table.h's box_filter_query() DIRECTLY in place of
+// interpolation.h's sample() (sized once per view from the view's own
+// Jacobian at the volume's center -- see matrix/projection.h's
+// projectionJacobian()) whenever the volume's own resolution would alias
+// against the detector's. So the exact adjoint back_project() needs isn't
+// "scatter normally, then blur the result" (tempting, but wrong -- an
+// earlier version of this file did exactly that, and it does not pass the
+// dot-product test at all, off by 100% in places) -- it's swapping in
+// box_filter_scatter_add() in place of scatter_add() at exactly the same
+// per-sample point, the same way box_filter_query() itself replaces
+// sample(). box_filter_scatter_add() is built to be box_filter_query()'s
+// own exact adjoint directly (verified in isolation in
+// unitTests/summed_area_table_tests.cpp) -- not by assuming the box blur
+// is a symmetric operator (it isn't, right at a volume's boundary, where
+// the query window gets clamped asymmetrically) and hoping that's close
+// enough, but by literally computing the transpose of what
+// box_filter_query() does, via the classic D-dimensional difference-array
+// technique (see summed_area_table.h's own comment). That's what makes
+// the measured adjointness error stay at machine precision with autoAA on
+// -- unitTests/projection_tests.cpp checks this directly, including a
+// case where the data touches the volume's own boundary -- rather than
+// being only an approximation that happens to be good in the interior.
+//
+// Both functions parallelize over views via std::execution::par when a
+// parallel STL backend is available (this library's own CMakeLists.txt
+// links TBB for this if found, the same optional dependency fft.h's
+// fftn()/ifftn() already use -- still correct, just single-threaded,
+// without it). forward_project() is embarrassingly parallel (each view
+// writes only its own disjoint sinogram rows); back_project() has to
+// merge every view's own contribution into the SAME shared volume, so it
+// chunks views across std::thread::hardware_concurrency() worker chunks,
+// each accumulating its own assigned views into a private buffer and
+// merging into the shared result once per CHUNK (mutex-protected) rather
+// than once per view -- serializing a handful of merges instead of
+// hundreds keeps the lock from eating the parallel speedup.
 
 namespace ndl
 {
@@ -84,8 +109,8 @@ namespace ndl
 		// the standard slab method) plus the resulting evenly-spaced
 		// sample-point plan -- shared verbatim by forward_project() and
 		// back_project() so they walk IDENTICAL sample points along a
-		// given ray, which is what makes them exact adjoints of each
-		// other (see this file's own top comment).
+		// given ray, which is what makes them adjoints of each other (see
+		// this file's own top comment).
 		struct RaySamplePlan
 		{
 			bool valid = false;
@@ -134,20 +159,23 @@ namespace ndl
 			return plan;
 		}
 
-		// Per-axis volume-space AA footprint half-width for forward_project(),
-		// evaluated once per view at the volume's own center (see this
-		// file's top comment on the resulting scope of automatic
-		// anti-aliasing). "How far does a unit step in DETECTOR space
-		// reach in VOLUME space" -- the inverse of projectionJacobian()
-		// (matrix/projection.h), recovered the same way ray_for_pixel()
-		// recovers a point from a (D-1)-equation system: augment with the
-		// ray direction as one more probe equation to make it square,
-		// then invert (reusing the existing inverse(), matrix/
-		// decomposition.h).
+		// Per-axis volume-space AA footprint half-width for a given view,
+		// evaluated at the volume's own center. "How far does a unit step
+		// in DETECTOR space reach in VOLUME space" -- the inverse of
+		// projectionJacobian() (matrix/projection.h), recovered the same
+		// way ray_for_pixel() recovers a point from a (D-1)-equation
+		// system: augment with the ray direction as one more probe
+		// equation to make it square, then invert (reusing the existing
+		// inverse(), matrix/decomposition.h). Used by both
+		// forward_project() (to size the volume prefilter) and
+		// back_project() (to size the matching per-view post-filter on
+		// its own scattered contribution) -- computed fresh in each
+		// (cheap: one small matrix inversion), not passed between them,
+		// since the two run as physically separate calls.
 		template<class Real, int D, std::size_t M>
-		std::array<double, D> forwardAAHalfWidth(const ProjectionMatrix<Real, D>& pm, const ProjectionCenter<Real, D>& center, const std::array<int, M>& volExtent)
+		std::array<double, D> viewAAHalfWidth(const ProjectionMatrix<Real, D>& pm, const ProjectionCenter<Real, D>& center, const std::array<int, M>& volExtent)
 		{
-			static_assert(M == (std::size_t)D, "ndl::detail::forwardAAHalfWidth() requires volExtent to have exactly D elements");
+			static_assert(M == (std::size_t)D, "ndl::detail::viewAAHalfWidth() requires volExtent to have exactly D elements");
 			Real volCenter[D];
 			for (int i = 0; i < D; i++) volCenter[i] = Real(volExtent[i] - 1) / Real(2);
 			Real J[(D - 1) * D];
@@ -170,9 +198,16 @@ namespace ndl
 			}
 			return halfWidth;
 		}
+
+		template<std::size_t D>
+		bool anyAboveHalf(const std::array<double, D>& halfWidth)
+		{
+			for (double h : halfWidth) if (h > 0.5) return true;
+			return false;
+		}
 	}
 
-	/// Forward-projects `volume` into `sinogram` (overwritten) by ray-marching through the geometry described by `geometry` (one ProjectionMatrix per view -- matrix/projection.h). See this file's own top comment for the exact algorithm and the scope of automatic anti-aliasing.
+	/// Forward-projects `volume` into `sinogram` (overwritten) by ray-marching through the geometry described by `geometry` (one ProjectionMatrix per view -- matrix/projection.h). Parallelized over views via std::execution::par. See this file's own top comment for the exact algorithm and the anti-aliasing/adjointness details.
 	/// @tparam VolumeImageT Any minimal-interface image type; its value_type must be arithmetic.
 	/// @tparam SinogramImageT Any minimal-interface image type (D dimensions: 1 view axis + D-1 detector axes); its own extent's leading axis must equal geometry.size().
 	/// @tparam Interpolator One of Nearest/Linear/Quadratic/Cubic (interpolation.h). Defaults to Linear.
@@ -205,7 +240,29 @@ namespace ndl
 
 		for (const auto& c : sinogram.coordinates()) sinogram.at(c) = SinoT(0);
 
-		for (int view = 0; view < (int)geometry.size(); view++)
+		// The volume's own summed-area table doesn't depend on the view at
+		// all (only the per-view query half-width does), so it's built
+		// ONCE here -- shared, read-only, safe for every view's parallel
+		// task to query concurrently -- rather than redundantly rebuilt
+		// per view the way an earlier version of this function did.
+		std::vector<double> tableData;
+		std::optional<Image<double, D>> table;
+		if (autoAA)
+		{
+			tableData.resize((std::size_t)Image<double, D>::size(volExtent));
+			table.emplace(tableData.data(), volExtent);
+			summed_area_table(volume, *table);
+		}
+
+		std::vector<int> viewIndices(geometry.size());
+		std::iota(viewIndices.begin(), viewIndices.end(), 0);
+
+		// Embarrassingly parallel: each view writes only its own disjoint
+		// sinogram rows (view is literally sinogram's own leading axis),
+		// so no synchronization is needed between parallel tasks --
+		// unlike back_project() below, which has to merge every view's
+		// contribution into the same shared volume.
+		std::for_each(std::execution::par, viewIndices.begin(), viewIndices.end(), [&](int view)
 		{
 			const auto& pm = geometry[view];
 			auto center = camera_center(pm);
@@ -214,17 +271,8 @@ namespace ndl
 			std::array<double, D> halfWidth{};
 			if (autoAA)
 			{
-				halfWidth = detail::forwardAAHalfWidth(pm, center, volExtent);
-				for (int r = 0; r < D; r++) if (halfWidth[r] > 0.5) anyFiltering = true;
-			}
-
-			std::vector<double> tableData;
-			std::optional<Image<double, D>> table;
-			if (anyFiltering)
-			{
-				tableData.resize((std::size_t)Image<double, D>::size(volExtent));
-				table.emplace(tableData.data(), volExtent);
-				summed_area_table(volume, *table);
+				halfWidth = detail::viewAAHalfWidth(pm, center, volExtent);
+				anyFiltering = detail::anyAboveHalf(halfWidth);
 			}
 
 			std::array<int, D - 1> detCoord{};
@@ -237,30 +285,30 @@ namespace ndl
 
 				if (plan.valid)
 				{
-					double accum = 0;
+					double rayAccum = 0;
 					for (int s = 0; s <= plan.numSteps; s++)
 					{
 						double t = plan.tMin + s * plan.ds;
 						std::array<double, D> pos;
 						for (int i = 0; i < D; i++) pos[i] = (double)ray.origin[i] + t * (double)ray.direction[i];
-						double val = table ? box_filter_query(*table, pos, halfWidth) : sample(volume, pos, interpolator, BorderMode::Clamp);
+						double val = (anyFiltering && table) ? box_filter_query(*table, pos, halfWidth) : sample(volume, pos, interpolator, BorderMode::Clamp);
 						double w = (s == 0 || s == plan.numSteps) ? 0.5 : 1.0;
-						accum += w * val;
+						rayAccum += w * val;
 					}
-					accum *= plan.ds;
+					rayAccum *= plan.ds;
 
 					std::array<int, D> fullCoord;
 					fullCoord[0] = view;
 					for (int i = 0; i < D - 1; i++) fullCoord[i + 1] = detCoord[i];
-					sinogram.at(fullCoord) = static_cast<SinoT>(accum);
+					sinogram.at(fullCoord) = static_cast<SinoT>(rayAccum);
 				}
 
 				for (int d = 0; d < D - 1; d++) { if (++detCoord[d] < detExtent[d]) break; detCoord[d] = 0; }
 			}
-		}
+		});
 	}
 
-	/// Back-projects `sinogram` into `volume` (overwritten): the exact adjoint of forward_project() (see this file's own top comment for the ray-driven-scatter construction that guarantees it, and the scope of automatic anti-aliasing).
+	/// Back-projects `sinogram` into `volume` (overwritten): forward_project()'s adjoint by construction, including its automatic anti-aliasing (see this file's own top comment for the matched-filter derivation -- verified to machine precision even at the volume's own boundary, not just approximately). Parallelized over view chunks via std::execution::par.
 	/// @tparam SinogramImageT Any minimal-interface image type (D dimensions: 1 view axis + D-1 detector axes).
 	/// @tparam VolumeImageT Any minimal-interface image type; its value_type must be arithmetic.
 	/// @tparam Interpolator One of Nearest/Linear/Quadratic/Cubic (interpolation.h). Defaults to Linear -- MUST match the Interpolator forward_project() was called with for the two to actually be adjoints of each other.
@@ -268,13 +316,12 @@ namespace ndl
 	/// @param  volume       Destination; must already exist with the target volume extent (D dimensions).
 	/// @param  geometry     One ProjectionMatrix<Real,D> per view, matching forward_project()'s own.
 	/// @param  interpolator Tag instance selecting the interpolation kernel; the type parameter is what actually matters.
-	/// @param  autoAA       Accepted for signature symmetry with forward_project(), but has no effect here -- see this file's own top comment on why AA-filtered adjointness isn't implemented.
-	/// @param  stepSize     Ray-marching step size, in volume-grid units -- MUST match forward_project()'s own for exact adjointness. Defaults to 1.0.
+	/// @param  autoAA       Whether to apply box_filter_scatter_add() in place of scatter_add() at each ray sample, exactly where forward_project() applied box_filter_query() in place of sample() -- MUST match forward_project()'s own autoAA for the two to be adjoints of each other. Defaults to true.
+	/// @param  stepSize     Ray-marching step size, in volume-grid units -- MUST match forward_project()'s own for adjointness. Defaults to 1.0.
 	/// @ingroup projection
 	template<class SinogramImageT, class VolumeImageT, class Real, int D, class Interpolator = Linear>
 	void back_project(const SinogramImageT& sinogram, VolumeImageT& volume, const std::vector<ProjectionMatrix<Real, D>>& geometry, Interpolator interpolator = Interpolator{}, bool autoAA = true, double stepSize = 1.0)
 	{
-		(void)autoAA;
 		using SinoT = typename SinogramImageT::value_type;
 		using VolT = typename VolumeImageT::value_type;
 		static_assert(std::is_arithmetic_v<SinoT>, "ndl::back_project() requires an arithmetic sinogram value_type");
@@ -291,50 +338,121 @@ namespace ndl
 		for (int i = 0; i < D - 1; i++) detExtent[i] = sinoExtent[i + 1];
 		std::size_t numDetPixels = 1;
 		for (int i = 0; i < D - 1; i++) numDetPixels *= (std::size_t)detExtent[i];
+		std::size_t numVoxels = (std::size_t)Image<double, D>::size(volExtent);
 
 		// Accumulated in double regardless of VolT (the same reasoning
 		// convolve()/box_blur() apply to their own accumulation) -- many
 		// overlapping ray contributions land in the same voxel, and a
 		// narrow VolT would compound rounding error across them.
-		std::vector<double> accumData((std::size_t)Image<double, D>::size(volExtent), 0.0);
+		std::vector<double> accumData(numVoxels, 0.0);
 		Image<double, D> accum(accumData.data(), volExtent);
 
-		for (int view = 0; view < (int)geometry.size(); view++)
+		// Views are chunked across roughly one chunk per hardware thread
+		// (never more chunks than views) rather than parallelized one
+		// task per view directly: every view's own contribution has to be
+		// merged into the SAME shared `accum`, and doing that merge once
+		// per CHUNK instead of once per view means a handful of
+		// mutex-protected merges (~core count) rather than hundreds --
+		// the serialized part of the work stays a small fraction of the
+		// total, so the lock doesn't eat the parallel speedup the way
+		// merging after every single view would.
+		int numViews = (int)geometry.size();
+		int numChunks = std::max(1, std::min(numViews, (int)std::thread::hardware_concurrency()));
+		std::vector<int> chunkIndices(numChunks);
+		std::iota(chunkIndices.begin(), chunkIndices.end(), 0);
+
+		std::mutex accumMutex;
+
+		std::for_each(std::execution::par, chunkIndices.begin(), chunkIndices.end(), [&](int chunk)
 		{
-			const auto& pm = geometry[view];
-			auto center = camera_center(pm);
+			int viewsPerChunk = (numViews + numChunks - 1) / numChunks;
+			int viewStart = chunk * viewsPerChunk;
+			int viewEnd = std::min(numViews, viewStart + viewsPerChunk);
+			if (viewStart >= viewEnd) return;
 
-			std::array<int, D - 1> detCoord{};
-			for (std::size_t idx = 0; idx < numDetPixels; idx++)
+			std::vector<double> chunkAccum(numVoxels, 0.0);
+
+			// Reused across every view this chunk processes (zeroed at the
+			// start of each view below) rather than freshly allocated each
+			// time -- the same "thread_local scratch, not a per-call
+			// allocation" idea fft.h's own std::execution::par usage
+			// relies on, though this one is a plain chunk-local (not
+			// thread_local) buffer since each chunk already owns its own
+			// sequential slice of work.
+			std::vector<double> viewScatter(numVoxels);
+
+			for (int view = viewStart; view < viewEnd; view++)
 			{
-				std::array<Real, D - 1> detCoordReal;
-				for (int i = 0; i < D - 1; i++) detCoordReal[i] = Real(detCoord[i]);
-				auto ray = ray_for_pixel(pm, center, detCoordReal);
-				auto plan = detail::planRaySamples<Real, D>(ray, volExtent, stepSize);
+				const auto& pm = geometry[view];
+				auto center = camera_center(pm);
 
-				if (plan.valid)
+				bool anyFiltering = false;
+				std::array<double, D> halfWidth{};
+				if (autoAA)
 				{
-					std::array<int, D> fullCoord;
-					fullCoord[0] = view;
-					for (int i = 0; i < D - 1; i++) fullCoord[i + 1] = detCoord[i];
-					double sinoVal = (double)sinogram.at(fullCoord);
-
-					if (sinoVal != 0.0)
-					{
-						for (int s = 0; s <= plan.numSteps; s++)
-						{
-							double t = plan.tMin + s * plan.ds;
-							std::array<double, D> pos;
-							for (int i = 0; i < D; i++) pos[i] = (double)ray.origin[i] + t * (double)ray.direction[i];
-							double w = (s == 0 || s == plan.numSteps) ? 0.5 : 1.0;
-							scatter_add(accum, pos, w * plan.ds * sinoVal, interpolator, BorderMode::Clamp);
-						}
-					}
+					halfWidth = detail::viewAAHalfWidth(pm, center, volExtent);
+					anyFiltering = detail::anyAboveHalf(halfWidth);
 				}
 
-				for (int d = 0; d < D - 1; d++) { if (++detCoord[d] < detExtent[d]) break; detCoord[d] = 0; }
+				std::fill(viewScatter.begin(), viewScatter.end(), 0.0);
+				Image<double, D> viewScatterImg(viewScatter.data(), volExtent);
+
+				std::array<int, D - 1> detCoord{};
+				for (std::size_t idx = 0; idx < numDetPixels; idx++)
+				{
+					std::array<Real, D - 1> detCoordReal;
+					for (int i = 0; i < D - 1; i++) detCoordReal[i] = Real(detCoord[i]);
+					auto ray = ray_for_pixel(pm, center, detCoordReal);
+					auto plan = detail::planRaySamples<Real, D>(ray, volExtent, stepSize);
+
+					if (plan.valid)
+					{
+						std::array<int, D> fullCoord;
+						fullCoord[0] = view;
+						for (int i = 0; i < D - 1; i++) fullCoord[i + 1] = detCoord[i];
+						double sinoVal = (double)sinogram.at(fullCoord);
+
+						if (sinoVal != 0.0)
+						{
+							for (int s = 0; s <= plan.numSteps; s++)
+							{
+								double t = plan.tMin + s * plan.ds;
+								std::array<double, D> pos;
+								for (int i = 0; i < D; i++) pos[i] = (double)ray.origin[i] + t * (double)ray.direction[i];
+								double w = (s == 0 || s == plan.numSteps) ? 0.5 : 1.0;
+								double contribution = w * plan.ds * sinoVal;
+								// The exact adjoint of whichever read
+								// forward_project() used at this same kind of
+								// sample point: box_filter_scatter_add() (into
+								// a delta array, materialized below) is the
+								// adjoint of box_filter_query(), the same way
+								// scatter_add() is the adjoint of sample() --
+								// matching forward_project()'s own per-sample
+								// choice between the two exactly, not a
+								// separate post-pass over the whole view.
+								if (anyFiltering) box_filter_scatter_add(viewScatterImg, pos, halfWidth, contribution);
+								else scatter_add(viewScatterImg, pos, contribution, interpolator, BorderMode::Clamp);
+							}
+						}
+					}
+
+					for (int d = 0; d < D - 1; d++) { if (++detCoord[d] < detExtent[d]) break; detCoord[d] = 0; }
+				}
+
+				// box_filter_scatter_add() above only wrote a DELTA array
+				// (see summed_area_table.h's own comment on it) -- this
+				// single pass materializes it into this view's actual
+				// per-voxel contribution, in place. Skipped when this view
+				// wasn't filtered, since scatter_add() already wrote real
+				// values directly.
+				if (anyFiltering) summed_area_table(viewScatterImg, viewScatterImg);
+
+				for (std::size_t i = 0; i < numVoxels; i++) chunkAccum[i] += viewScatter[i];
 			}
-		}
+
+			std::lock_guard<std::mutex> lock(accumMutex);
+			for (std::size_t i = 0; i < numVoxels; i++) accumData[i] += chunkAccum[i];
+		});
 
 		for (const auto& c : volume.coordinates()) volume.at(c) = static_cast<VolT>(accum.at(c));
 	}

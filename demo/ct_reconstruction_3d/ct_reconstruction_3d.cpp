@@ -26,14 +26,23 @@ namespace fs = std::filesystem;
 // homogeneous row, real perspective divide), and automatic anti-aliasing
 // whose footprint genuinely varies with a voxel's own distance from the
 // source (unlike parallel-beam's spatially-uniform case -- see PART 4
-// below).
+// below). Unlike the 2D demo, PART 5's reconstruction loop here actually
+// runs with autoAA on, not just off -- this geometry's own detector/volume
+// resolution mismatch is exactly the case automatic anti-aliasing exists
+// for (projection.h's own top comment has the matched-filter derivation
+// that makes this possible without breaking forward_project()/
+// back_project()'s exact adjointness).
 //
 // This demo is considerably slower than every other demo in this repo --
 // 128^3 = ~2.1M voxels, 180 views x 64x64 = ~740k detector pixels, each
 // ray marched through up to ~220 voxel-steps -- the same "by far the most
 // expensive step in this whole demo" situation demo/motion's sift_flow()
-// step flags, just for the whole demo this time. Expect roughly 1-2
-// minutes end to end, dominated by PART 5's reconstruction loop.
+// step flags, just for the whole demo this time. forward_project()/
+// back_project() both parallelize over views via std::execution::par
+// (projection.h's own top comment) when a parallel STL backend is
+// available, which is most of what keeps this demo's own runtime down to
+// roughly 1-2 minutes end to end despite autoAA's extra per-sample cost --
+// still dominated by PART 5's reconstruction loop.
 //
 // step()/showArray()/showText()/saveForInspection()/outputDir come from
 // demoHelpers.h, shared with every other demo.
@@ -263,14 +272,14 @@ int main()
 	// ------------------------------------------------------------------
 	std::cout << "\n\n=== PART 4: cone-beam anti-aliasing is spatially VARIABLE, unlike parallel-beam's uniform case ===\n";
 
-	step("forward_project(phantom, sinoAA, smallGeometry, Linear{}, /*autoAA=*/true)   // 3 views only, for speed",
+	step("forward_project(phantom, sinoAA, smallGeometry, Linear{}, /*autoAA=*/true)   // 3 views only, for a quick before/after",
 		"For parallel-beam projection (demo/ct_reconstruction), magnification is constant everywhere, so\n"
 		"             the correct anti-aliasing footprint is a single fixed size per view. Cone-beam is a true\n"
 		"             perspective projection: a voxel's footprint on the detector shrinks approaching the\n"
 		"             detector and grows approaching the source, so forward_project()'s automatic\n"
 		"             anti-aliasing (projection.h's own top comment) genuinely differs from the unfiltered\n"
-		"             result here -- run on just 3 views (not the full 180) purely to keep this comparison\n"
-		"             fast, since AA-enabled cone-beam projection costs meaningfully more per ray.");
+		"             result here -- just 3 views for a quick, cheap before/after comparison; PART 5 below\n"
+		"             runs the real reconstruction with autoAA on for all 180.");
 	auto smallGeometry = buildConeBeamGeometry(3, volCenter, 300, 300, detW, detH, 7.0);
 	std::vector<double> sinoNoAAData((std::size_t)3 * detW * detH);
 	Image<double, 3> sinoNoAA(sinoNoAAData.data(), { 3, detW, detH });
@@ -287,26 +296,30 @@ int main()
 	// ------------------------------------------------------------------
 	std::cout << "\n\n=== PART 5: reconstructing the phantom from ONLY the 64x64-detector sinogram ===\n";
 
-	step("recon += lambda * back_project(sinogram - forward_project(recon)); clamp to [0, max_density_bound(sinogram)]",
-		"The same algorithm demo/ct_reconstruction uses in 2D, unchanged -- back_project() is\n"
-		"             forward_project()'s exact adjoint regardless of DIM or beam geometry (the dot-product\n"
-		"             test in unitTests/projection_tests.cpp checks exactly this, and passes here too, to\n"
-		"             ~1e-15 relative error, confirming the exactness carries over to 3D cone-beam unchanged).\n"
-		"             This 64x64-detector/180-view setup has fewer measurements (180*64*64 ~= 737k) than volume\n"
-		"             unknowns (128^3 ~= 2.1M) -- an underdetermined system, where PLAIN (unconstrained)\n"
-		"             Landweber exhibits classic SEMI-CONVERGENCE: RMSE against the ground truth drops for the\n"
-		"             first ~10 iterations, then starts RISING again as later iterations fit increasingly noisy/\n"
-		"             artifact-prone null-space directions instead of real structure. Clamping each update to\n"
-		"             [0, max_density_bound(sinogram)] (projection.h's own comment has the derivation -- the\n"
-		"             lower bound is physical non-negativity, the upper bound is read directly off the\n"
-		"             sinogram) fixes this: it's a box-constrained (\"projected\") gradient descent, and\n"
-		"             projecting onto a convex constraint set each step is exactly what keeps this kind of\n"
-		"             iteration from wandering into those noisy directions in the first place. Verified\n"
-		"             directly: at this lambda, unconstrained RMSE bottoms out at iteration 10 then rises;\n"
-		"             box-constrained RMSE keeps falling monotonically for at least 25 iterations before\n"
-		"             plateauing. 15 iterations here (vs. the 2D demo's 60) is still mostly a runtime budget\n"
-		"             call, not an accuracy ceiling the way it was before this constraint -- each iteration\n"
-		"             costs a full forward AND back cone-beam pass through a 128^3 volume.");
+	step("recon += lambda * back_project(sinogram - forward_project(recon), autoAA=true); clamp to [0, max_density_bound(sinogram)]",
+		"The same algorithm demo/ct_reconstruction uses in 2D, plus two things that particular\n"
+		"             demo doesn't need. First: back_project() is forward_project()'s exact adjoint regardless\n"
+		"             of DIM, beam geometry, OR whether autoAA is on (the dot-product test in\n"
+		"             unitTests/projection_tests.cpp checks all of this directly, to ~1e-15 relative error even\n"
+		"             with AA enabled and the data touching the volume's own boundary -- projection.h's own top\n"
+		"             comment has the matched-filter construction that makes this possible). Second: this\n"
+		"             64x64-detector/180-view setup has fewer measurements (180*64*64 ~= 737k) than volume\n"
+		"             unknowns (128^3 ~= 2.1M) -- an underdetermined system, where PLAIN (unconstrained,\n"
+		"             unfiltered) Landweber exhibits classic SEMI-CONVERGENCE: RMSE against the ground truth\n"
+		"             drops for the first ~10 iterations, then starts RISING again as later iterations fit\n"
+		"             increasingly noisy/artifact-prone null-space directions instead of real structure.\n"
+		"             Clamping each update to [0, max_density_bound(sinogram)] (projection.h's own comment has\n"
+		"             the derivation -- the lower bound is physical non-negativity, the upper bound is read\n"
+		"             directly off the sinogram) fixes the semi-convergence outright: box-constrained\n"
+		"             (\"projected\") gradient descent doesn't wander into those noisy directions in the first\n"
+		"             place, RMSE keeps falling monotonically for at least 25 iterations. autoAA=true goes\n"
+		"             further: since this geometry's detector really is coarser than the volume (PART 4 just\n"
+		"             confirmed autoAA changes the forward projection here, not a no-op), letting\n"
+		"             forward_project() account for that instead of aliasing it away measurably lowers the\n"
+		"             RMSE this reaches at every iteration -- not just a display fix, a better-conditioned\n"
+		"             problem for the iteration to actually solve. Both parallelized over views\n"
+		"             (std::execution::par) is what keeps 25 iterations of a 128^3 cone-beam volume, with AA,\n"
+		"             inside this demo's own 1-2 minute budget.");
 	std::vector<double> boundData((std::size_t)W * W * W);
 	Image<double, 3> bound(boundData.data(), { W, W, W });
 	max_density_bound(sinogram, bound, geometry, /*stepSize=*/1.0);
@@ -314,12 +327,12 @@ int main()
 	std::vector<double> reconData((std::size_t)W * W * W, 0.0);
 	Image<double, 3> recon(reconData.data(), { W, W, W });
 	const double lambda = 0.0005;
-	const int numIterations = 15;
+	const int numIterations = 25;
 	for (int iter = 0; iter < numIterations; iter++)
 	{
 		std::vector<double> predData((std::size_t)numViews * detW * detH);
 		Image<double, 3> pred(predData.data(), { numViews, detW, detH });
-		forward_project(recon, pred, geometry, Linear{}, false);
+		forward_project(recon, pred, geometry, Linear{}, true);
 
 		std::vector<double> residData((std::size_t)numViews * detW * detH);
 		for (std::size_t i = 0; i < residData.size(); i++) residData[i] = sinogramData[i] - predData[i];
@@ -327,7 +340,7 @@ int main()
 
 		std::vector<double> updateData((std::size_t)W * W * W);
 		Image<double, 3> update(updateData.data(), { W, W, W });
-		back_project(resid, update, geometry, Linear{}, false);
+		back_project(resid, update, geometry, Linear{}, true);
 
 		for (std::size_t i = 0; i < reconData.size(); i++)
 		{
@@ -345,17 +358,21 @@ int main()
 		"\n\nAll outputs written to: " << outputDir << "\n"
 		"01-03 are the ground-truth phantom's three central slices; 04-05 show the cone-beam sinogram\n"
 		"(what a real cone-beam CT scanner's detector would actually measure); 06-08 are the\n"
-		"reconstruction's matching slices, recovered from ONLY that sinogram. Compare 06-08 against\n"
-		"01-03 -- the background is now clean (the max_density_bound() constraint's whole point: no bright\n"
-		"stray-pixel overshoot), and the overall oval shape and largest internal structure are recognizable,\n"
-		"but expect a residual faint ring/grid pattern WITHIN the object outline. That's expected, not a bug:\n"
-		"max_density_bound() is tight for background voxels (many views show a near-empty ray straight\n"
-		"through them) but genuinely loose for interior voxels of a large object (every view's ray through a\n"
-		"big dense region also crosses a lot of OTHER dense material -- projection.h's own comment on\n"
-		"max_density_bound() has the details), so it constrains background overshoot specifically without\n"
-		"fixing the underdetermined system's own interior artifacts (PART 5's own comment has those numbers).\n"
-		"demo/ct_reconstruction's 2D/60-iteration result looks cleaner throughout because that problem isn't\n"
-		"underdetermined at all (145 detector pixels x 90 views vs. only 10000 pixel unknowns).\n";
+		"reconstruction's matching slices, recovered from ONLY that sinogram (with autoAA on and the\n"
+		"max_density_bound() constraint applied -- PART 5's own comment covers both). Compare 06-08\n"
+		"against 01-03 -- the background is clean (max_density_bound()'s whole point: no bright\n"
+		"stray-pixel overshoot), the overall oval shape and largest internal structure are recognizable,\n"
+		"and the ring/grid pattern within the object outline is visibly SOFTER than it would be with AA\n"
+		"off (RMSE is measurably lower too, at every iteration -- PART 5's own comment), but it isn't\n"
+		"gone. That's expected, not a bug: AA stops the iteration from aliasing detail the sinogram can't\n"
+		"support into sharp noise, but it doesn't add information -- the system is still underdetermined\n"
+		"(737k detector measurements for 2.1M volume unknowns), and max_density_bound() is only ever tight\n"
+		"for background voxels, not interior ones (projection.h's own comment on it has the reasoning), so\n"
+		"neither constraint touches the remaining interior ambiguity. demo/ct_reconstruction's 2D/\n"
+		"60-iteration result looks cleaner throughout because that problem isn't underdetermined at all\n"
+		"(145 detector pixels x 90 views vs. only 10000 pixel unknowns) -- closing the rest of this gap\n"
+		"here would take more views, a higher-resolution detector, or real regularization (e.g.\n"
+		"total-variation), not just more of what's already implemented.\n";
 
 	return 0;
 }
