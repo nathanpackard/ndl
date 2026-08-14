@@ -459,3 +459,80 @@ TEST(Projection, MaxDensityBoundFromSinogram) {
 
 	reportPassFail(passfail);
 }
+
+TEST(Projection, AAHalfWidthVariesWithDepthAlongRay) {
+	std::stringstream passfail;
+	std::cout << std::endl << "PROJECTION -- PER-SAMPLE AA HALF-WIDTH VARIES WITH DEPTH" << std::endl;
+
+	// A direct (white-box) check of the specific bug this test exists to
+	// catch a regression of: an earlier version of forward_project()/
+	// back_project() evaluated the AA footprint ONCE per view, at the
+	// volume's own center, and reused that single constant for every ray
+	// sample -- silently wrong for a true perspective (cone-beam) matrix,
+	// where a voxel's real footprint on the detector depends on its own
+	// distance from the source. The adjointness tests elsewhere in this
+	// file would pass even with that bug (forward_project() and
+	// back_project() were still exact adjoints of EACH OTHER, just both
+	// wrong relative to the true continuous footprint in the same way) --
+	// this test checks the footprint itself against the closed-form
+	// pinhole-camera magnification formula instead, at multiple depths
+	// along one ray, which the adjointness tests can't do.
+	//
+	// detail::sampleAAHalfWidth() is reached into directly here (not
+	// exercised only indirectly through forward_project()'s own
+	// observable output) because it's the one function responsible for
+	// this specific correctness property, and a direct check of it is
+	// far more precise than trying to infer per-sample filter width from
+	// a sinogram's own aggregate output.
+	const int W = 128;
+	const int numViews = 4, detW = 8, detH = 8;
+	std::array<double, 3> volCenter{ (W - 1) / 2.0, (W - 1) / 2.0, (W - 1) / 2.0 };
+	double sourceDistance = 300, detectorDistance = 300, detPixelSpacing = 7.0;
+	auto geometry = buildConeBeamGeometry(numViews, volCenter, sourceDistance, detectorDistance, detW, detH, detPixelSpacing);
+
+	const auto& pm = geometry[0]; // view angle 0: ray direction is +x
+	auto center = camera_center(pm);
+	ASSERT_FALSE(center.atInfinity); // cone-beam: must be a finite source
+
+	auto halfWidthAt = [&](double depthOffset) {
+		double p[3] = { volCenter[0] + depthOffset, volCenter[1], volCenter[2] };
+		return detail::sampleAAHalfWidth(pm, center, p);
+	};
+
+	auto nearSource = halfWidthAt(-(W - 1) / 2.0);
+	auto atCenter = halfWidthAt(0.0);
+	auto nearDetector = halfWidthAt((W - 1) / 2.0);
+
+	// Index 1 (not 0): view 0's own ray direction is +x (index 0), and
+	// blur ALONG the ray direction is meaningless here -- the ray march
+	// itself already integrates along that axis -- so halfWidth[0] is
+	// always ~0 by construction; the real, physically meaningful
+	// footprint shows up on the axes PERPENDICULAR to the ray (1 and 2).
+	passfail << "half-width near source / at center / near detector: " << nearSource[1] << " / " << atCenter[1] << " / " << nearDetector[1] << std::endl;
+
+	// Physical direction: magnification = focalLength / distanceFromSource,
+	// and volume-space footprint = detPixelSpacing / magnification, so
+	// footprint should INCREASE monotonically with distance from the
+	// source (matches the classic pinhole-camera relationship, not
+	// specific to this library).
+	bool monotonic = nearSource[1] < atCenter[1] && atCenter[1] < nearDetector[1];
+	passfail << "half-width increases monotonically from near-source to near-detector: " << (monotonic ? "Pass" : "Fail") << std::endl;
+
+	// Cross-check against the closed-form pinhole magnification formula
+	// directly, not just internal self-consistency.
+	auto expectedHalfWidth = [&](double depthOffset) {
+		double distFromSource = sourceDistance + depthOffset; // ray direction is +x, source is at -sourceDistance along x from volCenter
+		double magnification = (sourceDistance + detectorDistance) / distFromSource;
+		return 0.5 * (detPixelSpacing / magnification);
+	};
+	bool matchesClosedForm = true;
+	for (double depthOffset : { -(W - 1) / 2.0, 0.0, (W - 1) / 2.0 })
+	{
+		double got = halfWidthAt(depthOffset)[1];
+		double expected = expectedHalfWidth(depthOffset);
+		if (std::abs(got - expected) > 1e-6) matchesClosedForm = false;
+	}
+	passfail << "matches the closed-form pinhole-camera magnification formula at all three depths: " << (matchesClosedForm ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}

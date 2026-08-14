@@ -124,9 +124,9 @@ box_blur(grey, out, radius, BorderMode::Wrap)   vs.   convolve(grey, kernel, out
 convolve()'s cost scales with kernel size (every output pixel visits every kernel tap, (2*radius+1)^2 of them); box_blur()'s cost per pixel is always exactly one rectangle_sum() call -- 4 table lookups -- no matter how large radius gets, the same 'pay once, query cheaply' trade fftn() makes for repeated convolutions demo/convolution's own Part 6 times against spatial convolve(). Both are given the same BorderMode::Wrap here, so unlike a border-naive summed-area-table box blur (which would need to skip or fudge the border pixels its window can't fully reach), these two should now match pixel-for-pixel everywhere, border included -- checked below, not just eyeballed. The timings are the actual point.
 
 ```text
-radius=2 (5x5 kernel):   SAT box blur 5.275748 ms   vs   convolve() 11.993585 ms
-radius=8 (17x17 kernel):   SAT box blur 4.861406 ms   vs   convolve() 127.206449 ms
-radius=32 (65x65 kernel):   SAT box blur 5.980977 ms   vs   convolve() 1852.225259 ms
+radius=2 (5x5 kernel):   SAT box blur 5.413315 ms   vs   convolve() 12.681964 ms
+radius=8 (17x17 kernel):   SAT box blur 4.978813 ms   vs   convolve() 133.558118 ms
+radius=32 (65x65 kernel):   SAT box blur 6.093436 ms   vs   convolve() 1954.619940 ms
 ```
 
 [![summed_area_table_tutorial_03_sat_box_blur.png](images/summed_area_table_tutorial/summed_area_table_tutorial_03_sat_box_blur.png)](images/summed_area_table_tutorial/summed_area_table_tutorial_03_sat_box_blur.png)
