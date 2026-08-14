@@ -1,6 +1,6 @@
 # 3D Cone-Beam CT Reconstruction Tutorial {#ct_reconstruction_3d_tutorial}
 
-This demo is the 3D, cone/fan-beam sibling of demo/ct_reconstruction (2D parallel-beam) -- same forward_project()/back_project() (projection.h), a genuinely perspective geometry this time. It's considerably slower than a 2D demo (64^3 volume, ~740k cone-beam rays per pass) -- expect well under a minute end to end, mostly PART 5's reconstruction loop. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/ct_reconstruction_3d/output
+This demo is the 3D, cone/fan-beam sibling of demo/ct_reconstruction (2D parallel-beam) -- same forward_project()/back_project() (projection.h), a genuinely perspective geometry this time. It's considerably slower than a 2D demo (64^3 volume, ~740k cone-beam rays per pass) -- expect roughly a minute and a half end to end, mostly PART 5's continuous reconstruction loop and PART 6's DART refinement on top of it. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/ct_reconstruction_3d/output
 
 ## PART 1: cone-beam geometry -- a single voxel, checked by hand
 
@@ -142,5 +142,48 @@ reconstruction, sagittal slice (x=64): /home/nathanpackard/git/ndl/build/demo/ct
     extent = {64, 64}   min=0  max=255  mean=38.2383
 ```
 
-All outputs written to: /home/nathanpackard/git/ndl/build/demo/ct_reconstruction_3d/output 01-03 are the ground-truth phantom's three central slices; 04-05 show the cone-beam sinogram (what a real cone-beam CT scanner's detector would actually measure); 06-08 are the reconstruction's matching slices, recovered from ONLY that sinogram (with a genuine per-ray-sample autoAA and the max_density_bound() constraint applied -- PART 5's own comment covers both). Compare 06-08 against 01-03 -- the background is clean (max_density_bound()'s whole point: no bright stray-pixel overshoot) and the overall shape, proportions, and internal structure are recognizable at this grid's own resolution, without the persistent ring/grid null-space pattern an earlier, 128^3 version of this same demo had. That difference is the point of PART 3's resolution choice, not a coincidence: reconstructing onto a 64^3 grid instead of 128^3 (with the same 64x64/180-view detector) turns this from an underdetermined system (737k measurements for 2.1M unknowns, where multiple different volumes fit the same sinogram equally well, and the residual ambiguity shows up as structured aliasing) into an overdetermined one (737k measurements for only 262k unknowns) -- AA and max_density_bound() were only ever mitigating that underlying mismatch, not fixing it. The real tradeoff: this reconstruction is honestly coarser than the 128^3 phantom it's compared against here -- but that's the resolution this 64x64 detector genuinely supports (each detector pixel's own footprint back in the volume is ~1.75 voxel-widths at this grid), so 64^3 isn't losing real detail, just no longer pretending to reconstruct finer than the measurements can support. Recovering 128^3-level detail for real would take a higher-resolution detector (more, or smaller, detector pixels) or more views, not a finer reconstruction grid alone.
+## PART 6: DART -- refining the continuous reconstruction into a small number of known tissue densities
+
+### Step 6
+```cpp
+DART: alternate (1) k-means-estimate K density levels, (2) freeze voxels whose whole 6-neighborhood already agrees on a label, (3) a few more ART iterations on only the still-free (boundary) voxels
+```
+
+The continuous reconstruction above treats every voxel as a free real number in [0, bound] -- a weak constraint. Real tissue isn't continuous, though: it's close to piecewise-constant, a small number of distinct densities (bone, gray matter, CSF, ...). If that count is known a priori (e.g. from anatomy, the way it would be for a real scan protocol -- here read directly off the phantom's own construction, standing in for that same domain knowledge), constraining the reconstruction to exactly that many discrete values removes far more ambiguity than the [0, bound] box ever could. The values themselves still have to be estimated from the data, though (k-means on the current volume's own histogram each outer iteration) -- and hard-snapping every voxel to its nearest value immediately would be unstable (that projection isn't convex, unlike the box clamp), so DART (Batenburg & Sijbers) only freezes a voxel once its entire 6-connected neighborhood already agrees on the same label (checked via erode() on a per-label binary mask with a 3D cross kernel -- morphology.h's existing erode()/make_cross_kernel(), not new machinery) -- everything else stays free for a few more ART iterations, so only the genuinely ambiguous boundary voxels keep moving.
+
+```text
+true number of distinct tissue-density levels in this phantom (K, assumed known a priori):   5
+DART outer iteration 0:   frozen=85.3821%   RMSE vs. ground truth=0.102698
+DART outer iteration 1:   frozen=85.9722%   RMSE vs. ground truth=0.102432
+DART outer iteration 2:   frozen=86.0607%   RMSE vs. ground truth=0.102271
+DART outer iteration 3:   frozen=86.1378%   RMSE vs. ground truth=0.102229
+DART outer iteration 4:   frozen=86.1828%   RMSE vs. ground truth=0.102279
+DART outer iteration 5:   frozen=86.2316%   RMSE vs. ground truth=0.102405
+DART outer iteration 6:   frozen=86.3182%   RMSE vs. ground truth=0.102562
+DART outer iteration 7:   frozen=86.3632%   RMSE vs. ground truth=0.102778
+final DART RMSE vs. ground truth (frozen voxels discrete, remaining boundary voxels left continuous):   0.102778   (continuous-only PART 5 result was 0.103395)
+```
+
+[![ct_reconstruction_3d_tutorial_09_dart_axial.png](images/ct_reconstruction_3d_tutorial/ct_reconstruction_3d_tutorial_09_dart_axial.png)](images/ct_reconstruction_3d_tutorial/ct_reconstruction_3d_tutorial_09_dart_axial.png)
+
+```text
+DART reconstruction, axial slice (z=64): /home/nathanpackard/git/ndl/build/demo/ct_reconstruction_3d/output/09_dart_axial.png
+    extent = {64, 64}   min=0  max=255  mean=25.1375
+```
+
+[![ct_reconstruction_3d_tutorial_10_dart_coronal.png](images/ct_reconstruction_3d_tutorial/ct_reconstruction_3d_tutorial_10_dart_coronal.png)](images/ct_reconstruction_3d_tutorial/ct_reconstruction_3d_tutorial_10_dart_coronal.png)
+
+```text
+DART reconstruction, coronal slice (y=64): /home/nathanpackard/git/ndl/build/demo/ct_reconstruction_3d/output/10_dart_coronal.png
+    extent = {64, 64}   min=0  max=255  mean=21.1948
+```
+
+[![ct_reconstruction_3d_tutorial_11_dart_sagittal.png](images/ct_reconstruction_3d_tutorial/ct_reconstruction_3d_tutorial_11_dart_sagittal.png)](images/ct_reconstruction_3d_tutorial/ct_reconstruction_3d_tutorial_11_dart_sagittal.png)
+
+```text
+DART reconstruction, sagittal slice (x=64): /home/nathanpackard/git/ndl/build/demo/ct_reconstruction_3d/output/11_dart_sagittal.png
+    extent = {64, 64}   min=0  max=255  mean=32.313
+```
+
+All outputs written to: /home/nathanpackard/git/ndl/build/demo/ct_reconstruction_3d/output 01-03 are the ground-truth phantom's three central slices; 04-05 show the cone-beam sinogram (what a real cone-beam CT scanner's detector would actually measure); 06-08 are the reconstruction's matching slices, recovered from ONLY that sinogram (with a genuine per-ray-sample autoAA and the max_density_bound() constraint applied -- PART 5's own comment covers both). Compare 06-08 against 01-03 -- the background is clean (max_density_bound()'s whole point: no bright stray-pixel overshoot) and the overall shape, proportions, and internal structure are recognizable at this grid's own resolution, without the persistent ring/grid null-space pattern an earlier, 128^3 version of this same demo had. That difference is the point of PART 3's resolution choice, not a coincidence: reconstructing onto a 64^3 grid instead of 128^3 (with the same 64x64/180-view detector) turns this from an underdetermined system (737k measurements for 2.1M unknowns, where multiple different volumes fit the same sinogram equally well, and the residual ambiguity shows up as structured aliasing) into an overdetermined one (737k measurements for only 262k unknowns) -- AA and max_density_bound() were only ever mitigating that underlying mismatch, not fixing it. The real tradeoff: this reconstruction is honestly coarser than the 128^3 phantom it's compared against here -- but that's the resolution this 64x64 detector genuinely supports (each detector pixel's own footprint back in the volume is ~1.75 voxel-widths at this grid), so 64^3 isn't losing real detail, just no longer pretending to reconstruct finer than the measurements can support. Recovering 128^3-level detail for real would take a higher-resolution detector (more, or smaller, detector pixels) or more views, not a finer reconstruction grid alone. 09-11 are PART 6's DART-refined slices, starting from 06-08's own continuous result and using the phantom's own (assumed a priori known) tissue-density count -- visually flatter/cleaner than 06-08 (compare the coronal slices in particular), and a real, if modest, RMSE improvement over PART 5's continuous-only result (PART 6's own printed numbers above). DART is a genuinely different, complementary lever from PART 3's resolution choice: it doesn't change how many measurements vs. unknowns there are, it changes how much each unknown is ALLOWED to vary, which is why it still helps even on an already-overdetermined 64^3 system. Two honest caveats worth having seen directly rather than assumed away: it depends entirely on knowing K correctly (too few tissue types assumed and genuinely distinct structures get merged into one label; too many, and noise gets mistaken for real structure), and PART 6's own per-iteration RMSE isn't perfectly monotonic either -- it improves for the first few outer iterations, then drifts slightly worse (a milder echo of PART 5's own semi-convergence, here from voxels freezing to a slightly-off label estimate permanently rather than from an unconstrained update overshooting). Unlike PART 5's box constraint, this demo doesn't fix that drift -- doing so honestly would need a stopping rule computed from the data alone (e.g. the sinogram residual, not ground-truth RMSE, which no real reconstruction has access to), which is a reasonable next step but out of scope here.
 
