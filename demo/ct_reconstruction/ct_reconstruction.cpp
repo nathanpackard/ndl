@@ -207,6 +207,12 @@ int main()
 	Image<double, 2> bound(boundData.data(), { W, H });
 	max_density_bound(sinogram, bound, geometry, /*stepSize=*/1.0);
 
+	// Computed ONCE here rather than once per view inside every one of the
+	// 60 forward_project()/back_project() calls below -- camera_center()
+	// is invariant across the whole loop since `geometry` itself never
+	// changes (compute_camera_centers()'s own comment, projection.h).
+	auto centers = compute_camera_centers(geometry);
+
 	std::vector<double> reconData(W * H, 0.0);
 	Image<double, 2> recon(reconData.data(), { W, H });
 	const double lambda = 0.0002;
@@ -215,7 +221,7 @@ int main()
 	{
 		std::vector<double> predData(numViews * numDet);
 		Image<double, 2> pred(predData.data(), { numViews, numDet });
-		forward_project(recon, pred, geometry, Linear{}, false);
+		forward_project(recon, pred, geometry, centers, Linear{}, false);
 
 		std::vector<double> residData(numViews * numDet);
 		for (int i = 0; i < numViews * numDet; i++) residData[i] = sinogramData[i] - predData[i];
@@ -223,7 +229,7 @@ int main()
 
 		std::vector<double> updateData(W * H);
 		Image<double, 2> update(updateData.data(), { W, H });
-		back_project(resid, update, geometry, Linear{}, false);
+		back_project(resid, update, geometry, centers, Linear{}, false);
 
 		for (int i = 0; i < W * H; i++)
 		{

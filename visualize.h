@@ -23,6 +23,19 @@
 
 namespace ndl
 {
+	namespace detail
+	{
+		// Shared "scan for the largest value" reduction -- bar_chart()/
+		// heatmap() below both scale their own output to src's own max.
+		template<class SrcImageT>
+		double maxValue(const SrcImageT& src)
+		{
+			double m = 0;
+			for (const auto& c : src.coordinates()) m = std::max(m, (double)src.at(c));
+			return m;
+		}
+	}
+
 	// Renders any 1D minimal-interface numeric array as a vertical bar
 	// chart: one bar per element, its height scaled to the array's own max
 	// value (an all-<=0 array draws no bars at all, not a divide-by-zero).
@@ -58,8 +71,7 @@ namespace ndl
 		int W = dstExtent[DstDIM - 2], H = dstExtent[DstDIM - 1];
 		assert(W > 0 && H > 0);
 
-		double maxVal = 0;
-		for (const auto& c : src.coordinates()) maxVal = std::max(maxVal, (double)src.at(c));
+		double maxVal = detail::maxValue(src);
 
 		// Each column's own bar height, computed once up front rather than
 		// per destination pixel (which would otherwise re-derive "which
@@ -121,8 +133,7 @@ namespace ndl
 		static_assert(DstDIM >= 2, "ndl::heatmap() needs a destination with at least 2 axes (width, height)");
 		assert(dstExtent[DstDIM - 2] == src.extent()[0] && dstExtent[DstDIM - 1] == src.extent()[1]);
 
-		double maxVal = 0;
-		for (const auto& c : src.coordinates()) maxVal = std::max(maxVal, (double)src.at(c));
+		double maxVal = detail::maxValue(src);
 
 		// Same reasoning as bar_chart() above: walk dst's own coordinates
 		// (every channel, every pixel), re-deriving the (x,y) source
@@ -145,6 +156,38 @@ namespace ndl
 	// [lowPercentile,highPercentile] window instead of [0,max], and
 	// values outside it simply saturate rather than compress everything
 	// interesting into a sliver of the display range.
+	namespace detail
+	{
+		// Collects every value in src into a sorted std::vector<double> --
+		// the shared first step percentile()/percentile_range() below both
+		// need. Sorting is the expensive part (O(n log n)), so callers that
+		// need more than one rank out of the SAME distribution (like
+		// percentile_range()) sort once and reuse the result, rather than
+		// each independently re-collecting and re-sorting from scratch.
+		template<class SrcImageT>
+		std::vector<double> sortedValues(const SrcImageT& src)
+		{
+			std::vector<double> values;
+			for (const auto& c : src.coordinates()) values.push_back((double)src.at(c));
+			assert(!values.empty());
+			std::sort(values.begin(), values.end());
+			return values;
+		}
+		// Linearly-interpolated percentile rank into an ALREADY-sorted
+		// vector (numpy's default "linear" method) -- the second half of
+		// percentile()'s own work, split out so percentile_range() can call
+		// it twice against one shared sort instead of two.
+		inline double percentileOfSorted(const std::vector<double>& sorted, double p)
+		{
+			double rank = (p / 100.0) * (double)(sorted.size() - 1);
+			std::size_t lo = (std::size_t)std::floor(rank);
+			std::size_t hi = (std::size_t)std::ceil(rank);
+			if (lo == hi) return sorted[lo];
+			double t = rank - (double)lo;
+			return sorted[lo] * (1.0 - t) + sorted[hi] * t;
+		}
+	}
+
 	/// The value at a given percentile (0-100) of src's own distribution.
 	/// @tparam SrcImageT Any minimal-interface image type; its value_type must be arithmetic.
 	/// @param  src        Source values.
@@ -156,18 +199,7 @@ namespace ndl
 		using SrcT = typename SrcImageT::value_type;
 		static_assert(std::is_arithmetic_v<SrcT>, "ndl::percentile() requires an arithmetic value_type -- not valid for e.g. std::complex<T>");
 		assert(p >= 0.0 && p <= 100.0);
-
-		std::vector<double> values;
-		for (const auto& c : src.coordinates()) values.push_back((double)src.at(c));
-		assert(!values.empty());
-		std::sort(values.begin(), values.end());
-
-		double rank = (p / 100.0) * (double)(values.size() - 1);
-		std::size_t lo = (std::size_t)std::floor(rank);
-		std::size_t hi = (std::size_t)std::ceil(rank);
-		if (lo == hi) return values[lo];
-		double t = rank - (double)lo;
-		return values[lo] * (1.0 - t) + values[hi] * t;
+		return detail::percentileOfSorted(detail::sortedValues(src), p);
 	}
 
 	/// The [lowPercentile,highPercentile] value range of src's own distribution -- see percentile()'s own comment.
@@ -181,7 +213,8 @@ namespace ndl
 	std::pair<double, double> percentile_range(const SrcImageT& src, double lowPercentile = 5.0, double highPercentile = 95.0)
 	{
 		assert(lowPercentile <= highPercentile);
-		return { percentile(src, lowPercentile), percentile(src, highPercentile) };
+		auto sorted = detail::sortedValues(src);
+		return { detail::percentileOfSorted(sorted, lowPercentile), detail::percentileOfSorted(sorted, highPercentile) };
 	}
 
 	// Same "scale to a value, write into a caller-sized output" shape as
@@ -232,6 +265,53 @@ namespace ndl
 			double t = range > 0.0 ? (v - lo) / range : (v >= lo ? 1.0 : 0.0);
 			t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
 			dst.at(coord) = (DstT)(t * (double)peakValue);
+		}
+	}
+
+	// Per-position Euclidean magnitude of a vector field: sqrt(sum of
+	// squares across the leading component axis). Unlike flow_to_color()/
+	// flow_to_arrows() below (genuinely 2D-only -- a single hue/arrow angle
+	// only ever encodes direction for a 2-component vector), magnitude
+	// itself has no such restriction, so this works for ANY component count
+	// and ANY spatial dimensionality: a {2,W,H} 2D flow field, a {3,W,H,D}
+	// 3D one, or anything else shaped {N, spatial-axes...}. The single
+	// building block both flow_to_color()/flow_to_arrows() use internally
+	// for their own auto-scaling max-magnitude scan, and the one demo/
+	// motion.cpp uses to feed percentile()/percentile_range() for an
+	// outlier-robust display cap -- see this file's own top comment.
+	/// Per-position Euclidean magnitude of a vector field (sqrt of the sum of squares across the leading component axis) -- works for any component count and spatial dimensionality, unlike flow_to_color()/flow_to_arrows().
+	/// @tparam SrcImageT Any minimal-interface image type with a leading component axis (e.g. lucas_kanade_flow()'s {2,W,H} output).
+	/// @tparam DstImageT Any minimal-interface image type, one fewer dimension than src, matching its spatial extent.
+	/// @param  flow   Source vector field, extent {N, spatial-axes...}.
+	/// @param  magOut Destination; must already exist, extent {spatial-axes...} (src's own extent with the leading component axis dropped).
+	/// @ingroup visualize
+	template<class SrcImageT, class DstImageT>
+	void flow_magnitude(const SrcImageT& flow, DstImageT& magOut)
+	{
+		using DstT = typename DstImageT::value_type;
+		static_assert(std::is_arithmetic_v<DstT>, "ndl::flow_magnitude() requires an arithmetic destination value_type -- not valid for e.g. std::complex<T>");
+
+		auto flowExtent = flow.extent();
+		constexpr int FlowDIM = std::tuple_size<decltype(flowExtent)>::value;
+		auto magExtent = magOut.extent();
+		constexpr int MagDIM = std::tuple_size<decltype(magExtent)>::value;
+		static_assert(MagDIM == FlowDIM - 1, "ndl::flow_magnitude() requires magOut to have exactly one fewer dimension than flow (the leading component axis dropped)");
+		for (int i = 0; i < MagDIM; i++) assert(magExtent[i] == flowExtent[i + 1]);
+		int numComponents = flowExtent[0];
+
+		for (const auto& coord : magOut.coordinates())
+		{
+			std::array<int, FlowDIM> flowCoord;
+			for (int i = 0; i < MagDIM; i++) flowCoord[i + 1] = coord[i];
+
+			double sumSq = 0.0;
+			for (int c = 0; c < numComponents; c++)
+			{
+				flowCoord[0] = c;
+				double v = (double)flow.at(flowCoord);
+				sumSq += v * v;
+			}
+			magOut.at(coord) = static_cast<DstT>(std::sqrt(sumSq));
 		}
 	}
 
@@ -368,12 +448,11 @@ namespace ndl
 		double maxMag = magnitudeCap;
 		if (maxMag < 0.0)
 		{
+			std::vector<double> magData((std::size_t)W * H);
+			Image<double, 2> mag(magData.data(), { W, H });
+			flow_magnitude(flow, mag);
 			maxMag = 0.0;
-			for (const auto& coord : dx.coordinates())
-			{
-				double vx = dx.at(coord), vy = dy.at(coord);
-				maxMag = std::max(maxMag, std::sqrt(vx * vx + vy * vy));
-			}
+			for (double m : magData) maxMag = std::max(maxMag, m);
 		}
 		double lengthScale = maxMag > 0.0 ? (0.45 * spacing) / maxMag : 0.0;
 
@@ -439,21 +518,24 @@ namespace ndl
 		auto dx = flow.slice(0, 0);
 		auto dy = flow.slice(0, 1);
 
+		// Computed once (flow_magnitude()) and reused for both the
+		// auto-scale max scan below AND each pixel's own brightness in the
+		// main loop -- one sqrt per pixel total, not two.
+		std::vector<double> magData((std::size_t)flowExtent[1] * flowExtent[2]);
+		Image<double, 2> magImg(magData.data(), { flowExtent[1], flowExtent[2] });
+		flow_magnitude(flow, magImg);
+
 		double maxMag = magnitudeCap;
 		if (maxMag < 0.0)
 		{
 			maxMag = 0.0;
-			for (const auto& coord : dx.coordinates())
-			{
-				double vx = dx.at(coord), vy = dy.at(coord);
-				maxMag = std::max(maxMag, std::sqrt(vx * vx + vy * vy));
-			}
+			for (double m : magData) maxMag = std::max(maxMag, m);
 		}
 
 		for (const auto& coord : dx.coordinates())
 		{
 			double vx = dx.at(coord), vy = dy.at(coord);
-			double mag = std::sqrt(vx * vx + vy * vy);
+			double mag = magImg.at(coord);
 			double hue = (std::atan2(vy, vx) + M_PI) / (2.0 * M_PI); // [0,1)
 			double value = maxMag > 0 ? mag / maxMag : 0.0;
 			value = value > 1.0 ? 1.0 : value;

@@ -148,6 +148,22 @@ TEST(ImageArithmetic, ImageReductions) {
 	img.mean(0, meanOut);
 	bool meanOk = meanOut(0, 0) == 2 && meanOut(0, 1) == 6 && meanOut(0, 2) == 10; // integer division of 10,26,42 by 4
 	passfail << "mean(axis, output) reduces dim0 correctly: " << (meanOk ? "Pass" : "Fail") << std::endl;
+
+	// The free-function ndl::sum(src,axis)/min/max/mean(src,axis) (owned.h)
+	// wrap the exact same member calls above, just allocating their own
+	// OwnedImage<T,DIM> output (the reduced/keepdims extent computed
+	// internally) instead of requiring the caller to declare one -- same
+	// results, checked directly against the same known values rather than
+	// just assuming the wrapper is equivalent.
+	auto sumFree = ndl::sum(img, 0);
+	passfail << "free sum(img, axis) matches the member-call result, with no output buffer to declare: " << (sumFree.extent()[0] == 1 && sumFree.extent()[1] == 3 && sumFree(0, 0) == 10 && sumFree(0, 1) == 26 && sumFree(0, 2) == 42 ? "Pass" : "Fail") << std::endl;
+	auto minFree = ndl::min(img, 0);
+	auto maxFree = ndl::max(img, 0);
+	passfail << "free min(img, axis) matches the member-call result: " << (minFree(0, 0) == 1 && minFree(0, 1) == 5 && minFree(0, 2) == 9 ? "Pass" : "Fail") << std::endl;
+	passfail << "free max(img, axis) matches the member-call result: " << (maxFree(0, 0) == 4 && maxFree(0, 1) == 8 && maxFree(0, 2) == 12 ? "Pass" : "Fail") << std::endl;
+	auto meanFree = ndl::mean(img, 0);
+	passfail << "free mean(img, axis) matches the member-call result: " << (meanFree(0, 0) == 2 && meanFree(0, 1) == 6 && meanFree(0, 2) == 10 ? "Pass" : "Fail") << std::endl;
+
 	reportPassFail(passfail);
 }
 

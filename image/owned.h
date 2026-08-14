@@ -149,4 +149,71 @@ namespace ndl
 		/// @return A new OwnedImage<T,DIM> with `source`'s shape and unspecified initial contents.
 		static OwnedImage like(const Image<U, DIM>& source) { return OwnedImage(source.extent()); }
 	};
+
+	// Free-function convenience wrappers around Image<T,DIM>::sum(axis,...)/
+	// min/max/mean(axis,...): those members need a caller-provided output
+	// already allocated with the reduced (keepdims) extent, which means
+	// hand-computing that extent and declaring a buffer for it at every
+	// call site (confirmed repeated at multiple sites in
+	// unitTests/image_arithmetic_tests.cpp) -- the same "I just need a
+	// fresh buffer" ergonomics gap OwnedImage::like() already closes for
+	// the whole-image case. These do the same for the per-axis case:
+	// compute the reduced extent, allocate an OwnedImage<T,DIM> for it,
+	// call the existing member, return the result.
+	/// Per-axis sum, as a freshly-allocated OwnedImage<T,DIM> (numpy's keepdims=True convention) -- see Image<T,DIM>::sum(axis,output) for the underlying reduction.
+	/// @param src  Source image.
+	/// @param axis Axis to reduce.
+	/// @return A new OwnedImage<T,DIM>, src's own extent with `axis` set to 1.
+	template<class T, int DIM>
+	OwnedImage<T, DIM> sum(const Image<T, DIM>& src, int axis)
+	{
+		assert(axis >= 0 && axis < DIM);
+		auto extent = src.extent();
+		extent[axis] = 1;
+		OwnedImage<T, DIM> result(extent);
+		src.sum(axis, result);
+		return result;
+	}
+	/// Per-axis minimum, as a freshly-allocated OwnedImage<T,DIM> (numpy's keepdims=True convention) -- see Image<T,DIM>::min(axis,output) for the underlying reduction.
+	/// @param src  Source image.
+	/// @param axis Axis to reduce.
+	/// @return A new OwnedImage<T,DIM>, src's own extent with `axis` set to 1.
+	template<class T, int DIM>
+	OwnedImage<T, DIM> min(const Image<T, DIM>& src, int axis)
+	{
+		assert(axis >= 0 && axis < DIM);
+		auto extent = src.extent();
+		extent[axis] = 1;
+		OwnedImage<T, DIM> result(extent);
+		src.min(axis, result);
+		return result;
+	}
+	/// Per-axis maximum, as a freshly-allocated OwnedImage<T,DIM> (numpy's keepdims=True convention) -- see Image<T,DIM>::max(axis,output) for the underlying reduction.
+	/// @param src  Source image.
+	/// @param axis Axis to reduce.
+	/// @return A new OwnedImage<T,DIM>, src's own extent with `axis` set to 1.
+	template<class T, int DIM>
+	OwnedImage<T, DIM> max(const Image<T, DIM>& src, int axis)
+	{
+		assert(axis >= 0 && axis < DIM);
+		auto extent = src.extent();
+		extent[axis] = 1;
+		OwnedImage<T, DIM> result(extent);
+		src.max(axis, result);
+		return result;
+	}
+	/// Per-axis mean, as a freshly-allocated OwnedImage<T,DIM> (numpy's keepdims=True convention) -- see Image<T,DIM>::mean(axis,output) for the underlying reduction (stays in T throughout, unlike whole-image mean()).
+	/// @param src  Source image.
+	/// @param axis Axis to reduce.
+	/// @return A new OwnedImage<T,DIM>, src's own extent with `axis` set to 1.
+	template<class T, int DIM>
+	OwnedImage<T, DIM> mean(const Image<T, DIM>& src, int axis)
+	{
+		assert(axis >= 0 && axis < DIM);
+		auto extent = src.extent();
+		extent[axis] = 1;
+		OwnedImage<T, DIM> result(extent);
+		src.mean(axis, result);
+		return result;
+	}
 }

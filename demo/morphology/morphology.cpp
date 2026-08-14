@@ -388,16 +388,14 @@ int main()
     OwnedImage<uint8_t, 3> opened2Img({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> openStage2Channel = openStage2Img.slice(0, 0);
     Image<uint8_t, 2> opened2Channel = opened2Img.slice(0, 0);
-    ndl::erode(binaryDenoisedChannel, openStage2Channel, box3, BorderMode::Clamp);
-    ndl::dilate(openStage2Channel, opened2Channel, box3, BorderMode::Clamp);
+    ndl::morphological_open(binaryDenoisedChannel, opened2Channel, openStage2Channel, box3, BorderMode::Clamp);
     saveForInspection("binary opened", opened2Img, "18_binary_opened.png");
 
     OwnedImage<uint8_t, 3> closeStage2Img({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     OwnedImage<uint8_t, 3> closed2Img({ 1, greyNoisy.extent()[0], greyNoisy.extent()[1] });
     Image<uint8_t, 2> closeStage2Channel = closeStage2Img.slice(0, 0);
     Image<uint8_t, 2> closed2Channel = closed2Img.slice(0, 0);
-    ndl::dilate(binaryDenoisedChannel, closeStage2Channel, box3, BorderMode::Clamp);
-    ndl::erode(closeStage2Channel, closed2Channel, box3, BorderMode::Clamp);
+    ndl::morphological_close(binaryDenoisedChannel, closed2Channel, closeStage2Channel, box3, BorderMode::Clamp);
     saveForInspection("binary closed", closed2Img, "19_binary_closed.png");
 
     // ------------------------------------------------------------------

@@ -106,6 +106,41 @@ TEST(Visualize, HeatmapMultiChannel) {
 	reportPassFail(passfail);
 }
 
+TEST(Visualize, FlowMagnitude) {
+	std::stringstream passfail;
+	std::cout << std::endl << "FLOW_MAGNITUDE" << std::endl;
+
+	// A 2D {2,W,H} field: a 3-4-5 triangle (magnitude exactly 5) at one
+	// position, zero everywhere else -- checked against an exact value,
+	// not just "some positive number came out".
+	const int W = 3, H = 2;
+	std::vector<double> flowData(2 * W * H, 0.0);
+	Image<double, 3> flow(flowData.data(), { 2, W, H });
+	flow(0, 1, 0) = 3.0;
+	flow(1, 1, 0) = 4.0;
+
+	std::vector<double> magData((std::size_t)W * H);
+	Image<double, 2> mag(magData.data(), { W, H });
+	flow_magnitude(flow, mag);
+
+	passfail << "3-4-5 triangle position has magnitude exactly 5: " << (mag(1, 0) == 5.0 ? "Pass" : "Fail") << std::endl;
+	passfail << "zero-flow position has magnitude exactly 0: " << (mag(0, 0) == 0.0 ? "Pass" : "Fail") << std::endl;
+
+	// A 3-component field (not just 2D flow -- flow_magnitude() is
+	// deliberately general over component count, unlike flow_to_color()/
+	// flow_to_arrows()): a 3D vector {2,3,6} has magnitude 7 (2^2+3^2+6^2=49).
+	std::vector<double> flow3Data(3 * 4, 0.0);
+	Image<double, 2> flow3(flow3Data.data(), { 3, 4 }); // {component, spatial}
+	flow3(0, 2) = 2.0; flow3(1, 2) = 3.0; flow3(2, 2) = 6.0;
+
+	std::vector<double> mag3Data(4);
+	Image<double, 1> mag3(mag3Data.data(), { 4 });
+	flow_magnitude(flow3, mag3);
+	passfail << "3-component vector field: {2,3,6} has magnitude exactly 7: " << (mag3(2) == 7.0 ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
 TEST(Visualize, FlowToColor) {
 	std::stringstream passfail;
 	std::cout << std::endl << "FLOW_TO_COLOR" << std::endl;

@@ -137,66 +137,27 @@ namespace ndl
 			{
 				return _ptr[index[0] + (_reflect(_image.extent_[dimensionIndex], index[dimensionIndex] + delta) - index[dimensionIndex]) * _image.stride_[dimensionIndex]];
 			}
-			reference reflect(std::array<int, DIM> delta) const
-			{
-				int i2 = 0;
-				for (int i = 0; i < DIM; i++) i2 += _ptr[index[0] + (_reflect(_image.extent_[i], index[i] + delta[i]) - index[i]) * _image.stride_[i]];
-				return _ptr[i2];
-			}
-			template<int D>
-			reference reflect(std::array<int, D>& delta, const std::array<int, D>& dimensionIndices) const
-			{
-				int i2 = 0;
-				for (int i = 0; i < D; i++) {
-					int ii = dimensionIndices[i];
-					i2 += _ptr[index[ii] + (_reflect(_image.extent_[ii], index[ii] + delta[ii]) - index[ii]) * _image.stride_[ii]];
-				}
-				return _ptr[i2];
-			}
+			reference reflect(const std::array<int, DIM>& delta) const { return applyBoundaryAllAxes(delta, _reflect); }
+			template<std::size_t D>
+			reference reflect(const std::array<int, D>& delta, const std::array<int, D>& dimensionIndices) const { return applyBoundarySomeAxes(delta, dimensionIndices, _reflect); }
 
 			//relative clamping accessors (i.e. overruns will clip to the edge of the image)
 			reference clamp(int delta, int dimensionIndex) const
 			{
 				return _ptr[index[0] + (_clamp(_image.extent_[dimensionIndex], index[dimensionIndex] + delta) - index[dimensionIndex]) * _image.stride_[dimensionIndex]];
 			}
-			reference clamp(std::array<int, DIM> delta) const
-			{
-				int i2 = 0;
-				for (int i = 0; i < DIM; i++) i2 += _ptr[index[0] + (_clamp(_image.extent_[i], index[i] + delta[i]) - index[i]) * _image.stride_[i]];
-				return _ptr[i2];
-			}
-			template<int D>
-			reference clamp(std::array<int, D>& delta, const std::array<int, D>& dimensionIndices) const
-			{
-				int i2 = 0;
-				for (int i = 0; i < D; i++) {
-					int ii = dimensionIndices[i];
-					i2 += _ptr[index[ii] + (_clamp(_image.extent_[ii], index[ii] + delta[ii]) - index[ii]) * _image.stride_[ii]];
-				}
-				return _ptr[i2];
-			}
+			reference clamp(const std::array<int, DIM>& delta) const { return applyBoundaryAllAxes(delta, _clamp); }
+			template<std::size_t D>
+			reference clamp(const std::array<int, D>& delta, const std::array<int, D>& dimensionIndices) const { return applyBoundarySomeAxes(delta, dimensionIndices, _clamp); }
 
 			//relative wrapping accessors (i.e. overruns will wrap around the edge of the image to the other edge)
 			reference wrap(int delta, int dimensionIndex) const
 			{
 				return _ptr[index[0] + (_wrap(_image.extent_[dimensionIndex], index[dimensionIndex] + delta) - index[dimensionIndex]) * _image.stride_[dimensionIndex]];
 			}
-			reference wrap(std::array<int, DIM> delta) const
-			{
-				int i2 = 0;
-				for (int i = 0; i < DIM; i++) i2 += _ptr[index[0] + (_wrap(_image.extent_[i], index[i] + delta[i]) - index[i]) * _image.stride_[i]];
-				return _ptr[i2];
-			}
-			template<int D>
-			reference wrap(std::array<int, D>& delta, const std::array<int, D>& dimensionIndices) const
-			{
-				int i2 = 0;
-				for (int i = 0; i < D; i++) {
-					int ii = dimensionIndices[i];
-					i2 += _ptr[index[ii] + (_wrap(_image.extent_[ii], index[ii] + delta[ii]) - index[ii]) * _image.stride_[ii]];
-				}
-				return _ptr[i2];
-			}
+			reference wrap(const std::array<int, DIM>& delta) const { return applyBoundaryAllAxes(delta, _wrap); }
+			template<std::size_t D>
+			reference wrap(const std::array<int, D>& delta, const std::array<int, D>& dimensionIndices) const { return applyBoundarySomeAxes(delta, dimensionIndices, _wrap); }
 
 			// Dimension 0's `index[0]` is a raw pointer delta (it walks 0, stride_[0],
 			// 2*stride_[0], ... so operator*/operator[] can dereference without a
@@ -220,6 +181,31 @@ namespace ndl
 		private:
 			pointer _ptr;                // pointer to current location
 			const Image& _image;         // reference to current image
+
+			// Shared boundary-application core for reflect()/clamp()/wrap()'s
+			// multi-axis overloads: builds ONE combined pointer OFFSET --
+			// starting from index[0] (already a pointer delta, the same base
+			// the single-axis overloads above use) and adding each requested
+			// axis's own boundary-adjusted delta -- then dereferences exactly
+			// once at the end. `boundary` is one of _reflect/_clamp/_wrap
+			// (mathHelpers.h).
+			reference applyBoundaryAllAxes(const std::array<int, DIM>& delta, int(*boundary)(int, int)) const
+			{
+				int offset = index[0];
+				for (int i = 0; i < DIM; i++) offset += (boundary(_image.extent_[i], index[i] + delta[i]) - index[i]) * _image.stride_[i];
+				return _ptr[offset];
+			}
+			template<std::size_t D>
+			reference applyBoundarySomeAxes(const std::array<int, D>& delta, const std::array<int, D>& dimensionIndices, int(*boundary)(int, int)) const
+			{
+				int offset = index[0];
+				for (std::size_t i = 0; i < D; i++)
+				{
+					int ii = dimensionIndices[i];
+					offset += (boundary(_image.extent_[ii], index[ii] + delta[i]) - index[ii]) * _image.stride_[ii];
+				}
+				return _ptr[offset];
+			}
 		};
 		using iterator = basic_iterator<false>;
 		using const_iterator = basic_iterator<true>;
@@ -232,8 +218,7 @@ namespace ndl
 		/// @param source  Image to copy from.
 		Image(T* buffer, const Image<U,DIM>& source) : Image(buffer, source.extent())
 		{
-			auto sourceIt = source.begin();
-			for (auto it = begin(); it != end(); ++it, ++sourceIt) *it = *sourceIt;
+			*this = source; // extents already match (just set above) -- operator=(const Image<U,DIM>&)'s own loop
 		}
 
 		// construct from external memory, be sure you have enough space!!

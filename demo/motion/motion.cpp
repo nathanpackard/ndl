@@ -168,11 +168,9 @@ int main()
         "             pan's real motion averages under 1px, so flow_to_arrows()'s own default auto-scaling (which\n"
         "             sizes the longest arrow to the field's own true max magnitude) would let a handful of\n"
         "             noisy/occlusion-boundary outliers shrink every typical arrow down to an invisible dot.");
-    Image<double, 2> lkfxForCap = lkFlow.slice(0, 0), lkfyForCap = lkFlow.slice(0, 1);
     std::vector<double> lkMagData((std::size_t)extent2D[0] * extent2D[1]);
     Image<double, 2> lkMag(lkMagData.data(), extent2D);
-    for (const auto& c : lkfxForCap.coordinates())
-        lkMag.at(c) = std::sqrt(std::pow(lkfxForCap.at(c), 2) + std::pow(lkfyForCap.at(c), 2));
+    flow_magnitude(lkFlow, lkMag);
     double lkMagCap = percentile(lkMag, 90.0);
     showText("90th-percentile flow magnitude (used as the arrow-length cap)", std::to_string(lkMagCap) + " px");
 
@@ -257,11 +255,9 @@ int main()
         "             the rest of the field to near-black. Capping brightness at the 95th percentile magnitude\n"
         "             instead (that one outlier simply saturates at full brightness) keeps the real motion\n"
         "             visible; percentile() is the same building block windowed_heatmap() itself uses.");
-    Image<double, 2> siftfxForCap = siftFlow.slice(0, 0), siftfyForCap = siftFlow.slice(0, 1);
     std::vector<double> siftMagData(extent2D[0] * extent2D[1]);
     Image<double, 2> siftMag(siftMagData.data(), extent2D);
-    for (const auto& c : siftfxForCap.coordinates())
-        siftMag.at(c) = std::sqrt(std::pow(siftfxForCap.at(c), 2) + std::pow(siftfyForCap.at(c), 2));
+    flow_magnitude(siftFlow, siftMag);
     double siftMagCap = percentile(siftMag, 95.0);
     showText("95th-percentile flow magnitude (used as the color-coding cap)", std::to_string(siftMagCap) + " px");
 
@@ -317,8 +313,7 @@ int main()
     }
     std::vector<double> residualMagData((std::size_t)extent2D[0] * extent2D[1]);
     Image<double, 2> residualMag(residualMagData.data(), extent2D);
-    for (const auto& c : residualfx.coordinates())
-        residualMag.at(c) = std::sqrt(std::pow(residualfx.at(c), 2) + std::pow(residualfy.at(c), 2));
+    flow_magnitude(residual, residualMag);
     double residualMagCap = percentile(residualMag, 95.0);
     showText("95th-percentile residual magnitude (used as the arrow-length cap)", std::to_string(residualMagCap) + " px");
 

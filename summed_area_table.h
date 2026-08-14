@@ -16,39 +16,6 @@
 
 namespace ndl
 {
-	namespace detail
-	{
-		// Enumerate one coordinate per 1D fiber along `axis` (axis' own
-		// index fixed at 0, every other axis walked once) -- the same
-		// "every fiber along an axis" idea fft.h's fiberOrigins() and
-		// distance_transform.h's distanceTransformFiberOrigins() each
-		// provide, reimplemented locally (under yet another distinct name)
-		// so this file stays independent of both.
-		template<int DIM>
-		std::vector<std::array<int, DIM>> summedAreaTableFiberOrigins(const std::array<int, DIM>& extent, int axis)
-		{
-			std::size_t count = 1;
-			for (int d = 0; d < DIM; d++) if (d != axis) count *= extent[d];
-
-			std::vector<std::array<int, DIM>> origins;
-			origins.reserve(count);
-
-			std::array<int, DIM> coord{};
-			coord[axis] = 0;
-			for (std::size_t i = 0; i < count; i++)
-			{
-				origins.push_back(coord);
-				for (int d = 0; d < DIM; d++)
-				{
-					if (d == axis) continue;
-					if (++coord[d] < extent[d]) break;
-					coord[d] = 0;
-				}
-			}
-			return origins;
-		}
-	}
-
 	// Builds a summed-area table (a.k.a. integral image): dst(coord) = the
 	// sum of every src value in the hyper-rectangle from the origin to
 	// coord, inclusive on both ends. Once built, rectangle_sum() below
@@ -94,7 +61,7 @@ namespace ndl
 		for (int axis = 0; axis < DIM; axis++)
 		{
 			int n = extent[axis];
-			for (const auto& origin : detail::summedAreaTableFiberOrigins<DIM>(extent, axis))
+			for (const auto& origin : detail::fiberOrigins<DIM>(extent, axis))
 			{
 				std::array<int, DIM> coord = origin;
 				DstT running = DstT(0);

@@ -142,6 +142,31 @@ namespace ndl
 				for (int k = 0; k < width; k++) weights1D[axis][k] = w[k];
 			}
 		}
+
+		// Shared tap-walk for sample()/scatter_add() below: visits every
+		// nonzero-weight tap combination (skipping the zero-weight ones --
+		// e.g. a Nearest tap, or a B-spline tap right at its support
+		// boundary -- the same way both functions already did before this
+		// was factored out), resolves each one's border-handled source
+		// coordinate, and calls `fn(coord, weight)`. Not just a style
+		// dedup: sample()/scatter_add() being true adjoints depends on
+		// them walking literally the same taps with the same weights in
+		// the same order, which sharing this one loop guarantees
+		// structurally rather than relying on two hand-maintained copies
+		// staying in sync.
+		template<int IDIM, int width, class Fn>
+		void forEachTap(const std::array<int, IDIM>& base, const std::array<std::array<double, width>, IDIM>& weights1D, const std::array<int, IDIM>& extent, BorderMode border, Fn&& fn)
+		{
+			std::array<int, IDIM> zero{};
+			for (const auto& tapIdx : interpolationTapCombinations<IDIM>(width))
+			{
+				double weight = 1.0;
+				for (int axis = 0; axis < IDIM; axis++) weight *= weights1D[axis][tapIdx[axis]];
+				if (weight == 0.0) continue;
+				auto coord = kernelTapCoord(base, tapIdx, zero, extent, border);
+				fn(coord, weight);
+			}
+		}
 	}
 
 	// DIM is deduced from `position` alone (not also from `image`'s own
@@ -178,16 +203,11 @@ namespace ndl
 		std::array<std::array<double, width>, IDIM> weights1D;
 		detail::interpolationWeights<Interpolator, IDIM>(position.data(), base, weights1D);
 
-		std::array<int, IDIM> zero{};
 		double total = 0;
-		for (const auto& tapIdx : detail::interpolationTapCombinations<IDIM>(width))
+		detail::forEachTap<IDIM, width>(base, weights1D, extent, border, [&](const std::array<int, IDIM>& srcCoord, double weight)
 		{
-			double weight = 1.0;
-			for (int axis = 0; axis < IDIM; axis++) weight *= weights1D[axis][tapIdx[axis]];
-			if (weight == 0.0) continue; // e.g. a Nearest tap or a B-spline tap right at its support boundary
-			auto srcCoord = detail::kernelTapCoord(base, tapIdx, zero, extent, border);
 			total += weight * static_cast<double>(image.at(srcCoord));
-		}
+		});
 		return total;
 	}
 
@@ -224,14 +244,9 @@ namespace ndl
 		std::array<std::array<double, width>, IDIM> weights1D;
 		detail::interpolationWeights<Interpolator, IDIM>(position.data(), base, weights1D);
 
-		std::array<int, IDIM> zero{};
-		for (const auto& tapIdx : detail::interpolationTapCombinations<IDIM>(width))
+		detail::forEachTap<IDIM, width>(base, weights1D, extent, border, [&](const std::array<int, IDIM>& dstCoord, double weight)
 		{
-			double weight = 1.0;
-			for (int axis = 0; axis < IDIM; axis++) weight *= weights1D[axis][tapIdx[axis]];
-			if (weight == 0.0) continue;
-			auto dstCoord = detail::kernelTapCoord(base, tapIdx, zero, extent, border);
 			image.at(dstCoord) = static_cast<T>(image.at(dstCoord) + weight * value);
-		}
+		});
 	}
 }

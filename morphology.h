@@ -109,6 +109,51 @@ namespace ndl
 			dst.at(coord) = static_cast<DstT>(best);
 		}
 	}
+
+	// Opening (erode then dilate) and closing (dilate then erode) each need
+	// a same-type-as-dst intermediate buffer between the two passes, which
+	// a caller currently has to declare and wire up by hand around two
+	// separate erode()/dilate() calls (the exact pattern demo/morphology.cpp
+	// and unitTests/composite_tests.cpp both spell out repeatedly). Not
+	// allocated internally -- `intermediate` must already exist, matching
+	// this whole library's "caller pre-allocates, function writes into it"
+	// convention (dst itself included) -- since a minimal-interface
+	// SrcImageT/DstImageT (e.g. PackedBitImage) isn't guaranteed to be
+	// default-constructible the way Image<T,DIM> and OwnedImage<T,DIM>
+	// happen to be.
+	/// Morphological opening (erode() then dilate() with the same kernel): removes small bright speckles/thin protrusions while leaving larger bright regions' overall size roughly unchanged.
+	/// @tparam SrcImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
+	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from SrcImageT/DstImageT.
+	/// @param  src          Source image.
+	/// @param  dst          Destination; must already exist with `src`'s own extent.
+	/// @param  intermediate Scratch buffer for the erode() pass's own output; must already exist with `src`'s own extent, same concrete type as `dst`. Overwritten; its prior contents don't matter.
+	/// @param  kernel       Structuring element (nonzero tap = included); see make_box_kernel()/make_cross_kernel().
+	/// @param  border       How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
+	/// @ingroup morphology_filtering
+	template<class SrcImageT, class DstImageT, class KernelT>
+	void morphological_open(const SrcImageT& src, DstImageT& dst, DstImageT& intermediate, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
+	{
+		erode(src, intermediate, kernel, border);
+		dilate(intermediate, dst, kernel, border);
+	}
+	/// Morphological closing (dilate() then erode() with the same kernel): fills small dark speckles/gaps while leaving larger dark regions' overall size roughly unchanged.
+	/// @tparam SrcImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic.
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
+	/// @tparam KernelT Any minimal-interface image type for the structuring element; may differ from SrcImageT/DstImageT.
+	/// @param  src          Source image.
+	/// @param  dst          Destination; must already exist with `src`'s own extent.
+	/// @param  intermediate Scratch buffer for the dilate() pass's own output; must already exist with `src`'s own extent, same concrete type as `dst`. Overwritten; its prior contents don't matter.
+	/// @param  kernel       Structuring element (nonzero tap = included); see make_box_kernel()/make_cross_kernel().
+	/// @param  border       How an out-of-bounds neighbor is resolved. Defaults to BorderMode::Clamp.
+	/// @ingroup morphology_filtering
+	template<class SrcImageT, class DstImageT, class KernelT>
+	void morphological_close(const SrcImageT& src, DstImageT& dst, DstImageT& intermediate, const KernelT& kernel, BorderMode border = BorderMode::Clamp)
+	{
+		dilate(src, intermediate, kernel, border);
+		erode(intermediate, dst, kernel, border);
+	}
+
 	/// Replaces each element with the given percentile (0=min, 50=median, 100=max) of its `kernel`-shaped neighborhood.
 	/// @tparam SrcImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic.
 	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).

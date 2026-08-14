@@ -236,7 +236,14 @@ namespace ndl
 			for (int c = 0; c < D; c++) augmented(D - 1, c) = m(D - 1, c);
 			rhs[D - 1] = Real(1) - m(D - 1, D);
 		}
-		Matrix<Real, D> inv = inverse(augmented);
+		// fast_inverse() (matrix/decomposition.h), not the general
+		// SVD-based inverse(): called once per detector pixel per view --
+		// tens of millions of times in a real reconstruction -- and
+		// `augmented` is always well-conditioned by construction (rows 0..
+		// D-2 come from the projection matrix's own cross-multiplied
+		// linear system, row D-1 is a probe row deliberately chosen to be
+		// independent of them), not arbitrary caller-supplied data.
+		Matrix<Real, D> inv = fast_inverse(augmented);
 		std::array<Real, D> X = inv * rhs;
 
 		ProjectionRay<Real, D> ray;

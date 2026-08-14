@@ -471,6 +471,42 @@ TEST(ImageCore, ImageIteratorAccessors) {
 	reportPassFail(passfail);
 }
 
+TEST(ImageCore, ImageIteratorMultiAxisAccessors) {
+	std::stringstream passfail;
+
+	std::cout << std::endl << "IMAGE ITERATOR MULTI-AXIS CLAMP/WRAP/REFLECT" << std::endl;
+
+	// 5x4 image, value = y*10+x at every position, so a result can be
+	// checked against a directly-addressed img(x,y) rather than just its
+	// numeric value -- catches an offset-computation bug (as opposed to a
+	// merely-off-by-a-constant one) that a single-channel ramp wouldn't.
+	const int W = 5, H = 4;
+	std::vector<int> data((std::size_t)W * H);
+	Image<int, 2> img(data.data(), { W, H });
+	for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) img(x, y) = y * 10 + x;
+
+	auto it = img.begin();
+	for (int k = 0; k < 7; k++) ++it; // advance to (2,1), NOT the origin, via the
+	// iterator's own operator++ (never hand-set `index` directly -- axis 1+'s own
+	// contribution lives in the iterator's internal _ptr, not in `index` alone, so
+	// bypassing operator++ would desync the two). A bug in the per-axis offset
+	// accumulation (as opposed to one only visible from the origin) is still caught
+	// here since (2,1) isn't (0,0).
+
+	// Both axes overrun, in opposite directions: x=2-5=-3 (underruns), y=1+5=6 (overruns).
+	std::array<int, 2> delta{ -5, 5 };
+	passfail << "multi-axis clamp() combines both axes' own clamped offset: " << (it.clamp(delta) == img(0, 3) ? "Pass" : "Fail") << std::endl;
+	passfail << "multi-axis wrap() combines both axes' own wrapped offset: " << (it.wrap(delta) == img(2, 2) ? "Pass" : "Fail") << std::endl;
+	passfail << "multi-axis reflect() combines both axes' own reflected offset: " << (it.reflect(delta) == img(2, 1) ? "Pass" : "Fail") << std::endl;
+
+	// Subset overload: only axis 1 (y) is touched via dimensionIndices --
+	// axis 0 (x) must stay exactly at its current position (2), not drift.
+	std::array<int, 1> subsetDelta{ 5 };
+	std::array<int, 1> dimensionIndices{ 1 };
+	passfail << "subset-axis clamp() leaves the untouched axis (x) at its current position: " << (it.clamp(subsetDelta, dimensionIndices) == img(2, 3) ? "Pass" : "Fail") << std::endl;
+	reportPassFail(passfail);
+}
+
 TEST(ImageCore, ImageCoordinates) {
 	std::stringstream passfail;
 

@@ -368,39 +368,6 @@ namespace ndl
 		{
 			inline bool isPowerOfTwo(int n) { return n > 0 && (n & (n - 1)) == 0; }
 			inline int nextPowerOfTwo(int n) { int p = 1; while (p < n) p <<= 1; return p; }
-
-			// One representative coordinate per "fiber" along `axis`: every
-			// other dimension enumerated over its full range, with `axis`
-			// itself fixed at 0 (the caller sweeps just that component from
-			// 0..extent[axis]-1 to walk the fiber). This is how an N-dimensional
-			// FFT decomposes into independent 1D FFTs -- one per fiber, for
-			// each axis in turn -- and it's exactly the independence
-			// std::execution::par needs: two different fibers for the same
-			// axis never touch the same element, so they're safe to transform
-			// concurrently.
-			template<int DIM>
-			std::vector<std::array<int, DIM>> fiberOrigins(const std::array<int, DIM>& extent, int axis)
-			{
-				std::size_t count = 1;
-				for (int d = 0; d < DIM; d++) if (d != axis) count *= extent[d];
-
-				std::vector<std::array<int, DIM>> origins;
-				origins.reserve(count);
-
-				std::array<int, DIM> coord{};
-				coord[axis] = 0;
-				for (std::size_t i = 0; i < count; i++)
-				{
-					origins.push_back(coord);
-					for (int d = 0; d < DIM; d++)
-					{
-						if (d == axis) continue;
-						if (++coord[d] < extent[d]) break;
-						coord[d] = 0;
-					}
-				}
-				return origins;
-			}
 		}
 
 		// Bluestein's algorithm (the chirp-z transform): computes a complex
@@ -590,14 +557,22 @@ namespace ndl
 					throw std::invalid_argument("fftn: dimension " + std::to_string(axis) + " has extent " + std::to_string(n) + ", whose Bluestein-padded transform needs " + std::to_string(neededM) + " points, which exceeds MaxPo2Size=" + std::to_string(MaxPo2Size) + " -- pass a larger MaxPo2Size to fftn()/ifftn()");
 				}
 
-				auto origins = detail::fiberOrigins<DIM>(output.extent(), axis);
+				auto origins = ndl::detail::fiberOrigins<DIM>(output.extent(), axis);
 				std::for_each(std::execution::par, origins.begin(), origins.end(), [&](const std::array<int, DIM>& origin)
 				{
 					thread_local std::vector<Real> engineScratch(MaxPo2Size * 4);
 					thread_local FFT<Real, MaxPo2Size> engine(engineScratch.data());
 					thread_local FFTBluestein<Real, MaxPo2Size> bluesteinEngine;
+					// Same "thread_local scratch, not a per-call allocation"
+					// reasoning as the engines just above -- resized (not
+					// reallocated) only when this thread's previous fiber was a
+					// different length, so a thread handling thousands of
+					// same-length fibers (the common case: every fiber along a
+					// given axis has the same length n) pays for the allocation
+					// at most once.
+					thread_local std::vector<std::complex<Real>> fiber, transformed;
+					if (fiber.size() != (std::size_t)n) { fiber.resize(n); transformed.resize(n); }
 
-					std::vector<std::complex<Real>> fiber(n), transformed(n);
 					std::array<int, DIM> coord = origin;
 					for (int i = 0; i < n; i++) { coord[axis] = i; fiber[i] = output.at(coord); }
 

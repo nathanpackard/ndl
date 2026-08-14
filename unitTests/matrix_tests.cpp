@@ -219,6 +219,52 @@ TEST(Matrix, MatrixInverse) {
 	reportPassFail(passfail);
 }
 
+TEST(Matrix, FastInverse) {
+	std::stringstream passfail;
+
+	std::cout << std::endl << "MATRIX FAST_INVERSE (adjugate/cofactor)" << std::endl;
+
+	// N=2 first and specifically: fast_inverse() needs cofactor() of a 2x2
+	// matrix, which needs matrixDeterminant() of the resulting 1x1 minor --
+	// a base case that was missing (silently returning 0 for every 2x2
+	// cofactor, and therefore fast_inverse<Real,2>() entirely) until
+	// ray_for_pixel() (matrix/projection.h) became the first caller to ever
+	// invoke an adjugate-based inverse at N=2. Same matrix MatrixInverse's
+	// own test above already hand-verified against inverse().
+	Matrix<double, 2> m2;
+	m2(0, 0) = 4; m2(0, 1) = 7; m2(1, 0) = 2; m2(1, 1) = 6;
+	Matrix<double, 2> fastInv2 = fast_inverse(m2);
+	bool ok1 = std::abs(fastInv2(0, 0) - 0.6) < 1e-9 && std::abs(fastInv2(0, 1) - (-0.7)) < 1e-9
+		&& std::abs(fastInv2(1, 0) - (-0.2)) < 1e-9 && std::abs(fastInv2(1, 1) - 0.4) < 1e-9;
+	passfail << "fast_inverse() of a general 2x2 matrix matches inverse()'s own known-correct result: " << (ok1 ? "Pass" : "Fail") << std::endl;
+
+	Matrix<double, 2> identity2 = m2 * fastInv2;
+	bool ok2 = std::abs(identity2(0, 0) - 1) < 1e-9 && std::abs(identity2(0, 1)) < 1e-9
+		&& std::abs(identity2(1, 0)) < 1e-9 && std::abs(identity2(1, 1) - 1) < 1e-9;
+	passfail << "m * fast_inverse(m) == identity at N=2: " << (ok2 ? "Pass" : "Fail") << std::endl;
+
+	// N=3 and N=4 too, matched against the general SVD-based inverse() --
+	// this path (unlike N=2) was already exercised via projection.h's
+	// per-ray-sample AA footprint, but checking it here keeps the coverage
+	// in one place rather than only indirectly via a much heavier caller.
+	Matrix<double, 3> m3;
+	double vals3[9] = { 1, 2, 3, 0, 4, 5, 1, 0, 6 };
+	{ int k = 0; for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) m3(i, j) = vals3[k++]; }
+	Matrix<double, 3> inv3 = inverse(m3), fastInv3 = fast_inverse(m3);
+	bool ok3 = true;
+	for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) if (std::abs(inv3(i, j) - fastInv3(i, j)) > 1e-9) ok3 = false;
+	passfail << "fast_inverse() matches inverse() at N=3: " << (ok3 ? "Pass" : "Fail") << std::endl;
+
+	Matrix<double, 4> m4;
+	double vals4[16] = { 2,0,1,3, 1,3,0,2, 0,1,4,1, 2,1,0,5 };
+	{ int k = 0; for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) m4(i, j) = vals4[k++]; }
+	Matrix<double, 4> inv4 = inverse(m4), fastInv4 = fast_inverse(m4);
+	bool ok4 = true;
+	for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) if (std::abs(inv4(i, j) - fastInv4(i, j)) > 1e-9) ok4 = false;
+	passfail << "fast_inverse() matches inverse() at N=4: " << (ok4 ? "Pass" : "Fail") << std::endl;
+	reportPassFail(passfail);
+}
+
 // make_scale_matrix()/make_translate_matrix()/make_rotate_matrix()/
 // make_shear_matrix()/make_projection_matrix()/make_ortho_projection_matrix()/
 // transform_point() (matrix/transform.h) are free functions that MUTATE a

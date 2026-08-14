@@ -128,5 +128,39 @@ namespace ndl
 			}
 			return srcCoord;
 		}
+
+		// One representative coordinate per "fiber" along `axis`: every
+		// other dimension enumerated over its full range, with `axis`
+		// itself fixed at 0 (the caller sweeps just that component from
+		// 0..extent[axis]-1 to walk the fiber). Shared by every "process an
+		// N-dimensional array one axis-aligned 1D fiber at a time"
+		// algorithm in this library -- fft.h's fftn() (one axis at a time,
+		// via std::execution::par, since two different fibers for the same
+		// axis never touch the same element), summed_area_table.h's
+		// box_blur()/summed_area_table(), and distance_transform.h's
+		// distance_transform() all walk exactly this same shape.
+		template<std::size_t DIM>
+		std::vector<std::array<int, DIM>> fiberOrigins(const std::array<int, DIM>& extent, int axis)
+		{
+			std::size_t count = 1;
+			for (std::size_t d = 0; d < DIM; d++) if ((int)d != axis) count *= extent[d];
+
+			std::vector<std::array<int, DIM>> origins;
+			origins.reserve(count);
+
+			std::array<int, DIM> coord{};
+			coord[axis] = 0;
+			for (std::size_t i = 0; i < count; i++)
+			{
+				origins.push_back(coord);
+				for (std::size_t d = 0; d < DIM; d++)
+				{
+					if ((int)d == axis) continue;
+					if (++coord[d] < extent[d]) break;
+					coord[d] = 0;
+				}
+			}
+			return origins;
+		}
 	}
 }

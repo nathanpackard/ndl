@@ -7,13 +7,22 @@
 /// @defgroup core_image Core Image Types
 /// Image<T,DIM>, its owning and bit-packed variants, and the zero-copy view
 /// operations (view()/slice()/swap_axes()/mirror()) shared by all of them.
+/// Image<T,DIM>'s own sum()/min()/max()/mean() reductions (whole-image, and
+/// per-axis with a caller-provided keepdims output) have free-function
+/// siblings of the same name in owned.h -- ndl::sum(src,axis)/min/max/mean --
+/// that allocate their own OwnedImage<T,DIM> output instead, for the common
+/// case where a caller just wants the result and doesn't already have a
+/// buffer sized for it.
 
 /// @defgroup morphology_filtering Morphology & Filtering
 /// erode()/dilate()/median_filter()/percentile_filter()/threshold()/otsu_threshold()/
 /// invert() -- free functions (morphology.h) over any minimal-interface image type
 /// (Image or PackedBitImage), a toolkit built on top of Image rather than part of it --
 /// plus the structuring-element helpers (make_box_kernel()/make_cross_kernel()) and
-/// BorderMode.
+/// BorderMode. morphological_open()/morphological_close(), also here, are erode()-
+/// then-dilate() and dilate()-then-erode() with the same kernel, collapsed into one
+/// call (a caller-provided scratch buffer for the intermediate pass still required,
+/// matching every other function here's "caller pre-allocates" convention).
 
 /// @defgroup convolution Convolution
 /// convolve()/gaussian_blur() -- free functions (convolution.h), a toolkit built on
@@ -50,7 +59,12 @@
 /// than flow_to_color()'s hue/brightness encoding -- composited directly onto
 /// a caller-supplied background (a photo, a flow_to_color() image, or a plain
 /// fill) rather than clearing it, and takes the same magnitudeCap convention
-/// for the same outlier-robustness reason.
+/// for the same outlier-robustness reason. flow_magnitude(), also here, is the
+/// per-position Euclidean-norm reduction both flow_to_color()/flow_to_arrows()
+/// use internally for their own auto-scaling -- unlike those two (genuinely
+/// 2D-only: a single hue/arrow angle only ever encodes direction for a
+/// 2-component vector), magnitude itself has no such restriction and works
+/// for any component count and spatial dimensionality.
 
 /// @defgroup histogram Histogram
 /// Histogram<VDIM>, histogram_equalize(), and histogram_image() (histogram.h) --
@@ -146,7 +160,13 @@
 /// projection (a finite source point, or a direction at infinity) and a
 /// detector pixel's corresponding ray purely from the matrix itself, via its
 /// null space (reusing this group's own SVD<Real,N>). What Projection, below,
-/// is built on.
+/// is built on. fast_inverse(), alongside inverse() (matrix/decomposition.h),
+/// is an adjugate/cofactor-based inverse (reusing determinant()/cofactor()'s
+/// own direct N<=4 closed forms) for callers needing MANY inversions of
+/// small, well-conditioned matrices -- ~3.6x faster than the general
+/// SVD-based inverse(), at the cost of SVD's numerical robustness on
+/// near-singular input; ray_for_pixel() and Projection's own per-sample
+/// anti-aliasing footprint (below) are its two callers.
 ///
 /// @defgroup interpolation Interpolation
 /// Nearest/Linear/Quadratic/Cubic interpolator tags and sample()
@@ -191,7 +211,7 @@
 /// "voxel-driven gather" back-projector is not, despite looking similar) --
 /// it re-walks the identical rays via the same detail::planRaySamples(),
 /// scattering each sinogram value back with the same per-sample weight
-/// forward_project() used to read it: interpolation.h::scatter_add() (the
+/// forward_project() reads it with: interpolation.h::scatter_add() (the
 /// exact adjoint of sample()) on the unfiltered path, or
 /// summed_area_table.h::box_filter_scatter_add() (the exact adjoint of
 /// box_filter_query()) when autoAA is on -- matched at the level of the
@@ -217,9 +237,15 @@
 /// keeps background voxels the sinogram shows a clear line of sight through
 /// from drifting into the bright overshoot artifacts unconstrained
 /// iteration is prone to -- and, for an underdetermined system (fewer
-/// detector measurements than volume voxels, demo/ct_reconstruction_3d's
-/// own case), fixes the semi-convergence (RMSE improving then later
-/// worsening) plain unconstrained Landweber exhibits there.
+/// detector measurements than volume unknowns), prevents the semi-convergence
+/// (RMSE improving then later worsening) plain unconstrained Landweber is
+/// prone to there. compute_camera_centers(), also here, precomputes
+/// camera_center() for every view up front; forward_project()/back_project()
+/// each accept the result via their own `centers` overload (their plain
+/// geometry-only overload still computes it internally, once per view, every
+/// call) -- worth it for an iterative reconstruction loop that calls either
+/// function repeatedly with the same geometry, since camera_center() is an
+/// SVD and otherwise gets redundantly resolved every single iteration.
 
 /// @defgroup image_io Image I/O
 /// Loading and saving images in bitmap/PNG/JPEG/DICOM/NRRD/raw formats.

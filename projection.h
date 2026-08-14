@@ -68,34 +68,35 @@
 // summed_area_table.h's box_filter_query() DIRECTLY in place of
 // interpolation.h's sample(), sized from detail::sampleAAHalfWidth()
 // (matrix/projection.h's projectionJacobian(), inverted) evaluated AT
-// THAT SAMPLE'S OWN POSITION -- not once per view at the volume's center,
-// which an earlier version of this function did and which is genuinely
-// wrong for a true perspective (cone/fan-beam) matrix: a voxel's real
-// footprint on the detector depends on its own distance from the source,
-// and measured directly on demo/ct_reconstruction_3d's own geometry, that
+// THAT SAMPLE'S OWN POSITION, not once per view at the volume's center:
+// for a true perspective (cone/fan-beam) matrix, a voxel's real footprint
+// on the detector depends on its own distance from the source, and
+// measured directly on demo/ct_reconstruction_3d's own geometry, that
 // footprint varies by a factor of ~1.5x between the near-source and
-// near-detector sides of the volume. Evaluating once at the center used
-// one constant value everywhere, over-filtering (losing real resolution)
-// on one side of the volume and under-filtering (leaving aliasing
-// uncorrected) on the other, in every view -- exactly why a first attempt
-// at this "worked in some places but not others" instead of uniformly.
-// Making this genuinely per-sample needs a matrix inversion at every one
-// of tens of millions of ray samples, which is why sampleAAHalfWidth()
-// uses detail::fastInverse() (a direct adjugate/cofactor inverse, reusing
-// the existing determinant()/cofactor()) instead of the library's general
-// SVD-based inverse() -- ~3.6x faster, verified to match on well-
-// conditioned input, which is what keeps this practical at all.
+// near-detector sides of the volume -- a single once-per-view value would
+// over-filter (losing real resolution) on one side and under-filter
+// (leaving aliasing uncorrected) on the other, in every view. Making this
+// genuinely per-sample needs a matrix inversion at every one of tens of
+// millions of ray samples, which is why sampleAAHalfWidth() uses
+// fast_inverse() (matrix/decomposition.h -- a direct adjugate/cofactor
+// inverse, reusing the existing determinant()/cofactor()) instead of the
+// library's general SVD-based inverse() -- ~3.6x faster, verified to
+// match on well-conditioned input, which is what keeps this practical at
+// all. matrix/projection.h's ray_for_pixel() (the ray-resolving step both
+// forward_project() and back_project() call at every detector pixel, per
+// view) uses the same fast_inverse() for the same reason.
 //
-// So the exact adjoint back_project() needs isn't "scatter normally, then
-// blur the result" (tempting, but wrong -- an earlier version of this
-// file did exactly that, and it does not pass the dot-product test at
-// all, off by 100% in places) -- it's swapping in box_filter_scatter_add()
-// in place of scatter_add() at exactly the same per-sample point, the
-// same way box_filter_query() itself replaces sample(), using the SAME
-// per-sample sampleAAHalfWidth() evaluation (a pure function of the
-// matrix, the camera center, and the sample's own position, so
-// back_project() reproduces exactly what forward_project() would have
-// used at that point without the two ever exchanging state).
+// The exact adjoint back_project() needs isn't "scatter normally, then
+// blur the result": that composition is NOT the transpose of
+// forward_project()'s own per-sample box_filter_query() read, and misses
+// the true adjoint badly (off by 100% in places on a direct dot-product
+// check) -- it's swapping in box_filter_scatter_add() in place of
+// scatter_add() at exactly the same per-sample point, the same way
+// box_filter_query() itself replaces sample(), using the SAME per-sample
+// sampleAAHalfWidth() evaluation (a pure function of the matrix, the
+// camera center, and the sample's own position, so back_project()
+// reproduces exactly what forward_project() would have used at that
+// point without the two ever exchanging state).
 // box_filter_scatter_add() is built to be box_filter_query()'s own exact
 // adjoint directly (verified in isolation in
 // unitTests/summed_area_table_tests.cpp) -- not by assuming the box blur
@@ -180,30 +181,6 @@ namespace ndl
 			return plan;
 		}
 
-		// Adjugate/cofactor-based inverse (reusing the existing
-		// determinant()/cofactor(), matrix/decomposition.h -- direct
-		// formulas for N<=4, no iteration) instead of the library's
-		// general SVD-based inverse(): sampleAAHalfWidth() below needs one
-		// of these per RAY SAMPLE (tens of millions of times over a real
-		// reconstruction), not once per view, so the ~3.6x speedup this
-		// measures over SVD (verified directly, matching values to 1e-9 on
-		// random well-conditioned matrices first) is what keeps genuine
-		// per-sample anti-aliasing practical at all. Trades some of SVD's
-		// numerical robustness on near-singular input for speed -- fine
-		// here specifically because the `augmented` matrix this is always
-		// called on (below) is a Jacobian plus a probe row chosen to be
-		// independent of it, not arbitrary caller-supplied data.
-		template<class Real, int D>
-		Matrix<Real, D> fastInverse(const Matrix<Real, D>& m)
-		{
-			Real det = determinant(m);
-			Matrix<Real, D> result;
-			for (int i = 0; i < D; i++)
-				for (int j = 0; j < D; j++)
-					result(i, j) = cofactor(m, j, i) / det;
-			return result;
-		}
-
 		// Per-axis volume-space AA footprint half-width AT A GIVEN POINT --
 		// "how far does a unit step in DETECTOR space reach in VOLUME
 		// space, right here". The inverse of projectionJacobian() (matrix/
@@ -213,15 +190,17 @@ namespace ndl
 		// substantially: measured directly, on demo/ct_reconstruction_3d's
 		// own geometry, the true half-width varies by a factor of ~1.5x
 		// between the near-source and near-detector sides of the volume,
-		// while evaluating it once at the center -- an earlier version of
-		// this function -- used one constant value for the whole volume,
-		// over-filtering (losing real resolution) on one side and
-		// under-filtering (leaving aliasing uncorrected) on the other).
+		// so a single value evaluated once at the center would be wrong
+		// almost everywhere else -- over-filtering (losing real
+		// resolution) on one side and under-filtering (leaving aliasing
+		// uncorrected) on the other).
 		// Recovered the same way ray_for_pixel() recovers a point from a
 		// (D-1)-equation system: augment with a probe row to make it
-		// square, then invert -- fastInverse() above, not the general
-		// inverse(), since forward_project()/back_project() below call
-		// this at every ray sample.
+		// square, then invert -- fast_inverse() (matrix/decomposition.h,
+		// the same adjugate/cofactor inverse ray_for_pixel() itself uses,
+		// for the same reason), not the general SVD-based inverse(), since
+		// forward_project()/back_project() below call this at every ray
+		// sample -- tens of millions of times over a real reconstruction.
 		template<class Real, int D>
 		std::array<double, D> sampleAAHalfWidth(const ProjectionMatrix<Real, D>& pm, const ProjectionCenter<Real, D>& center, const Real* point)
 		{
@@ -234,7 +213,7 @@ namespace ndl
 					augmented(r, c) = J[r * D + c];
 			for (int c = 0; c < D; c++)
 				augmented(D - 1, c) = center.atInfinity ? center.point[c] : (point[c] - center.point[c]);
-			Matrix<Real, D> inv = fastInverse(augmented);
+			Matrix<Real, D> inv = fast_inverse(augmented);
 
 			std::array<double, D> halfWidth{};
 			for (int r = 0; r < D; r++)
@@ -254,6 +233,33 @@ namespace ndl
 		}
 	}
 
+	// camera_center(pm) is a pure function of pm alone (matrix/projection.h
+	// -- it pads to a (D+1)x(D+1) matrix and runs a full SVD<Real,D+1>, not
+	// cheap), so it's invariant across every call in an iterative
+	// reconstruction loop that reuses the same `geometry` (Landweber/DART,
+	// e.g. demo/ct_reconstruction*/*.cpp's own loops, 25-50+ iterations
+	// each calling forward_project() then back_project()). Neither
+	// function recomputes it internally more than once per view PER CALL,
+	// but with the same geometry every iteration, that's still the same
+	// handful of SVDs solved over and over across the whole loop.
+	// compute_camera_centers() lets a caller solve them ONCE up front and
+	// pass the result to forward_project()/back_project()'s own `centers`
+	// overload below instead of their plain `geometry`-only one (which
+	// still computes centers internally itself, for source compatibility
+	// and one-shot callers where precomputing isn't worth the bother).
+	/// Precomputes camera_center() for every view in `geometry` -- pass the result to forward_project()/back_project()'s own `centers` overload to avoid resolving the same camera center (an SVD, not cheap) on every iteration of a reconstruction loop that reuses the same geometry.
+	/// @param geometry One ProjectionMatrix<Real,D> per view.
+	/// @return One ProjectionCenter<Real,D> per view, same order as `geometry`.
+	/// @ingroup projection
+	template<class Real, int D>
+	std::vector<ProjectionCenter<Real, D>> compute_camera_centers(const std::vector<ProjectionMatrix<Real, D>>& geometry)
+	{
+		std::vector<ProjectionCenter<Real, D>> centers;
+		centers.reserve(geometry.size());
+		for (const auto& pm : geometry) centers.push_back(camera_center(pm));
+		return centers;
+	}
+
 	/// Forward-projects `volume` into `sinogram` (overwritten) by ray-marching through the geometry described by `geometry` (one ProjectionMatrix per view -- matrix/projection.h). Parallelized over views via std::execution::par. See this file's own top comment for the exact algorithm and the anti-aliasing/adjointness details.
 	/// @tparam VolumeImageT Any minimal-interface image type; its value_type must be arithmetic.
 	/// @tparam SinogramImageT Any minimal-interface image type (D dimensions: 1 view axis + D-1 detector axes); its own extent's leading axis must equal geometry.size().
@@ -261,12 +267,13 @@ namespace ndl
 	/// @param  volume       Source volume, D dimensions.
 	/// @param  sinogram     Destination; must already exist with extent {geometry.size(), detector extent...}.
 	/// @param  geometry     One ProjectionMatrix<Real,D> per view.
+	/// @param  centers      One ProjectionCenter<Real,D> per view, matching `geometry` -- pass compute_camera_centers(geometry)'s own result, precomputed once outside a reconstruction loop that calls this every iteration with the same geometry.
 	/// @param  interpolator Tag instance selecting the interpolation kernel; the type parameter is what actually matters.
 	/// @param  autoAA       Whether to automatically anti-alias the volume when its resolution would alias against the detector's. Defaults to true.
 	/// @param  stepSize     Ray-marching step size, in volume-grid units. Defaults to 1.0 (one step per voxel spacing).
 	/// @ingroup projection
 	template<class VolumeImageT, class SinogramImageT, class Real, int D, class Interpolator = Linear>
-	void forward_project(const VolumeImageT& volume, SinogramImageT& sinogram, const std::vector<ProjectionMatrix<Real, D>>& geometry, Interpolator interpolator = Interpolator{}, bool autoAA = true, double stepSize = 1.0)
+	void forward_project(const VolumeImageT& volume, SinogramImageT& sinogram, const std::vector<ProjectionMatrix<Real, D>>& geometry, const std::vector<ProjectionCenter<Real, D>>& centers, Interpolator interpolator = Interpolator{}, bool autoAA = true, double stepSize = 1.0)
 	{
 		using VolT = typename VolumeImageT::value_type;
 		using SinoT = typename SinogramImageT::value_type;
@@ -279,6 +286,7 @@ namespace ndl
 		static_assert(DIM == D, "ndl::forward_project() requires volume to have exactly D dimensions");
 		static_assert(std::tuple_size<decltype(sinoExtent)>::value == D, "ndl::forward_project() requires sinogram to have exactly D dimensions (1 view axis + D-1 detector axes)");
 		assert(sinoExtent[0] == (int)geometry.size());
+		assert(centers.size() == geometry.size());
 
 		std::array<int, D - 1> detExtent;
 		for (int i = 0; i < D - 1; i++) detExtent[i] = sinoExtent[i + 1];
@@ -290,8 +298,8 @@ namespace ndl
 		// The volume's own summed-area table doesn't depend on the view at
 		// all (only the per-view query half-width does), so it's built
 		// ONCE here -- shared, read-only, safe for every view's parallel
-		// task to query concurrently -- rather than redundantly rebuilt
-		// per view the way an earlier version of this function did.
+		// task to query concurrently -- rather than once per view, which
+		// would be pure duplicated work.
 		std::vector<double> tableData;
 		std::optional<Image<double, D>> table;
 		if (autoAA)
@@ -312,7 +320,7 @@ namespace ndl
 		std::for_each(std::execution::par, viewIndices.begin(), viewIndices.end(), [&](int view)
 		{
 			const auto& pm = geometry[view];
-			auto center = camera_center(pm);
+			const auto& center = centers[view];
 
 			std::array<int, D - 1> detCoord{};
 			for (std::size_t idx = 0; idx < numDetPixels; idx++)
@@ -357,6 +365,14 @@ namespace ndl
 		});
 	}
 
+	/// forward_project(), computing compute_camera_centers(geometry) internally -- see the `centers`-taking overload above for the full contract. Convenient for a one-shot call; precompute centers yourself (once) instead if calling this repeatedly with the same geometry (e.g. an iterative reconstruction loop).
+	/// @ingroup projection
+	template<class VolumeImageT, class SinogramImageT, class Real, int D, class Interpolator = Linear>
+	void forward_project(const VolumeImageT& volume, SinogramImageT& sinogram, const std::vector<ProjectionMatrix<Real, D>>& geometry, Interpolator interpolator = Interpolator{}, bool autoAA = true, double stepSize = 1.0)
+	{
+		forward_project(volume, sinogram, geometry, compute_camera_centers(geometry), interpolator, autoAA, stepSize);
+	}
+
 	/// Back-projects `sinogram` into `volume` (overwritten): forward_project()'s adjoint by construction, including its automatic anti-aliasing (see this file's own top comment for the matched-filter derivation -- verified to machine precision even at the volume's own boundary, not just approximately). Parallelized over view chunks via std::execution::par.
 	/// @tparam SinogramImageT Any minimal-interface image type (D dimensions: 1 view axis + D-1 detector axes).
 	/// @tparam VolumeImageT Any minimal-interface image type; its value_type must be arithmetic.
@@ -364,12 +380,13 @@ namespace ndl
 	/// @param  sinogram     Source sinogram.
 	/// @param  volume       Destination; must already exist with the target volume extent (D dimensions).
 	/// @param  geometry     One ProjectionMatrix<Real,D> per view, matching forward_project()'s own.
+	/// @param  centers      One ProjectionCenter<Real,D> per view, matching `geometry` -- see forward_project()'s own `centers` parameter comment.
 	/// @param  interpolator Tag instance selecting the interpolation kernel; the type parameter is what actually matters.
 	/// @param  autoAA       Whether to apply box_filter_scatter_add() in place of scatter_add() at each ray sample, exactly where forward_project() applied box_filter_query() in place of sample() -- MUST match forward_project()'s own autoAA for the two to be adjoints of each other. Defaults to true.
 	/// @param  stepSize     Ray-marching step size, in volume-grid units -- MUST match forward_project()'s own for adjointness. Defaults to 1.0.
 	/// @ingroup projection
 	template<class SinogramImageT, class VolumeImageT, class Real, int D, class Interpolator = Linear>
-	void back_project(const SinogramImageT& sinogram, VolumeImageT& volume, const std::vector<ProjectionMatrix<Real, D>>& geometry, Interpolator interpolator = Interpolator{}, bool autoAA = true, double stepSize = 1.0)
+	void back_project(const SinogramImageT& sinogram, VolumeImageT& volume, const std::vector<ProjectionMatrix<Real, D>>& geometry, const std::vector<ProjectionCenter<Real, D>>& centers, Interpolator interpolator = Interpolator{}, bool autoAA = true, double stepSize = 1.0)
 	{
 		using SinoT = typename SinogramImageT::value_type;
 		using VolT = typename VolumeImageT::value_type;
@@ -382,6 +399,7 @@ namespace ndl
 		static_assert(DIM == D, "ndl::back_project() requires volume to have exactly D dimensions");
 		static_assert(std::tuple_size<decltype(sinoExtent)>::value == D, "ndl::back_project() requires sinogram to have exactly D dimensions (1 view axis + D-1 detector axes)");
 		assert(sinoExtent[0] == (int)geometry.size());
+		assert(centers.size() == geometry.size());
 
 		std::array<int, D - 1> detExtent;
 		for (int i = 0; i < D - 1; i++) detExtent[i] = sinoExtent[i + 1];
@@ -428,10 +446,10 @@ namespace ndl
 			// relies on, though this one is a plain chunk-local (not
 			// thread_local) buffer since each chunk already owns its own
 			// sequential slice of work. TWO buffers, not one: since
-			// filtering is now decided per SAMPLE (matching
-			// forward_project()'s own per-sample choice -- see this file's
-			// top comment on why that's no longer a once-per-view
-			// decision), a single view can have some samples going through
+			// filtering is decided per SAMPLE (matching forward_project()'s
+			// own per-sample choice -- see this file's top comment for why
+			// a per-sample decision is what a true perspective matrix
+			// needs), a single view can have some samples going through
 			// scatter_add() (writing real values directly) and others
 			// through box_filter_scatter_add() (writing into a delta array
 			// that only means something AFTER a summed_area_table() pass);
@@ -444,7 +462,7 @@ namespace ndl
 			for (int view = viewStart; view < viewEnd; view++)
 			{
 				const auto& pm = geometry[view];
-				auto center = camera_center(pm);
+				const auto& center = centers[view];
 
 				std::fill(viewDirect.begin(), viewDirect.end(), 0.0);
 				std::fill(viewDelta.begin(), viewDelta.end(), 0.0);
@@ -518,6 +536,14 @@ namespace ndl
 		});
 
 		for (const auto& c : volume.coordinates()) volume.at(c) = static_cast<VolT>(accum.at(c));
+	}
+
+	/// back_project(), computing compute_camera_centers(geometry) internally -- see the `centers`-taking overload above for the full contract. Convenient for a one-shot call; precompute centers yourself (once) instead if calling this repeatedly with the same geometry (e.g. an iterative reconstruction loop).
+	/// @ingroup projection
+	template<class SinogramImageT, class VolumeImageT, class Real, int D, class Interpolator = Linear>
+	void back_project(const SinogramImageT& sinogram, VolumeImageT& volume, const std::vector<ProjectionMatrix<Real, D>>& geometry, Interpolator interpolator = Interpolator{}, bool autoAA = true, double stepSize = 1.0)
+	{
+		back_project(sinogram, volume, geometry, compute_camera_centers(geometry), interpolator, autoAA, stepSize);
 	}
 
 	// Per-voxel upper density bound, derived directly from the measured

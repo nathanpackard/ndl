@@ -19,20 +19,20 @@ namespace fs = std::filesystem;
 
 // The 3D, cone/fan-beam sibling of demo/ct_reconstruction (which covers
 // 2D parallel-beam) -- same forward_project()/back_project() (projection.h),
-// same exact-adjoint back-projection, same Landweber iteration, but a real
-// 128^3 volume, a genuinely PERSPECTIVE (not orthographic) geometry, and a
-// 64x64 detector considerably coarser than the volume's own resolution --
-// specifically to exercise the two things that only show up once you leave
-// 2D parallel-beam: a true cone/fan-beam projection matrix (nontrivial
-// homogeneous row, real perspective divide), and automatic anti-aliasing
-// whose footprint genuinely varies with a voxel's own distance from the
-// source (unlike parallel-beam's spatially-uniform case -- see PART 4
-// below). Unlike the 2D demo, PART 5's reconstruction loop here actually
-// runs with autoAA on, not just off -- this geometry's own detector/volume
-// resolution mismatch is exactly the case automatic anti-aliasing exists
-// for (projection.h's own top comment has the matched-filter derivation
-// that makes this possible without breaking forward_project()/
-// back_project()'s exact adjointness).
+// same exact-adjoint back-projection, same Landweber iteration, but a
+// genuinely PERSPECTIVE (not orthographic) geometry: a 64^3 volume
+// reconstructed from a 64x64-pixel cone-beam detector, specifically to
+// exercise the two things that only show up once you leave 2D parallel-beam:
+// a true cone/fan-beam projection matrix (nontrivial homogeneous row, real
+// perspective divide), and automatic anti-aliasing whose footprint genuinely
+// varies with a voxel's own distance from the source (unlike parallel-beam's
+// spatially-uniform case -- see PART 4 below). Unlike the 2D demo, PART 5's
+// reconstruction loop here actually runs with autoAA on, not just off --
+// this geometry's own detector pixel footprint (~1.75 voxel-widths, PART 3's
+// own comment has the derivation) is exactly the case automatic
+// anti-aliasing exists for (projection.h's own top comment has the
+// matched-filter derivation that makes this possible without breaking
+// forward_project()/back_project()'s exact adjointness).
 //
 // This demo is still slower than most of this repo's other demos --
 // 64^3 = ~262k voxels, 180 views x 64x64 = ~740k detector pixels, each
@@ -49,18 +49,22 @@ namespace fs = std::filesystem;
 // refinement on top of it (each DART outer iteration re-runs a few more
 // forward/back-projection passes, on top of PART 5's own 25).
 //
-// The volume is deliberately reconstructed at 64^3, not the phantom's
-// native 128^3 -- see PART 3's own comment for why matching the
-// reconstruction grid to what the 64x64 detector can actually resolve,
-// rather than reconstructing at a finer grid than the measurements
-// support, is the real fix for the underdetermined-system artifacts
-// (rings/grid pattern) an earlier version of this demo had at 128^3.
-// PART 6 adds a second, complementary lever on top of that fix: DART
+// The volume is reconstructed at 64^3, matched to what this 64x64-pixel
+// detector can actually resolve rather than a finer grid than the
+// measurements support -- see PART 3's own comment for the footprint
+// derivation. Reconstructing onto a grid finer than a detector's own
+// resolving power leaves the system underdetermined (more volume unknowns
+// than independent measurements), which shows up as structured
+// null-space artifacts (rings/grid patterns) that neither anti-aliasing
+// nor a value constraint can fix, since neither adds real information;
+// matching resolution instead keeps the system overdetermined and
+// well-posed (PART 3's own comment has the measurement-vs-unknown
+// counts). PART 6 adds a second, complementary lever on top of that: DART
 // (Discrete Algebraic Reconstruction Technique), which exploits a known,
 // small number of tissue-density levels to constrain the reconstruction
 // far more tightly than PART 5's own [0, bound] box -- see PART 6's own
-// comment for the honest result, including where it helps and where its
-// own analogue of semi-convergence shows up.
+// comment for the result, including where it helps and where its own
+// analogue of semi-convergence shows up.
 //
 // step()/showArray()/showText()/saveForInspection()/outputDir come from
 // demoHelpers.h, shared with every other demo.
@@ -276,7 +280,7 @@ int main()
 	step("sheppLoganValue3D(x,y,z)   // ten ellipsoids, additive density",
 		"The classic Shepp-Logan phantom, extended to a solid (Kak & Slaney) -- an idealized 3D head\n"
 		"             volume built from ten overlapping ellipsoids, evaluated directly onto a 64^3 grid (see\n"
-		"             PART 3's comment for why 64^3, not the finer 128^3 an earlier version of this demo used).\n"
+		"             PART 3's own comment for why 64^3 is the right match for this detector's own resolving power).\n"
 		"             Three orthogonal central slices are saved below (axial/coronal/sagittal) since a whole\n"
 		"             volume can't be viewed as one PNG.");
 	double half = (W - 1) / 2.0;
@@ -304,17 +308,15 @@ int main()
 	// magnification (focalLength/sourceDistance = 2x here) means each
 	// 64x64 detector pixel's own footprint back in the volume is
 	// detPixelSpacing/magnification = 3.5/2 = 1.75 voxel-widths at this
-	// grid's own spacing -- i.e. the reconstruction voxel grid is now
-	// chosen to be COARSER than the detector's native resolution, not
-	// finer than it (a first version of this demo reconstructed at 128^3
-	// instead of 64^3 with these same detector/geometry parameters simply
-	// halved from what they are here, which put the mismatch the other
-	// way -- a 3.5-voxel-wide footprint on a grid twice as fine, i.e. an
-	// UNDERDETERMINED system with 180*64*64 ~= 737k measurements for
-	// 128^3 ~= 2.1M volume unknowns, which is what caused the persistent
-	// ring/grid-pattern null-space artifacts described in PART 5. At
-	// 64^3 the same 737k measurements now outnumber the 64^3 ~= 262k
-	// unknowns by ~2.8x -- an OVERdetermined, well-posed system instead).
+	// grid's own spacing -- the reconstruction voxel grid is chosen to be
+	// COARSER than the detector's native resolution, not finer than it,
+	// which is what keeps the system OVERdetermined and well-posed:
+	// 180*64*64 ~= 737k measurements for 64^3 ~= 262k volume unknowns, a
+	// ~2.8x surplus. Reconstructing onto a meaningfully finer grid than
+	// this detector footprint supports would instead make the system
+	// UNDERdetermined (more unknowns than independent measurements),
+	// which shows up as structured ring/grid-pattern null-space artifacts
+	// in PART 5's own result.
 	auto geometry = buildConeBeamGeometry(numViews, volCenter, /*sourceDistance=*/150, /*detectorDistance=*/150, detW, detH, /*detPixelSpacing=*/3.5);
 
 	step("forward_project(phantom, sinogram, geometry)   // 180 cone-beam views over 360 degrees",
@@ -372,23 +374,24 @@ int main()
 		"             unitTests/projection_tests.cpp checks all of this directly, to ~1e-15 relative error even\n"
 		"             with AA enabled and the data touching the volume's own boundary -- projection.h's own top\n"
 		"             comment has the matched-filter construction that makes this possible). Second: PART 3's\n"
-		"             own comment covers why this demo now reconstructs onto a 64^3 grid rather than the finer\n"
-		"             128^3 an earlier version used -- with 64^3, this 64x64-detector/180-view setup has MORE\n"
-		"             measurements (180*64*64 ~= 737k) than volume unknowns (64^3 ~= 262k), an overdetermined,\n"
-		"             well-posed system, unlike the earlier 128^3 version where plain (unconstrained, unfiltered)\n"
-		"             Landweber exhibited classic SEMI-CONVERGENCE (RMSE dropping for a while, then rising again\n"
-		"             as later iterations fit increasingly noisy/artifact-prone null-space directions). Clamping\n"
-		"             each update to [0, max_density_bound(sinogram)] (projection.h's own comment has the\n"
-		"             derivation -- the lower bound is physical non-negativity, the upper bound is read directly\n"
-		"             off the sinogram) is kept regardless, both because it's still a real (if smaller) help here\n"
-		"             and because it's what keeps the background artifact-free (see the final summary below).\n"
-		"             Third: autoAA=true evaluates a genuine PER-RAY-SAMPLE footprint (projection.h's own top\n"
-		"             comment, and unitTests/projection_tests.cpp's AAHalfWidthVariesWithDepthAlongRay, which\n"
-		"             checks it against the closed-form pinhole-camera magnification formula directly) -- an\n"
-		"             earlier version evaluated it once per view at the volume's own center, which is measurably\n"
-		"             wrong for true perspective geometry (the real footprint varies ~1.5x between the\n"
-		"             near-source and near-detector sides of this exact volume) and was silently over-filtering\n"
-		"             one side while under-filtering the other. Per-sample evaluation needs a matrix inversion at\n"
+		"             own comment covers why this demo reconstructs onto a 64^3 grid matched to the detector's\n"
+		"             own resolving power -- this 64x64-detector/180-view setup has MORE measurements\n"
+		"             (180*64*64 ~= 737k) than volume unknowns (64^3 ~= 262k), an overdetermined, well-posed\n"
+		"             system where plain (unconstrained, unfiltered) Landweber converges cleanly rather than\n"
+		"             risking classic SEMI-CONVERGENCE (RMSE dropping for a while, then rising again as later\n"
+		"             iterations fit increasingly noisy/artifact-prone null-space directions -- the real risk\n"
+		"             for any UNDERdetermined system, i.e. more volume unknowns than independent measurements).\n"
+		"             Clamping each update to [0, max_density_bound(sinogram)] (projection.h's own comment has\n"
+		"             the derivation -- the lower bound is physical non-negativity, the upper bound is read\n"
+		"             directly off the sinogram) is kept regardless, since it's what keeps the background\n"
+		"             artifact-free (see the final summary below). Third: autoAA=true evaluates a genuine\n"
+		"             PER-RAY-SAMPLE footprint (projection.h's own top comment, and\n"
+		"             unitTests/projection_tests.cpp's AAHalfWidthVariesWithDepthAlongRay, which checks it\n"
+		"             against the closed-form pinhole-camera magnification formula directly) -- evaluating it\n"
+		"             once per view at the volume's own center instead would be measurably wrong for true\n"
+		"             perspective geometry (the real footprint varies ~1.5x between the near-source and\n"
+		"             near-detector sides of this exact volume), over-filtering one side while under-filtering\n"
+		"             the other. Per-sample evaluation needs a matrix inversion at\n"
 		"             every ray sample, so projection.h uses a fast direct (adjugate/cofactor, not SVD) inverse\n"
 		"             specifically to keep it practical; that cost plus forward_project()/back_project() both\n"
 		"             parallelizing over views (std::execution::par) is what keeps 25 iterations of this now\n"
@@ -396,6 +399,14 @@ int main()
 	std::vector<double> boundData((std::size_t)W * W * W);
 	Image<double, 3> bound(boundData.data(), { W, W, W });
 	max_density_bound(sinogram, bound, geometry, /*stepSize=*/1.0);
+
+	// Computed ONCE here rather than once per view inside every one of the
+	// 25 (PART 5) + 8*3 (PART 6's DART inner iterations) forward_project()/
+	// back_project() calls below -- camera_center() is a full SVD per view
+	// (matrix/projection.h), and it's invariant across every one of those
+	// calls since `geometry` itself never changes across the reconstruction
+	// loop. See compute_camera_centers()'s own comment (projection.h).
+	auto centers = compute_camera_centers(geometry);
 
 	std::vector<double> reconData((std::size_t)W * W * W, 0.0);
 	Image<double, 3> recon(reconData.data(), { W, W, W });
@@ -405,7 +416,7 @@ int main()
 	{
 		std::vector<double> predData((std::size_t)numViews * detW * detH);
 		Image<double, 3> pred(predData.data(), { numViews, detW, detH });
-		forward_project(recon, pred, geometry, Linear{}, true);
+		forward_project(recon, pred, geometry, centers, Linear{}, true);
 
 		std::vector<double> residData((std::size_t)numViews * detW * detH);
 		for (std::size_t i = 0; i < residData.size(); i++) residData[i] = sinogramData[i] - predData[i];
@@ -413,7 +424,7 @@ int main()
 
 		std::vector<double> updateData((std::size_t)W * W * W);
 		Image<double, 3> update(updateData.data(), { W, W, W });
-		back_project(resid, update, geometry, Linear{}, true);
+		back_project(resid, update, geometry, centers, Linear{}, true);
 
 		for (std::size_t i = 0; i < reconData.size(); i++)
 		{
@@ -490,7 +501,7 @@ int main()
 		{
 			std::vector<double> predData((std::size_t)numViews * detW * detH);
 			Image<double, 3> pred(predData.data(), { numViews, detW, detH });
-			forward_project(dartVol, pred, geometry, Linear{}, true);
+			forward_project(dartVol, pred, geometry, centers, Linear{}, true);
 
 			std::vector<double> residData(predData.size());
 			for (std::size_t i = 0; i < residData.size(); i++) residData[i] = sinogramData[i] - predData[i];
@@ -498,7 +509,7 @@ int main()
 
 			std::vector<double> updateData(dartData.size());
 			Image<double, 3> update(updateData.data(), { W, W, W });
-			back_project(resid, update, geometry, Linear{}, true);
+			back_project(resid, update, geometry, centers, Linear{}, true);
 
 			for (std::size_t i = 0; i < dartData.size(); i++)
 			{
@@ -536,36 +547,34 @@ int main()
 		"reconstruction's matching slices, recovered from ONLY that sinogram (with a genuine per-ray-sample\n"
 		"autoAA and the max_density_bound() constraint applied -- PART 5's own comment covers both).\n"
 		"Compare 06-08 against 01-03 -- the background is clean (max_density_bound()'s whole point: no bright\n"
-		"stray-pixel overshoot) and the overall shape, proportions, and internal structure are recognizable\n"
-		"at this grid's own resolution, without the persistent ring/grid null-space pattern an earlier,\n"
-		"128^3 version of this same demo had. That difference is the point of PART 3's resolution choice, not\n"
-		"a coincidence: reconstructing onto a 64^3 grid instead of 128^3 (with the same 64x64/180-view\n"
-		"detector) turns this from an underdetermined system (737k measurements for 2.1M unknowns, where\n"
-		"multiple different volumes fit the same sinogram equally well, and the residual ambiguity shows up as\n"
-		"structured aliasing) into an overdetermined one (737k measurements for only 262k unknowns) -- AA and\n"
-		"max_density_bound() were only ever mitigating that underlying mismatch, not fixing it. The real\n"
-		"tradeoff: this reconstruction is honestly coarser than the 128^3 phantom it's compared against here --\n"
-		"but that's the resolution this 64x64 detector genuinely supports (each detector pixel's own footprint\n"
-		"back in the volume is ~1.75 voxel-widths at this grid), so 64^3 isn't losing real detail, just no\n"
-		"longer pretending to reconstruct finer than the measurements can support. Recovering 128^3-level\n"
-		"detail for real would take a higher-resolution detector (more, or smaller, detector pixels) or more\n"
-		"views, not a finer reconstruction grid alone.\n"
+		"stray-pixel overshoot) and the overall shape, proportions, and internal structure are recognizable,\n"
+		"without a ring/grid null-space pattern in the object's interior. That's the direct payoff of PART 3's\n"
+		"resolution choice: reconstructing onto a 64^3 grid matched to this 64x64/180-view detector's own\n"
+		"resolving power keeps the system overdetermined (737k measurements for only 262k unknowns) rather\n"
+		"than underdetermined, where multiple different volumes would fit the same sinogram equally well and\n"
+		"the residual ambiguity would show up as structured aliasing -- AA and max_density_bound() only ever\n"
+		"mitigate that kind of mismatch, they don't fix it outright the way matching resolution does. The real\n"
+		"tradeoff: some of the phantom's own finest structures (its smallest ellipsoids, only a few voxels\n"
+		"wide even at this grid's own resolution) are close to what a 64x64 detector can resolve at all, so\n"
+		"64^3 is genuinely the ceiling here -- recovering meaningfully finer detail would take a\n"
+		"higher-resolution detector (more, or smaller, detector pixels) together with a correspondingly finer\n"
+		"volume grid, or more views, not a finer reconstruction grid on its own.\n"
 		"09-11 are PART 6's DART-refined slices, starting from 06-08's own continuous result and using the\n"
 		"phantom's own (assumed a priori known) tissue-density count -- visually flatter/cleaner than 06-08\n"
 		"(compare the coronal slices in particular), and a real, if modest, RMSE improvement over PART 5's\n"
 		"continuous-only result (PART 6's own printed numbers above). DART is a genuinely different,\n"
 		"complementary lever from PART 3's resolution choice: it doesn't change how many measurements vs.\n"
 		"unknowns there are, it changes how much each unknown is ALLOWED to vary, which is why it still helps\n"
-		"even on an already-overdetermined 64^3 system. Two honest caveats worth having seen directly rather\n"
-		"than assumed away: it depends entirely on knowing K correctly (too few tissue types assumed and\n"
-		"genuinely distinct structures get merged into one label; too many, and noise gets mistaken for real\n"
-		"structure), and PART 6's own per-iteration RMSE isn't perfectly monotonic either -- it improves for\n"
-		"the first few outer iterations, then drifts slightly worse (a milder echo of PART 5's own\n"
-		"semi-convergence, here from voxels freezing to a slightly-off label estimate permanently rather than\n"
-		"from an unconstrained update overshooting). Unlike PART 5's box constraint, this demo doesn't fix\n"
-		"that drift -- doing so honestly would need a stopping rule computed from the data alone (e.g. the\n"
-		"sinogram residual, not ground-truth RMSE, which no real reconstruction has access to), which is a\n"
-		"reasonable next step but out of scope here.\n";
+		"even on an already-overdetermined 64^3 system. Two honest caveats worth stating directly rather than\n"
+		"glossing over: it depends entirely on knowing K correctly (too few tissue types assumed and genuinely\n"
+		"distinct structures get merged into one label; too many, and noise gets mistaken for real structure),\n"
+		"and PART 6's own per-iteration RMSE isn't perfectly monotonic either -- it improves for the first few\n"
+		"outer iterations, then drifts slightly worse (a milder echo of PART 5's own semi-convergence risk,\n"
+		"here from voxels freezing to a slightly-off label estimate permanently rather than from an\n"
+		"unconstrained update overshooting). This demo doesn't correct that drift the way PART 5's box\n"
+		"constraint corrects semi-convergence there -- doing so honestly would need a stopping rule computed\n"
+		"from the data alone (e.g. the sinogram residual, not ground-truth RMSE, which no real reconstruction\n"
+		"has access to), which is a reasonable next step but out of scope here.\n";
 
 	return 0;
 }

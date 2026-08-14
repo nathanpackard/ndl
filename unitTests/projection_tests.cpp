@@ -208,6 +208,103 @@ TEST(Projection, ForwardAndBackProjectAreExactAdjoints) {
 	reportPassFail(passfail);
 }
 
+TEST(Projection, PrecomputedCentersMatchInternal) {
+	std::stringstream passfail;
+	std::cout << std::endl << "PROJECTION -- compute_camera_centers() OVERLOAD MATCHES THE INTERNAL ONE" << std::endl;
+
+	// forward_project()/back_project()'s plain geometry-only overload
+	// computes camera_center() internally, once per view, every call --
+	// wasted repeated work across an iterative reconstruction loop that
+	// reuses the same geometry. The `centers`-taking overload lets a
+	// caller precompute once instead; this only matters if it produces
+	// the SAME result as the plain overload, checked directly here for
+	// both parallel- and cone-beam geometry, not just assumed from the
+	// refactor being "just" a cache. forward_project() is checked for
+	// EXACT bit-for-bit equality (embarrassingly parallel, each view
+	// writes disjoint output, so there's no accumulation-order sensitivity
+	// to begin with); back_project() is checked to a relative-error
+	// tolerance instead, since it merges every view's own contribution
+	// into a shared accumulator across parallel chunks (this file's own
+	// top comment), and floating-point addition isn't associative -- two
+	// separate calls, even with byte-identical inputs, can land in a
+	// different thread-scheduling order and sum in a different sequence,
+	// which is expected (~1e-15 relative, confirmed directly) and not
+	// something precomputing centers changes.
+	std::mt19937 rng(11);
+	std::uniform_real_distribution<double> dist(-1.0, 1.0);
+
+	// Parallel-beam (2D): center.atInfinity == true.
+	{
+		const int W = 24, H = 24, numViews = 12, numDet = 31;
+		double volCenterX = (W - 1) / 2.0, volCenterY = (H - 1) / 2.0;
+		double detCenter = (numDet - 1) / 2.0;
+		auto geometry = buildParallelGeometry(numViews, volCenterX, volCenterY, detCenter);
+		auto centers = compute_camera_centers(geometry);
+
+		std::vector<double> xData(W * H);
+		Image<double, 2> x(xData.data(), { W, H });
+		for (auto& v : xData) v = dist(rng);
+
+		std::vector<double> pxInternalData(numViews * numDet), pxPrecomputedData(numViews * numDet);
+		Image<double, 2> pxInternal(pxInternalData.data(), { numViews, numDet });
+		Image<double, 2> pxPrecomputed(pxPrecomputedData.data(), { numViews, numDet });
+		forward_project(x, pxInternal, geometry, Linear{}, /*autoAA=*/false);
+		forward_project(x, pxPrecomputed, geometry, centers, Linear{}, /*autoAA=*/false);
+		bool fwdMatches = pxInternalData == pxPrecomputedData;
+		passfail << "parallel-beam: forward_project() with precomputed centers matches the internal-computation overload exactly: " << (fwdMatches ? "Pass" : "Fail") << std::endl;
+
+		std::vector<double> btInternalData(W * H), btPrecomputedData(W * H);
+		Image<double, 2> btInternal(btInternalData.data(), { W, H });
+		Image<double, 2> btPrecomputed(btPrecomputedData.data(), { W, H });
+		back_project(pxInternal, btInternal, geometry, Linear{}, /*autoAA=*/false);
+		back_project(pxInternal, btPrecomputed, geometry, centers, Linear{}, /*autoAA=*/false);
+		bool backMatches = true;
+		for (std::size_t i = 0; i < btInternalData.size(); i++)
+		{
+			double d = std::abs(btInternalData[i] - btPrecomputedData[i]);
+			double rel = d / (std::abs(btInternalData[i]) + std::abs(btPrecomputedData[i]) + 1e-300);
+			if (rel > 1e-9) backMatches = false;
+		}
+		passfail << "parallel-beam: back_project() with precomputed centers matches the internal-computation overload exactly: " << (backMatches ? "Pass" : "Fail") << std::endl;
+	}
+
+	// Cone-beam (3D): center.atInfinity == false (a genuine finite source).
+	{
+		const int W = 24, numViews = 10, detW = 12, detH = 12;
+		std::array<double, 3> volCenter{ (W - 1) / 2.0, (W - 1) / 2.0, (W - 1) / 2.0 };
+		auto geometry = buildConeBeamGeometry(numViews, volCenter, /*sourceDistance=*/60, /*detectorDistance=*/60, detW, detH, /*detPixelSpacing=*/1.5);
+		auto centers = compute_camera_centers(geometry);
+
+		std::vector<double> xData((std::size_t)W * W * W);
+		Image<double, 3> x(xData.data(), { W, W, W });
+		for (auto& v : xData) v = dist(rng);
+
+		std::vector<double> pxInternalData((std::size_t)numViews * detW * detH), pxPrecomputedData((std::size_t)numViews * detW * detH);
+		Image<double, 3> pxInternal(pxInternalData.data(), { numViews, detW, detH });
+		Image<double, 3> pxPrecomputed(pxPrecomputedData.data(), { numViews, detW, detH });
+		forward_project(x, pxInternal, geometry, Linear{}, /*autoAA=*/false);
+		forward_project(x, pxPrecomputed, geometry, centers, Linear{}, /*autoAA=*/false);
+		bool fwdMatches = pxInternalData == pxPrecomputedData;
+		passfail << "cone-beam: forward_project() with precomputed centers matches the internal-computation overload exactly: " << (fwdMatches ? "Pass" : "Fail") << std::endl;
+
+		std::vector<double> btInternalData((std::size_t)W * W * W), btPrecomputedData((std::size_t)W * W * W);
+		Image<double, 3> btInternal(btInternalData.data(), { W, W, W });
+		Image<double, 3> btPrecomputed(btPrecomputedData.data(), { W, W, W });
+		back_project(pxInternal, btInternal, geometry, Linear{}, /*autoAA=*/false);
+		back_project(pxInternal, btPrecomputed, geometry, centers, Linear{}, /*autoAA=*/false);
+		bool backMatches = true;
+		for (std::size_t i = 0; i < btInternalData.size(); i++)
+		{
+			double d = std::abs(btInternalData[i] - btPrecomputedData[i]);
+			double rel = d / (std::abs(btInternalData[i]) + std::abs(btPrecomputedData[i]) + 1e-300);
+			if (rel > 1e-9) backMatches = false;
+		}
+		passfail << "cone-beam: back_project() with precomputed centers matches the internal-computation overload exactly: " << (backMatches ? "Pass" : "Fail") << std::endl;
+	}
+
+	reportPassFail(passfail);
+}
+
 TEST(Projection, PointSourceForwardProjectionTracksGeometry) {
 	std::stringstream passfail;
 	std::cout << std::endl << "PROJECTION -- POINT-SOURCE SANITY CHECK" << std::endl;

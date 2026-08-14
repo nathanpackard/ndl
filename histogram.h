@@ -193,10 +193,10 @@ namespace ndl
 	// three need their own save-and-restore; precision() specifically is
 	// NOT part of what flags() captures, unlike what its name might
 	// suggest). Skipping any one of them would leave a caller's *next*
-	// `os << someOtherNumber` zero-padded, fixed-precision, or (this is
-	// the one that actually bit an earlier version of this function)
-	// rounded to 1 significant digit by surprise, since std::setprecision()
-	// persists on the stream just as durably as std::setfill()/std::fixed do.
+	// `os << someOtherNumber` zero-padded, fixed-precision, or -- easy to
+	// miss, since std::setprecision() persists on the stream just as
+	// durably as std::setfill()/std::fixed do -- rounded to 1 significant
+	// digit by surprise.
 	/// @ingroup histogram
 	template<int VDIM>
 	std::ostream& operator<<(std::ostream& os, const Histogram<VDIM>& h)

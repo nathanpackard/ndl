@@ -69,6 +69,34 @@ TEST(ImageMorphology, ImageMorphology) {
 	int crossOnes = 0;
 	for (auto it = dotOut.begin(); it != dotOut.end(); ++it) if (*it == 1) crossOnes++;
 	passfail << "dilate(cross) of a single point turns on only the 5 cross taps (plus sign, not a filled diamond): " << (crossOnes == 5 ? "Pass" : "Fail") << std::endl;
+
+	// morphological_open()/morphological_close() are just erode()+dilate()/
+	// dilate()+erode() collapsed into one call (morphology.h's own comment
+	// on them) -- checked here by comparing directly against the same two
+	// manual steps demo/morphology.cpp's own PART 6 spells out by hand.
+	Image<int, 2> manualStage(outData.data(), { 5, 5 });
+	ndl::erode(grid, manualStage, box);
+	std::vector<int> manualOpenData(25);
+	Image<int, 2> manualOpen(manualOpenData.data(), { 5, 5 });
+	ndl::dilate(manualStage, manualOpen, box);
+
+	std::vector<int> openIntermediateData(25), openData(25);
+	Image<int, 2> openIntermediate(openIntermediateData.data(), { 5, 5 });
+	Image<int, 2> opened(openData.data(), { 5, 5 });
+	ndl::morphological_open(grid, opened, openIntermediate, box);
+	passfail << "morphological_open() matches erode() then dilate() done by hand: " << (opened == manualOpen ? "Pass" : "Fail") << std::endl;
+
+	ndl::dilate(grid, manualStage, box);
+	std::vector<int> manualCloseData(25);
+	Image<int, 2> manualClose(manualCloseData.data(), { 5, 5 });
+	ndl::erode(manualStage, manualClose, box);
+
+	std::vector<int> closeIntermediateData(25), closeData(25);
+	Image<int, 2> closeIntermediate(closeIntermediateData.data(), { 5, 5 });
+	Image<int, 2> closed(closeData.data(), { 5, 5 });
+	ndl::morphological_close(grid, closed, closeIntermediate, box);
+	passfail << "morphological_close() matches dilate() then erode() done by hand: " << (closed == manualClose ? "Pass" : "Fail") << std::endl;
+
 	reportPassFail(passfail);
 }
 
