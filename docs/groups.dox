@@ -44,7 +44,13 @@
 /// everything else in the image toward black. windowed_heatmap() scales to a
 /// [lowPercentile,highPercentile] window instead (values outside it simply
 /// saturate), and flow_to_color()'s own optional magnitudeCap parameter lets a
-/// caller apply the same idea to a vector field's magnitude.
+/// caller apply the same idea to a vector field's magnitude. flow_to_arrows(),
+/// also here, is the other standard way to render a 2D flow field: a literal
+/// arrow per sampled grid point (direction = angle, magnitude = length) rather
+/// than flow_to_color()'s hue/brightness encoding -- composited directly onto
+/// a caller-supplied background (a photo, a flow_to_color() image, or a plain
+/// fill) rather than clearing it, and takes the same magnitudeCap convention
+/// for the same outlier-robustness reason.
 
 /// @defgroup histogram Histogram
 /// Histogram<VDIM>, histogram_equalize(), and histogram_image() (histogram.h) --

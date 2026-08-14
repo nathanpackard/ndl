@@ -90,12 +90,30 @@ hue = direction, brightness = magnitude (scaled to the field's own max). RubberW
 ```text
 Lucas-Kanade flow, color-coded: /home/nathanpackard/git/ndl/build/demo/motion/output/03_lk_flow_color.png
     extent = {3, 292, 194}   min=0  max=255  mean=42.58
+```
+
+### Step 6
+```cpp
+flow_to_arrows(lkFlow, lkFlowArrows, 10, red, magnitudeCap)   // magnitudeCap = 90th percentile magnitude
+```
+
+The other standard way to read a 2D vector field: a literal arrow per sampled point, angle = direction, length = magnitude, drawn right on top of the actual photo (visualize.h's flow_to_arrows() composites onto whatever's already in its destination, so this is frame0Color with arrows overlaid, not a separate blank canvas, and works directly on frame0Color's own 4-channel RGBA data -- flow_to_arrows() only ever touches channels 0-2). Complementary to 03_lk_flow_color.png, not a replacement -- one arrow per 10x10 block is far coarser than that image's true per-pixel color, but for a glance at "which way is everything moving, and roughly how much" an arrow is often more immediately readable than decoding a hue. An explicit magnitudeCap matters even more here than for 06_sift_flow_color.png below: this pan's real motion averages under 1px, so flow_to_arrows()'s own default auto-scaling (which sizes the longest arrow to the field's own true max magnitude) would let a handful of noisy/occlusion-boundary outliers shrink every typical arrow down to an invisible dot.
+
+```text
+90th-percentile flow magnitude (used as the arrow-length cap):   0.870759 px
+```
+
+[![motion_tutorial_04_lk_flow_arrows.png](images/motion_tutorial/motion_tutorial_04_lk_flow_arrows.png)](images/motion_tutorial/motion_tutorial_04_lk_flow_arrows.png)
+
+```text
+Lucas-Kanade flow, arrow overlay on frame0 (90th-percentile-capped): /home/nathanpackard/git/ndl/build/demo/motion/output/04_lk_flow_arrows.png
+    extent = {4, 292, 194}   min=0  max=255  mean=155.83
 mean flow magnitude (Lucas-Kanade):   0.665479 px
 ```
 
 ## PART 4: detect_keypoints() -- the scale-space part that genuinely generalizes to any DIM
 
-### Step 6
+### Step 7
 ```cpp
 detect_keypoints(blobImg)   // one Gaussian blob, sigma=3, at (40,60)
 ```
@@ -108,7 +126,7 @@ keypoint:   position=(40,60)  scale=2.262742  response=33.945218   (expected nea
 
 ## PART 5: sift_flow() on the same real photo pair
 
-### Step 7
+### Step 8
 ```cpp
 detect_keypoints()+compute_descriptors()+match_descriptors(), shown separately for the visualization below
 ```
@@ -127,14 +145,14 @@ frame0 with matched keypoints marked in red: /home/nathanpackard/git/ndl/build/d
     extent = {4, 292, 194}   min=0  max=255  mean=156.60
 ```
 
-### Step 8
+### Step 9
 ```cpp
 sift_flow(f0grey, f1grey, siftFlow)
 ```
 
 Propagates those sparse matched displacements to a dense per-pixel field via inverse- distance-weighted interpolation (feature_detection.h's own comment has the details) -- 06_sift_flow_color.png should be broadly similar in hue to 03_lk_flow_color.png (both are measuring the same real motion) but visibly smoother/blockier, since it's interpolated from 74 points rather than measured at every pixel independently.
 
-### Step 9
+### Step 10
 ```cpp
 flow_to_color(siftFlow, siftFlowColor, 255, magnitudeCap)   // magnitudeCap = 95th percentile magnitude
 ```
@@ -152,9 +170,23 @@ SIFT-inspired flow, color-coded (95th-percentile-capped): /home/nathanpackard/gi
     extent = {3, 292, 194}   min=0  max=255  mean=57.98
 ```
 
+### Step 11
+```cpp
+flow_to_arrows(siftFlow, siftFlowArrows, 10, green, magnitudeCap)   // same 95th-percentile cap as 06
+```
+
+The same arrow overlay 04_lk_flow_arrows.png used for lucas_kanade_flow(), here for sift_flow() -- green instead of red, purely to tell the two apart at a glance when comparing images side by side. Reuses siftMagCap (computed just above for 06_sift_flow_color.png) rather than a separate percentile pass -- same field, same outlier, same cap.
+
+[![motion_tutorial_07_sift_flow_arrows.png](images/motion_tutorial/motion_tutorial_07_sift_flow_arrows.png)](images/motion_tutorial/motion_tutorial_07_sift_flow_arrows.png)
+
+```text
+SIFT-inspired flow, arrow overlay on frame0 (95th-percentile-capped): /home/nathanpackard/git/ndl/build/demo/motion/output/07_sift_flow_arrows.png
+    extent = {4, 292, 194}   min=0  max=255  mean=156.38
+```
+
 ## PART 6: comparing the two flow fields, and the 2D complex representation
 
-### Step 10
+### Step 12
 ```cpp
 average per-pixel Euclidean distance between lkFlow and siftFlow
 ```
@@ -165,7 +197,25 @@ Both are estimating the same real underlying motion two completely independent w
 mean |lucas_kanade_flow - sift_flow|:   0.822362 px
 ```
 
-### Step 11
+### Step 13
+```cpp
+residual = lkFlow - siftFlow (a flow FIELD, not just the scalar mean above); flow_to_arrows(residual, ..., blue, magnitudeCap)
+```
+
+The scalar mean above says HOW MUCH the two methods disagree on average, but not WHERE or in what direction -- the residual is itself a valid {2,W,H} flow field (same shape lucas_kanade_flow()/sift_flow() produce, just built by subtraction instead of measurement), so the exact same flow_to_arrows() call visualizes it too. A long blue arrow marks a position where the two methods reach genuinely different conclusions -- worth checking whether that lines up with an occlusion boundary or a low-texture region (sift_flow()'s own interpolation is weakest there, see PART 5's own comment), rather than being uniformly small everywhere, which would instead suggest one consistent small bias between the two methods rather than a few localized disagreements.
+
+```text
+95th-percentile residual magnitude (used as the arrow-length cap):   1.375316 px
+```
+
+[![motion_tutorial_08_flow_residual_arrows.png](images/motion_tutorial/motion_tutorial_08_flow_residual_arrows.png)](images/motion_tutorial/motion_tutorial_08_flow_residual_arrows.png)
+
+```text
+lucas_kanade_flow - sift_flow residual, arrow overlay on frame0 (95th-percentile-capped): /home/nathanpackard/git/ndl/build/demo/motion/output/08_flow_residual_arrows.png
+    extent = {4, 292, 194}   min=0  max=255  mean=157.26
+```
+
+### Step 14
 ```cpp
 to_complex(lkFlow, lkFlowComplex); std::abs(...)/std::arg(...)
 ```
@@ -176,5 +226,5 @@ The general {2,W,H} representation converted to Image<std::complex<double>,2> --
 strongest-motion pixel:   (26,175)  magnitude=1.961985px  angle=-113.392009 degrees
 ```
 
-All outputs written to: /home/nathanpackard/git/ndl/build/demo/motion/output 01/02 are the two RubberWhale frames. 03 is Lucas-Kanade's dense flow, color-coded (hue= direction, brightness=magnitude). 05 marks every matched SIFT-inspired keypoint in red on frame0 -- compare its sparse dots against 06, the same color-coded visualization built by interpolating from just those points. 03 and 06 should broadly agree in hue (same real motion, two independent methods) while 06 looks visibly smoother/blockier -- exactly the dense-vs-sparse tradeoff this demo set out to show.
+All outputs written to: /home/nathanpackard/git/ndl/build/demo/motion/output 01/02 are the two RubberWhale frames. 03/04 are Lucas-Kanade's dense flow: 03 color-coded (hue= direction, brightness=magnitude), 04 the same field as red arrows over frame0 -- two views of identical data, pick whichever reads more clearly for a given vector. 05 marks every matched SIFT-inspired keypoint in red on frame0; 06/07 are sift_flow()'s own dense field, color-coded and arrow-overlaid the same two ways (green arrows this time). 03 and 06 (or 04 and 07) should broadly agree -- same real motion, two independent methods -- while 06/07 look visibly smoother/blockier than 03/04, exactly the dense-vs-sparse tradeoff this demo set out to show. 08 is the two methods' own DISAGREEMENT as a third flow field (lkFlow - siftFlow, blue arrows): mostly short/absent arrows would mean the two methods agree almost everywhere; a handful of longer ones concentrated in one region says exactly where and how much they diverge, which the single scalar mean printed in PART 6 above can't show on its own.
 

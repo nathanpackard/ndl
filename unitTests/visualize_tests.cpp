@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <sstream>
 #include <iostream>
+#include <array>
 
 #include <ndl/image.h>
 #include <ndl/visualize.h>
@@ -147,6 +148,84 @@ TEST(Visualize, FlowToColor) {
 	int cappedBrightness = cappedColor(1, 0, 0) + cappedColor(2, 0, 0);
 	passfail << "an outlier vector elsewhere in the field crushes auto-scaled brightness at (0,0) (" << autoBrightness << "): " << (autoBrightness < 20 ? "Pass" : "Fail") << std::endl;
 	passfail << "an explicit magnitudeCap keeps (0,0) at full brightness (" << cappedBrightness << ") despite the outlier: " << (cappedBrightness > 500 ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
+TEST(Visualize, FlowToArrows) {
+	std::stringstream passfail;
+	std::cout << std::endl << "FLOW_TO_ARROWS" << std::endl;
+
+	// 3x3 grid of sample points at spacing=12 on a 36x36 field: (6,6),
+	// (18,6), (30,6), (6,18), (18,18), (30,18), ... A normal-magnitude
+	// vector at (6,6) and a wild outlier at (18,18), the same "one bad
+	// vector shouldn't wreck everything else" setup FlowToColor uses above.
+	const int W = 36, H = 36, spacing = 12;
+	std::vector<double> flowData(2 * W * H, 0.0);
+	Image<double, 3> flow(flowData.data(), { 2, W, H });
+	flow(0, 6, 6) = 8.0;   // rightward, magnitude 8
+	flow(1, 6, 6) = 0.0;
+	flow(0, 18, 18) = 1000.0; // wild outlier, same direction
+	flow(1, 18, 18) = 0.0;
+
+	std::array<uint8_t, 3> white{ 255, 255, 255 };
+	std::array<uint8_t, 3> background{ 100, 100, 100 };
+
+	auto fillBackground = [&](OwnedImage<uint8_t, 3>& img) {
+		for (const auto& c : img.coordinates()) img.at(c) = background[c[0]];
+	};
+
+	// Explicit magnitudeCap = the normal vector's own magnitude: its arrow
+	// should reach full length (0.45*spacing rightward from (6,6), i.e. a
+	// pixel partway along y=6 between x=6 and x=11.4 should be white), and
+	// the outlier should SATURATE at that same length rather than
+	// overrunning into the next cell.
+	OwnedImage<uint8_t, 3> cappedImg({ 3, W, H });
+	fillBackground(cappedImg);
+	flow_to_arrows(flow, cappedImg, spacing, white, /*magnitudeCap=*/8.0);
+
+	bool cappedNormalDrawn = cappedImg(0, 9, 6) == 255;
+	passfail << "explicit magnitudeCap: normal vector's arrow reaches its full length: " << (cappedNormalDrawn ? "Pass" : "Fail") << std::endl;
+
+	bool cappedOutlierDrawn = cappedImg(0, 21, 18) == 255;
+	passfail << "explicit magnitudeCap: outlier's arrow reaches the same full length (saturated, not overrunning): " << (cappedOutlierDrawn ? "Pass" : "Fail") << std::endl;
+
+	bool cappedOutlierContained = cappedImg(0, 29, 18) == background[0];
+	passfail << "explicit magnitudeCap: outlier's arrow stays within its own cell, doesn't reach the neighboring grid point: " << (cappedOutlierContained ? "Pass" : "Fail") << std::endl;
+
+	// Auto (magnitudeCap=-1, the default): the outlier's own true magnitude
+	// (1000) becomes the scale, crushing the normal vector's arrow down to
+	// a fraction of a pixel -- the same "auto-scaling gets wrecked by one
+	// outlier" failure mode FlowToColor's own test checks, just for length
+	// instead of brightness.
+	OwnedImage<uint8_t, 3> autoImg({ 3, W, H });
+	fillBackground(autoImg);
+	flow_to_arrows(flow, autoImg, spacing, white);
+
+	bool autoNormalCrushed = autoImg(0, 9, 6) == background[0];
+	passfail << "auto-scaled: an outlier elsewhere crushes the normal vector's arrow down to invisible: " << (autoNormalCrushed ? "Pass" : "Fail") << std::endl;
+
+	bool autoOutlierStillFullLength = autoImg(0, 21, 18) == 255;
+	passfail << "auto-scaled: the outlier's own arrow still reaches full length (it set the scale): " << (autoOutlierStillFullLength ? "Pass" : "Fail") << std::endl;
+
+	// Draws onto dst's existing content rather than clearing it -- a corner
+	// pixel nowhere near any sample point or line should retain its
+	// pre-filled background value untouched.
+	bool backgroundPreserved = cappedImg(0, 0, 0) == background[0] && cappedImg(1, 0, 0) == background[1] && cappedImg(2, 0, 0) == background[2];
+	passfail << "flow_to_arrows() draws onto dst without clearing unrelated background pixels: " << (backgroundPreserved ? "Pass" : "Fail") << std::endl;
+
+	// dst is only required to have AT LEAST 3 channels, not exactly 3 --
+	// unlike flow_to_color()'s own freshly-allocated {3,W,H} dst, a real
+	// caller compositing onto a photo straight off image_io::load_owned()
+	// (RGBA, 4 channels) needs this to work directly rather than requiring
+	// an alpha-stripping copy first (demo/motion does exactly this).
+	OwnedImage<uint8_t, 3> rgbaImg({ 4, W, H });
+	for (const auto& c : rgbaImg.coordinates()) rgbaImg.at(c) = c[0] == 3 ? 42 : background[0]; // channel 3 = alpha, a distinct sentinel value
+	flow_to_arrows(flow, rgbaImg, spacing, white, /*magnitudeCap=*/8.0);
+	bool rgbaArrowDrawn = rgbaImg(0, 9, 6) == 255 && rgbaImg(1, 9, 6) == 255 && rgbaImg(2, 9, 6) == 255;
+	passfail << "a 4-channel (RGBA) dst: the arrow is drawn into channels 0-2: " << (rgbaArrowDrawn ? "Pass" : "Fail") << std::endl;
+	bool rgbaAlphaUntouched = rgbaImg(3, 9, 6) == 42 && rgbaImg(3, 0, 0) == 42;
+	passfail << "a 4-channel (RGBA) dst: channel 3 (alpha) is left untouched: " << (rgbaAlphaUntouched ? "Pass" : "Fail") << std::endl;
 
 	reportPassFail(passfail);
 }

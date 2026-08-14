@@ -258,6 +258,135 @@ namespace ndl
 				default: r = v; g = p; b = q; break;
 			}
 		}
+
+		// Draws a straight line from (x0,y0) to (x1,y1) into dst (extent
+		// {3,W,H}, the same channel-first layout flow_to_color() writes),
+		// one color value per channel. A simple float DDA walk (equal steps
+		// along whichever axis is longer, rounding each sample to its pixel)
+		// rather than integer Bresenham -- endpoints here are sub-pixel
+		// (arrow tips land at fractional flow-vector positions), so a float
+		// walk is the natural fit, and performance is a non-issue at this
+		// library's demo-visualization scale (a few hundred short arrows,
+		// not millions of line-draws). Composites ONTO dst's existing
+		// content rather than clearing it first -- flow_to_arrows() below
+		// relies on this to draw over a caller-supplied background.
+		template<class DstImageT>
+		void drawLine(DstImageT& dst, double x0, double y0, double x1, double y1, const std::array<typename DstImageT::value_type, 3>& color)
+		{
+			auto dstExtent = dst.extent();
+			int W = dstExtent[1], H = dstExtent[2];
+			double dx = x1 - x0, dy = y1 - y0;
+			int steps = std::max(1, (int)std::ceil(std::max(std::abs(dx), std::abs(dy))));
+			for (int i = 0; i <= steps; i++)
+			{
+				double t = (double)i / steps;
+				int x = (int)std::lround(x0 + dx * t);
+				int y = (int)std::lround(y0 + dy * t);
+				if (x < 0 || x >= W || y < 0 || y >= H) continue;
+				for (int c = 0; c < 3; c++) dst.at(std::array<int, 3>{c, x, y}) = color[c];
+			}
+		}
+
+		// A line plus a small V-shaped arrowhead at (x1,y1) -- two short
+		// segments angled back from the shaft at +/-28 degrees, capped to
+		// 40% of the shaft's own length so a very short vector doesn't grow
+		// a head bigger than its own shaft.
+		template<class DstImageT>
+		void drawArrow(DstImageT& dst, double x0, double y0, double x1, double y1, const std::array<typename DstImageT::value_type, 3>& color)
+		{
+			drawLine(dst, x0, y0, x1, y1, color);
+			double dx = x1 - x0, dy = y1 - y0;
+			double len = std::sqrt(dx * dx + dy * dy);
+			if (len < 1.0) return; // too short for a visible head to make sense
+			double angle = std::atan2(dy, dx);
+			double headLen = std::min(4.0, len * 0.4);
+			const double headAngle = 0.49; // ~28 degrees
+			drawLine(dst, x1, y1, x1 - headLen * std::cos(angle - headAngle), y1 - headLen * std::sin(angle - headAngle), color);
+			drawLine(dst, x1, y1, x1 - headLen * std::cos(angle + headAngle), y1 - headLen * std::sin(angle + headAngle), color);
+		}
+	}
+
+	// Visualizes a 2D flow field (same {2,W,H} input flow_to_color() takes)
+	// as a "quiver plot": one small arrow per sampled grid point, pointing
+	// in the vector's own direction with length proportional to its
+	// magnitude -- the other standard way (alongside flow_to_color()'s
+	// color-wheel encoding) to make a 2D vector field readable at a glance,
+	// and often the more intuitive one for sparse or large-scale motion
+	// since direction/magnitude are read directly rather than decoded from
+	// a hue legend. The tradeoff going the other way: arrows only ever
+	// sample one vector per `spacing` pixels (drawing one arrow per pixel
+	// would be illegible clutter), so this is lower spatial resolution than
+	// flow_to_color()'s true per-pixel image -- the two are complementary,
+	// not substitutes, which is why demo/motion saves both.
+	//
+	// Draws ONTO dst -- does NOT clear it first, so dst can already hold a
+	// photo, a flow_to_color() image, or a plain background fill; the
+	// caller decides what the arrows are overlaid on. dst must already
+	// exist, extent {3,W,H} matching flow's own spatial extent.
+	//
+	// magnitudeCap works exactly like flow_to_color()'s own parameter: -1
+	// (the default) auto-scales so the field's own true max magnitude
+	// produces an arrow reaching 45% of the way to the NEXT grid point
+	// (0.45*spacing, measured from the cell's own center) -- long enough to
+	// read clearly, short enough that even two neighboring max-length
+	// arrows pointing directly at each other still leave a small gap rather
+	// than overlapping tip-to-tail. An explicit cap (e.g. a 95th-percentile
+	// magnitude, the same outlier-robust pattern demo/motion uses for
+	// flow_to_color()) makes one wild vector saturate at that same length
+	// instead of shrinking every other arrow down to near-invisible.
+	/// Overlays a 2D flow field as a quiver-style arrow grid onto dst -- direction = arrow angle, magnitude = arrow length (scaled to the field's own max, or to `magnitudeCap` if given). Draws onto dst's existing content rather than clearing it.
+	/// @tparam SrcImageT Any minimal-interface image type with a leading component axis of size 2 (e.g. lucas_kanade_flow()'s own output).
+	/// @tparam DstImageT Any minimal-interface image type with a leading channel axis of size 3 (R,G,B), matching src's own spatial extent.
+	/// @param  flow         Source flow field, extent {2, W, H}.
+	/// @param  dst          Destination to draw onto; must already exist, its first axis >= 3 (only channels 0-2/R,G,B are touched, so a 4-channel RGBA image works too) and spatial extent matching flow's own, already filled with whatever background the arrows should appear over.
+	/// @param  spacing      Pixel stride between sampled arrows, both axes. Defaults to 12.
+	/// @param  color        Arrow color (R,G,B). Defaults to opaque white ({1,1,1}) -- pass e.g. {255,255,255} for an 8-bit image.
+	/// @param  magnitudeCap Magnitude mapped to a full-length (0.45*spacing) arrow; magnitudes above it saturate at that same length. Defaults to -1 (auto: the field's own true max magnitude).
+	/// @ingroup visualize
+	template<class SrcImageT, class DstImageT>
+	void flow_to_arrows(const SrcImageT& flow, DstImageT& dst, int spacing = 12, std::array<typename DstImageT::value_type, 3> color = { typename DstImageT::value_type(1), typename DstImageT::value_type(1), typename DstImageT::value_type(1) }, double magnitudeCap = -1.0)
+	{
+		static_assert(std::is_arithmetic_v<typename DstImageT::value_type>, "ndl::flow_to_arrows() requires an arithmetic destination value_type -- not valid for e.g. std::complex<T>");
+		assert(spacing > 0);
+
+		auto flowExtent = flow.extent();
+		assert(flowExtent[0] == 2);
+		auto dstExtent = dst.extent();
+		// >= 3, not == 3 (unlike flow_to_color()'s own dst, which it
+		// allocates fresh at exactly {3,W,H}): drawLine()/drawArrow() only
+		// ever write channels 0-2 (R,G,B), so a caller compositing onto an
+		// existing RGBA photo (a 4-channel dst, e.g. straight off
+		// image_io::load_owned()) works unmodified -- channel 3 (alpha)
+		// just passes through untouched, same as every other channel this
+		// function doesn't draw on.
+		assert(dstExtent[0] >= 3 && dstExtent[1] == flowExtent[1] && dstExtent[2] == flowExtent[2]);
+		int W = flowExtent[1], H = flowExtent[2];
+
+		auto dx = flow.slice(0, 0);
+		auto dy = flow.slice(0, 1);
+
+		double maxMag = magnitudeCap;
+		if (maxMag < 0.0)
+		{
+			maxMag = 0.0;
+			for (const auto& coord : dx.coordinates())
+			{
+				double vx = dx.at(coord), vy = dy.at(coord);
+				maxMag = std::max(maxMag, std::sqrt(vx * vx + vy * vy));
+			}
+		}
+		double lengthScale = maxMag > 0.0 ? (0.45 * spacing) / maxMag : 0.0;
+
+		for (int y = spacing / 2; y < H; y += spacing)
+		{
+			for (int x = spacing / 2; x < W; x += spacing)
+			{
+				double vx = dx.at(std::array<int, 2>{x, y}), vy = dy.at(std::array<int, 2>{x, y});
+				double mag = std::sqrt(vx * vx + vy * vy);
+				double scale = mag > maxMag && maxMag > 0.0 ? lengthScale * (maxMag / mag) : lengthScale;
+				detail::drawArrow(dst, (double)x, (double)y, x + vx * scale, y + vy * scale, color);
+			}
+		}
 	}
 
 	// Visualizes a 2D flow field (the {2,W,H} representation optical_flow.h's

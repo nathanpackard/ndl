@@ -155,6 +155,31 @@ int main()
     flow_to_color(lkFlow, lkFlowColor, (uint8_t)255);
     saveForInspection("Lucas-Kanade flow, color-coded", lkFlowColor, "03_lk_flow_color.png");
 
+    step("flow_to_arrows(lkFlow, lkFlowArrows, 10, red, magnitudeCap)   // magnitudeCap = 90th percentile magnitude",
+        "The other standard way to read a 2D vector field: a literal arrow per sampled point,\n"
+        "             angle = direction, length = magnitude, drawn right on top of the actual photo (visualize.h's\n"
+        "             flow_to_arrows() composites onto whatever's already in its destination, so this is\n"
+        "             frame0Color with arrows overlaid, not a separate blank canvas, and works directly on frame0Color's\n"
+        "             own 4-channel RGBA data -- flow_to_arrows() only ever touches channels 0-2). Complementary to\n"
+        "             03_lk_flow_color.png, not a replacement -- one arrow per 10x10 block is far coarser than\n"
+        "             that image's true per-pixel color, but for a glance at \"which way is everything moving,\n"
+        "             and roughly how much\" an arrow is often more immediately readable than decoding a hue.\n"
+        "             An explicit magnitudeCap matters even more here than for 06_sift_flow_color.png below: this\n"
+        "             pan's real motion averages under 1px, so flow_to_arrows()'s own default auto-scaling (which\n"
+        "             sizes the longest arrow to the field's own true max magnitude) would let a handful of\n"
+        "             noisy/occlusion-boundary outliers shrink every typical arrow down to an invisible dot.");
+    Image<double, 2> lkfxForCap = lkFlow.slice(0, 0), lkfyForCap = lkFlow.slice(0, 1);
+    std::vector<double> lkMagData((std::size_t)extent2D[0] * extent2D[1]);
+    Image<double, 2> lkMag(lkMagData.data(), extent2D);
+    for (const auto& c : lkfxForCap.coordinates())
+        lkMag.at(c) = std::sqrt(std::pow(lkfxForCap.at(c), 2) + std::pow(lkfyForCap.at(c), 2));
+    double lkMagCap = percentile(lkMag, 90.0);
+    showText("90th-percentile flow magnitude (used as the arrow-length cap)", std::to_string(lkMagCap) + " px");
+
+    OwnedImage<uint8_t, 3> lkFlowArrows(frame0Color.view({}));
+    flow_to_arrows(lkFlow, lkFlowArrows, 10, std::array<uint8_t, 3>{255, 0, 0}, lkMagCap);
+    saveForInspection("Lucas-Kanade flow, arrow overlay on frame0 (90th-percentile-capped)", lkFlowArrows, "04_lk_flow_arrows.png");
+
     Image<double, 2> lkfx = lkFlow.slice(0, 0), lkfy = lkFlow.slice(0, 1);
     double lkMagSum = 0;
     for (const auto& c : lkfx.coordinates()) lkMagSum += std::sqrt(lkfx.at(c) * lkfx.at(c) + lkfy.at(c) * lkfy.at(c));
@@ -244,6 +269,16 @@ int main()
     flow_to_color(siftFlow, siftFlowColor, (uint8_t)255, siftMagCap);
     saveForInspection("SIFT-inspired flow, color-coded (95th-percentile-capped)", siftFlowColor, "06_sift_flow_color.png");
 
+    step("flow_to_arrows(siftFlow, siftFlowArrows, 10, green, magnitudeCap)   // same 95th-percentile cap as 06",
+        "The same arrow overlay 04_lk_flow_arrows.png used for lucas_kanade_flow(), here for\n"
+        "             sift_flow() -- green instead of red, purely to tell the two apart at a glance when\n"
+        "             comparing images side by side. Reuses siftMagCap (computed just above for\n"
+        "             06_sift_flow_color.png) rather than a separate percentile pass -- same field, same\n"
+        "             outlier, same cap.");
+    OwnedImage<uint8_t, 3> siftFlowArrows(frame0Color.view({}));
+    flow_to_arrows(siftFlow, siftFlowArrows, 10, std::array<uint8_t, 3>{0, 255, 0}, siftMagCap);
+    saveForInspection("SIFT-inspired flow, arrow overlay on frame0 (95th-percentile-capped)", siftFlowArrows, "07_sift_flow_arrows.png");
+
     // ------------------------------------------------------------------
     // PART 6: comparing the two, and the 2D complex representation
     // ------------------------------------------------------------------
@@ -261,6 +296,35 @@ int main()
         diffSum += std::sqrt(dx * dx + dy * dy);
     }
     showText("mean |lucas_kanade_flow - sift_flow|", std::to_string(diffSum / lkfx.size()) + " px");
+
+    step("residual = lkFlow - siftFlow (a flow FIELD, not just the scalar mean above); flow_to_arrows(residual, ..., blue, magnitudeCap)",
+        "The scalar mean above says HOW MUCH the two methods disagree on average, but not WHERE or\n"
+        "             in what direction -- the residual is itself a valid {2,W,H} flow field (same shape\n"
+        "             lucas_kanade_flow()/sift_flow() produce, just built by subtraction instead of\n"
+        "             measurement), so the exact same flow_to_arrows() call visualizes it too. A long blue\n"
+        "             arrow marks a position where the two methods reach genuinely different conclusions --\n"
+        "             worth checking whether that lines up with an occlusion boundary or a low-texture region\n"
+        "             (sift_flow()'s own interpolation is weakest there, see PART 5's own comment), rather than\n"
+        "             being uniformly small everywhere, which would instead suggest one consistent small bias\n"
+        "             between the two methods rather than a few localized disagreements.");
+    std::vector<double> residualData(2 * (std::size_t)extent2D[0] * extent2D[1]);
+    Image<double, 3> residual(residualData.data(), { 2, extent2D[0], extent2D[1] });
+    Image<double, 2> residualfx = residual.slice(0, 0), residualfy = residual.slice(0, 1);
+    for (const auto& c : lkfx.coordinates())
+    {
+        residualfx.at(c) = lkfx.at(c) - siftfx.at(c);
+        residualfy.at(c) = lkfy.at(c) - siftfy.at(c);
+    }
+    std::vector<double> residualMagData((std::size_t)extent2D[0] * extent2D[1]);
+    Image<double, 2> residualMag(residualMagData.data(), extent2D);
+    for (const auto& c : residualfx.coordinates())
+        residualMag.at(c) = std::sqrt(std::pow(residualfx.at(c), 2) + std::pow(residualfy.at(c), 2));
+    double residualMagCap = percentile(residualMag, 95.0);
+    showText("95th-percentile residual magnitude (used as the arrow-length cap)", std::to_string(residualMagCap) + " px");
+
+    OwnedImage<uint8_t, 3> residualArrows(frame0Color.view({}));
+    flow_to_arrows(residual, residualArrows, 10, std::array<uint8_t, 3>{0, 100, 255}, residualMagCap);
+    saveForInspection("lucas_kanade_flow - sift_flow residual, arrow overlay on frame0 (95th-percentile-capped)", residualArrows, "08_flow_residual_arrows.png");
 
     step("to_complex(lkFlow, lkFlowComplex); std::abs(...)/std::arg(...)",
         "The general {2,W,H} representation converted to Image<std::complex<double>,2> -- once there,\n"
@@ -281,12 +345,17 @@ int main()
 
     std::cout <<
         "\n\nAll outputs written to: " << outputDir << "\n"
-        "01/02 are the two RubberWhale frames. 03 is Lucas-Kanade's dense flow, color-coded (hue=\n"
-        "direction, brightness=magnitude). 05 marks every matched SIFT-inspired keypoint in red on\n"
-        "frame0 -- compare its sparse dots against 06, the same color-coded visualization built by\n"
-        "interpolating from just those points. 03 and 06 should broadly agree in hue (same real\n"
-        "motion, two independent methods) while 06 looks visibly smoother/blockier -- exactly the\n"
-        "dense-vs-sparse tradeoff this demo set out to show.\n";
+        "01/02 are the two RubberWhale frames. 03/04 are Lucas-Kanade's dense flow: 03 color-coded (hue=\n"
+        "direction, brightness=magnitude), 04 the same field as red arrows over frame0 -- two views of\n"
+        "identical data, pick whichever reads more clearly for a given vector. 05 marks every matched\n"
+        "SIFT-inspired keypoint in red on frame0; 06/07 are sift_flow()'s own dense field, color-coded and\n"
+        "arrow-overlaid the same two ways (green arrows this time). 03 and 06 (or 04 and 07) should broadly\n"
+        "agree -- same real motion, two independent methods -- while 06/07 look visibly smoother/blockier\n"
+        "than 03/04, exactly the dense-vs-sparse tradeoff this demo set out to show. 08 is the two methods'\n"
+        "own DISAGREEMENT as a third flow field (lkFlow - siftFlow, blue arrows): mostly short/absent\n"
+        "arrows would mean the two methods agree almost everywhere; a handful of longer ones concentrated\n"
+        "in one region says exactly where and how much they diverge, which the single scalar mean printed\n"
+        "in PART 6 above can't show on its own.\n";
 
     return 0;
 }
