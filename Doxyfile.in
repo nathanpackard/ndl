@@ -1,13 +1,24 @@
 # Doxygen configuration for ndl -- a minimal, hand-maintained Doxyfile
 # (only the settings that matter are listed; everything else is Doxygen's
 # own default). Processed by CMake's configure_file() into
-# ${CMAKE_BINARY_DIR}/Doxyfile so OUTPUT_DIRECTORY resolves to an absolute,
-# build-directory path regardless of where `doxygen`/`cmake --build . --target docs`
-# is actually invoked from -- see the docs target in CMakeLists.txt.
+# ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile so OUTPUT_DIRECTORY resolves to an
+# absolute, build-directory path regardless of where `doxygen`/
+# `cmake --build . --target docs` is actually invoked from -- see the docs
+# target in CMakeLists.txt.
+#
+# Every path below uses @CMAKE_CURRENT_SOURCE_DIR@/@CMAKE_CURRENT_BINARY_DIR@,
+# not @CMAKE_SOURCE_DIR@/@CMAKE_BINARY_DIR@: this file is ndl's own, and
+# every path in it should resolve relative to ndl's own location regardless
+# of whether ndl is configured standalone (where CMAKE_SOURCE_DIR and
+# CMAKE_CURRENT_SOURCE_DIR are the same directory, so the distinction was
+# invisible) or pulled in via another project's add_subdirectory(ndl) (where
+# they aren't, and CMAKE_SOURCE_DIR points at that *other* project's root
+# instead -- silently pulling in the wrong README as the main page, and
+# writing/reading the generated tutorial pages at the wrong path entirely).
 
 PROJECT_NAME           = "ndl"
 PROJECT_BRIEF          = "A header-only, multi-dimensional image processing library for C++"
-OUTPUT_DIRECTORY       = @CMAKE_BINARY_DIR@/docs
+OUTPUT_DIRECTORY       = @CMAKE_CURRENT_BINARY_DIR@/docs
 
 # ndl's own headers -- INPUT deliberately excludes imageIO/ (vendored/adapted
 # third-party codec implementations: png, jpeg, bitmap, dicom, gif, avi,
@@ -19,33 +30,42 @@ OUTPUT_DIRECTORY       = @CMAKE_BINARY_DIR@/docs
 # fresh from each demo's real output on every docs build -- it doesn't
 # exist until that target has run at least once, which is fine: INPUT may
 # name a not-yet-existing path, Doxygen just finds nothing there until it does.
-INPUT                   = @CMAKE_SOURCE_DIR@/README.md \
-                           @CMAKE_SOURCE_DIR@/image.h \
-                           @CMAKE_SOURCE_DIR@/image \
-                           @CMAKE_SOURCE_DIR@/convolution.h \
-                           @CMAKE_SOURCE_DIR@/morphology.h \
-                           @CMAKE_SOURCE_DIR@/histogram.h \
-                           @CMAKE_SOURCE_DIR@/distance_transform.h \
-                           @CMAKE_SOURCE_DIR@/summed_area_table.h \
-                           @CMAKE_SOURCE_DIR@/visualize.h \
-                           @CMAKE_SOURCE_DIR@/optical_flow.h \
-                           @CMAKE_SOURCE_DIR@/feature_detection.h \
-                           @CMAKE_SOURCE_DIR@/fft.h \
-                           @CMAKE_SOURCE_DIR@/matrix.h \
-                           @CMAKE_SOURCE_DIR@/matrix \
-                           @CMAKE_SOURCE_DIR@/interpolation.h \
-                           @CMAKE_SOURCE_DIR@/sampling.h \
-                           @CMAKE_SOURCE_DIR@/projection.h \
-                           @CMAKE_SOURCE_DIR@/imageIO.h \
-                           @CMAKE_SOURCE_DIR@/utility.h \
-                           @CMAKE_SOURCE_DIR@/mathHelpers.h \
-                           @CMAKE_SOURCE_DIR@/docs/groups.dox \
-                           @CMAKE_SOURCE_DIR@/docs/tutorials.md \
-                           @CMAKE_BINARY_DIR@/docs/generated
-USE_MDFILE_AS_MAINPAGE  = @CMAKE_SOURCE_DIR@/README.md
+INPUT                   = @CMAKE_CURRENT_SOURCE_DIR@/README.md \
+                           @CMAKE_CURRENT_SOURCE_DIR@/image.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/image \
+                           @CMAKE_CURRENT_SOURCE_DIR@/convolution.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/morphology.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/histogram.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/distance_transform.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/summed_area_table.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/visualize.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/optical_flow.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/feature_detection.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/fft.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/matrix.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/matrix \
+                           @CMAKE_CURRENT_SOURCE_DIR@/interpolation.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/sampling.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/projection.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/imageIO.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/utility.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/mathHelpers.h \
+                           @CMAKE_CURRENT_SOURCE_DIR@/docs/groups.dox \
+                           @CMAKE_CURRENT_SOURCE_DIR@/docs/tutorials.md \
+                           @CMAKE_CURRENT_BINARY_DIR@/docs/generated
+USE_MDFILE_AS_MAINPAGE  = @CMAKE_CURRENT_SOURCE_DIR@/README.md
 RECURSIVE                = YES
-IMAGE_PATH               = @CMAKE_BINARY_DIR@/docs/generated/images
-HTML_EXTRA_STYLESHEET   = @CMAKE_SOURCE_DIR@/docs/tutorial.css
+IMAGE_PATH               = @CMAKE_CURRENT_BINARY_DIR@/docs/generated/images
+HTML_EXTRA_STYLESHEET   = @CMAKE_CURRENT_SOURCE_DIR@/docs/tutorial.css
+# ndlviewer.js (the standalone WebGL N-D volume viewer, see web/ndlviewer.js
+# and viewer.h) is copied verbatim to the generated site's output root by
+# Doxygen -- unlike an embedded `![]()` image path, a plain
+# `<script src="ndlviewer.js">` in a generated tutorial page isn't run
+# through Doxygen's own markdown image-path rewriting (see
+# docs/generate_tutorial.py's own top comment for why that rewriting exists
+# and what it does and doesn't touch), so no special path handling is
+# needed here beyond just listing the file.
+HTML_EXTRA_FILES        = @CMAKE_CURRENT_SOURCE_DIR@/web/ndlviewer.js
 
 # The existing comments throughout ndl's headers are plain "//" prose
 # (extensive "why, not just what" explanations), not Doxygen-tagged
@@ -75,7 +95,7 @@ REFERENCES_RELATION     = YES
 GENERATE_TREEVIEW       = YES
 SORT_MEMBER_DOCS        = NO
 WARN_IF_UNDOCUMENTED    = YES
-WARN_LOGFILE            = @CMAKE_BINARY_DIR@/docs/doxygen_warnings.log
+WARN_LOGFILE            = @CMAKE_CURRENT_BINARY_DIR@/docs/doxygen_warnings.log
 
 # Class/collaboration/include graphs via graphviz -- e.g. OwnedImage's
 # inheritance from Image, or fftn()'s use of Image, are much clearer as a

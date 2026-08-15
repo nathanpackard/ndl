@@ -1,7 +1,9 @@
 #pragma once
 #include <ndl/image.h>
 #include <ndl/imageIO.h>
+#include <ndl/viewer.h>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -69,6 +71,24 @@ void saveForInspection(const std::string& label, const ndl::Image<T, DIM>& img, 
 	std::cout << "        extent = {";
 	for (int i = 0; i < DIM; i++) std::cout << (i ? ", " : "") << img.extent()[i];
 	std::cout << "}   min=" << (int)img.min() << "  max=" << (int)img.max() << "  mean=" << img.mean() << "\n";
+}
+
+// Writes img in ndlviewer.js's binary format (ndl::write_web_volume(), see
+// viewer.h) under the demo's output folder and prints where it went, in
+// the same "saving output file: <path>" shape ndl::image_io::save() itself
+// prints (imageIO.h) -- docs/generate_tutorial.py's EMBED_RE recognizes
+// this exact marker and turns it into an embedded <canvas>+<script> block
+// in the generated tutorial page, the same way SAVING_RE turns an
+// image_io::save() trace into an embedded `![]()`.
+template<class T, int DIM>
+void embedNDViewer(const std::string& label, const ndl::Image<T, DIM>& img, const std::string& filename)
+{
+	std::string path = outputDir + "/" + filename;
+	std::ofstream out(path, std::ios::binary);
+	ndl::write_web_volume(img, out);
+	out.close();
+	std::cout << "    " << label << ": " << path << "\n";
+	std::cout << "embedding viewer: " << path << std::endl;
 }
 
 // How many positions two same-shaped minimal-interface images disagree at,

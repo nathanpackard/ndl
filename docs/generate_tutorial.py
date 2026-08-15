@@ -24,6 +24,7 @@ parser) -- it only needs to understand the one structured convention every
 demo's step()/showArray()/showText()/saveForInspection() helpers already
 produce, not arbitrary text.
 """
+import base64
 import re
 import shutil
 import sys
@@ -39,6 +40,7 @@ EXPLAIN_RE = re.compile(r'^\s{4}explain:\s*(.*)$')
 SECTION_RE = re.compile(r'^===\s*(.*?)\s*===$')
 SAVING_RE = re.compile(r'^saving output file:\s*(\S+)$')
 LOADING_RE = re.compile(r'^loading file:\s*(\S+)$')
+EMBED_RE = re.compile(r'^embedding viewer:\s*(\S+)$')
 
 
 def indent_of(line):
@@ -57,6 +59,8 @@ def render_markdown(lines, page_label, image_dir_rel, link_images=True):
     out = []
     data_buf = []
     seen_structure = [False]  # mutable cell, closed over by flush_data
+    embed_count = [0]  # mutable cell, closed over below -- gives each NDLViewer.create() call on the page a unique container id
+    ndlviewer_script_emitted = [False]  # mutable cell -- only the first embed on a page needs the <script src="ndlviewer.js"> tag
 
     def flush_data(final_flush=False):
         if not data_buf:
@@ -189,6 +193,85 @@ def render_markdown(lines, page_label, image_dir_rel, link_images=True):
             # only means GitHub shows images at native size, not broken.
             image_md = f'![{dst_name}]({img_path})'
             out.append(f'[{image_md}]({img_path})' if link_images else image_md)
+            out.append('')
+            i += 1
+            continue
+
+        m = EMBED_RE.match(line)
+        if m:
+            flush_data()
+            bin_path = Path(m.group(1))
+            embed_count[0] += 1
+            container_id = f'ndlviewer-{page_label}-{embed_count[0]}'
+            # Base64-inlined directly into the page (not a separately
+            # fetched file, unlike the PNGs above): a fetch() would hit
+            # CORS/file:// restrictions Doxygen's own image-copying
+            # mechanism doesn't have to worry about, and this keeps the
+            # generated page fully self-contained -- open the .html file
+            # anywhere and the viewer still works, no server needed.
+            #
+            # ndlviewer.js itself is NOT inlined the same way -- it's
+            # copied verbatim via Doxygen's HTML_EXTRA_FILES (see
+            # Doxyfile.in) and referenced with a plain <script src=...>,
+            # once per page. Both this <script> block and that one contain
+            # raw HTML/JS, which GitHub's own markdown renderer sanitizes
+            # out of docs/tutorials/*.md (script tags don't survive
+            # GitHub's rendering pipeline) -- the interactive viewer only
+            # actually runs on the Doxygen-hosted site
+            # (https://nathanpackard.github.io/ndl/), the same page
+            # viewed on GitHub directly just won't show it, similar in
+            # spirit to how link_images already differs between the two
+            # renderers above.
+            #
+            # The base64 string itself is wrapped into fixed-width chunks
+            # (classic MIME/PEM-style line-broken base64) and emitted as a
+            # JS array joined at runtime, rather than one single string
+            # literal -- Doxygen's own comment-conversion lexer
+            # (src/commentcnv.l) has a fixed maximum length for a single
+            # unbroken token and aborts entirely ("input buffer overflow,
+            # can't enlarge buffer because scanner uses REJECT") on a
+            # multi-hundred-KB line with no whitespace at all, which an
+            # unwrapped base64 blob always is.
+            encoded = base64.b64encode(bin_path.read_bytes()).decode('ascii')
+            chunk_size = 76
+            chunks = [encoded[k:k + chunk_size] for k in range(0, len(encoded), chunk_size)]
+            # \htmlonly/\endhtmlonly (a Doxygen special command, not a
+            # Markdown or HTML construct) is required here, not just raw
+            # HTML in the markdown: confirmed empirically that Doxygen's
+            # markdown parser passes plain block tags like <div> through
+            # untouched, but does NOT implement CommonMark's raw-HTML-block
+            # exception for <script>/<pre>/<style> -- unwrapped, a <script>
+            # block gets swallowed into a paragraph and every `<`/`>` in it
+            # HTML-escaped into literal `&lt;`/`&gt;` text instead of
+            # running. \htmlonly is Doxygen's own documented escape hatch
+            # for exactly this (verbatim HTML output, skipped entirely for
+            # non-HTML output formats).
+            out.append(r'\htmlonly')
+            out.append(f'<div id="{container_id}"></div>')
+            if not ndlviewer_script_emitted[0]:
+                out.append('<script src="ndlviewer.js"></script>')
+                ndlviewer_script_emitted[0] = True
+            out.append('<script>')
+            out.append('(function() {')
+            # No line in this whole raw-HTML block is indented by 4+ spaces
+            # (not even for readability): Markdown's "indented code block"
+            # rule treats 4+ leading spaces as literal code regardless of
+            # context, and even inside \htmlonly, generate_tutorial.py's
+            # own dedent()/data_buf machinery elsewhere in this file relies
+            # on consistent indentation conventions -- kept flush-left
+            # throughout this block to not depend on interactions between
+            # the two.
+            out.append('var b64 = [')
+            for chunk in chunks:
+                out.append(f'"{chunk}",')
+            out.append('].join("");')
+            out.append('var raw = atob(b64);')
+            out.append('var bytes = new Uint8Array(raw.length);')
+            out.append('for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);')
+            out.append(f'NDLViewer.create(document.getElementById("{container_id}"), bytes.buffer);')
+            out.append('})();')
+            out.append('</script>')
+            out.append(r'\endhtmlonly')
             out.append('')
             i += 1
             continue
