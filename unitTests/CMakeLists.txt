@@ -61,6 +61,8 @@ ndl_add_test_executable(feature_detection_tests feature_detection_tests.cpp)
 ndl_add_test_executable(interpolation_tests     interpolation_tests.cpp)
 ndl_add_test_executable(sampling_tests          sampling_tests.cpp)
 ndl_add_test_executable(projection_tests        projection_tests.cpp)
+ndl_add_test_executable(viewer_tests            viewer_tests.cpp)
+ndl_add_test_executable(fit_tests               fit_tests.cpp)
 
 # Negative-compilation regression tests: confirm the static_assert-based
 # type restrictions in image/core.h, morphology.h, and image/owned.h
@@ -87,3 +89,4 @@ endfunction()
 ndl_add_negative_compile_test(owned_image_bool)
 ndl_add_negative_compile_test(complex_ordering)
 ndl_add_negative_compile_test(double_bitwise)
+ndl_add_negative_compile_test(pairwise_slice_same_axis)

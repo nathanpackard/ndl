@@ -353,4 +353,78 @@ namespace ndl
 		double thresholdValue = lo + range * static_cast<double>(bestBucket + 1) / static_cast<double>(bins);
 		return static_cast<T>(thresholdValue);
 	}
+
+	// Iterative two-means threshold: an alternative to otsu_threshold()
+	// above, minimizing within-class variance by directly alternating
+	// between "classify by the current threshold" and "recenter the
+	// threshold between the two classes' means" until the threshold stops
+	// moving, rather than otsu_threshold()'s one-pass scan over every
+	// candidate bucket. The two converge to the same split on a clean
+	// bimodal histogram; two_means_threshold() can behave differently (and,
+	// depending on the starting point, isn't guaranteed to find the
+	// *global* optimum the way otsu_threshold()'s exhaustive scan is) on a
+	// noisier or more overlapping one -- provided as a real alternative,
+	// not a redundant reimplementation, since which one better matches a
+	// given histogram's shape is a property of the data, not something one
+	// algorithm always wins on.
+	//
+	// Starts from the midpoint of src's own [min,max] range (auto-detected
+	// the same way otsu_threshold() and Histogram<1>'s own auto-ranged
+	// constructor already do), and stops when the threshold moves by less
+	// than convergeTolerance or maxIterations is reached (returning
+	// whatever the threshold had converged to at that point either way --
+	// callers that need to distinguish "converged" from "hit the
+	// iteration cap" can pass a small maxIterations and check separately;
+	// this mirrors otsu_threshold()'s own "always returns a usable value"
+	// contract rather than adding an out-parameter/optional return every
+	// caller would have to handle).
+	/// Iterative two-means threshold: alternates classifying by the current threshold and recentering it between the two classes' means, until convergence.
+	/// @tparam ImageT Any minimal-interface image type (Image<T,DIM>, PackedBitImage<DIM>, ...); its value_type must be arithmetic (needs ordering and a double conversion).
+	/// @param  src               Source image.
+	/// @param  bins              Histogram resolution src's own [min,max] range is divided into; also bounds how finely the threshold can be resolved.
+	/// @param  maxIterations     Stops after this many refinement steps even if not yet converged.
+	/// @param  convergeTolerance Stops once the threshold moves less than this between iterations.
+	/// @return The threshold value, in ImageT::value_type's own range -- pass directly to threshold().
+	/// @ingroup morphology_filtering
+	template<class ImageT>
+	typename ImageT::value_type two_means_threshold(const ImageT& src, int bins = 256, int maxIterations = 100, double convergeTolerance = 1e-6)
+	{
+		using T = typename ImageT::value_type;
+		static_assert(std::is_arithmetic_v<T>, "ndl::two_means_threshold() requires an arithmetic value_type (needs a total order and a double conversion) -- not valid for e.g. std::complex<T>");
+		assert(bins > 1);
+
+		Histogram<1> hist(src, bins);
+		double lo = hist.lo()[0];
+		double hi = hist.hi()[0];
+		double range = hi - lo;
+		if (range <= 0.0) return static_cast<T>(lo); // degenerate: every sample is the same value
+
+		// Bin b's representative value is its center, not its edge --
+		// consistent with treating each bin as "the samples near this
+		// value" for the class-mean computation below.
+		auto binValue = [&](int b) { return lo + range * (static_cast<double>(b) + 0.5) / static_cast<double>(bins); };
+
+		double threshold = (lo + hi) / 2.0;
+		for (int iter = 0; iter < maxIterations; iter++)
+		{
+			double sumLow = 0, sumHigh = 0;
+			std::size_t countLow = 0, countHigh = 0;
+			for (int b = 0; b < bins; b++)
+			{
+				double v = binValue(b);
+				std::size_t c = hist.count(b);
+				if (v <= threshold) { sumLow += v * static_cast<double>(c); countLow += c; }
+				else { sumHigh += v * static_cast<double>(c); countHigh += c; }
+			}
+			// One class emptied out (threshold moved past every sample) --
+			// nothing left to recenter between, so stop where it is.
+			if (countLow == 0 || countHigh == 0) break;
+
+			double newThreshold = (sumLow / static_cast<double>(countLow) + sumHigh / static_cast<double>(countHigh)) / 2.0;
+			bool converged = std::abs(newThreshold - threshold) < convergeTolerance;
+			threshold = newThreshold;
+			if (converged) break;
+		}
+		return static_cast<T>(threshold);
+	}
 }

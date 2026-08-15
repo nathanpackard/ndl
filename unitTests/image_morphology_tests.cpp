@@ -170,6 +170,46 @@ TEST(ImageMorphology, OtsuThreshold) {
 	reportPassFail(passfail);
 }
 
+TEST(ImageMorphology, TwoMeansThreshold) {
+	std::stringstream passfail;
+
+	std::cout << std::endl << "TWO-MEANS THRESHOLD" << std::endl;
+
+	// Same clean bimodal split OtsuThreshold's first case uses -- both
+	// algorithms should agree on a clean, well-separated split.
+	std::vector<uint8_t> data(2000);
+	for (int i = 0; i < 1000; i++) data[i] = 50;
+	for (int i = 1000; i < 2000; i++) data[i] = 200;
+	Image<uint8_t, 1> img(data.data(), { 2000 });
+
+	uint8_t t = ndl::two_means_threshold(img);
+	passfail << "two_means_threshold() on a clean bimodal split lands strictly between the two clusters: " << (t >= 50 && t < 200 ? "Pass" : "Fail") << std::endl;
+
+	std::vector<uint8_t> outData(2000);
+	Image<uint8_t, 1> out(outData.data(), { 2000 });
+	ndl::threshold(img, out, t);
+	bool separated = true;
+	for (int i = 0; i < 1000; i++) if (out(i) != 0) separated = false;
+	for (int i = 1000; i < 2000; i++) if (out(i) != 1) separated = false;
+	passfail << "threshold() with the two-means cutoff exactly reproduces the two original clusters: " << (separated ? "Pass" : "Fail") << std::endl;
+
+	// A uniform (single-value) image is degenerate the same way it is for
+	// Otsu -- must not crash or loop, and the only sane answer is that
+	// single value.
+	std::vector<uint8_t> uniformData(100, 128);
+	Image<uint8_t, 1> uniform(uniformData.data(), { 100 });
+	uint8_t tUniform = ndl::two_means_threshold(uniform);
+	passfail << "two_means_threshold() on a uniform image returns that single value rather than looping/crashing: " << (tUniform == 128 ? "Pass" : "Fail") << std::endl;
+
+	// A tiny maxIterations still returns a usable (if less-converged)
+	// value rather than an error/garbage -- the "always returns something
+	// sane" contract documented on the function itself.
+	uint8_t tCapped = ndl::two_means_threshold(img, 256, 1);
+	passfail << "two_means_threshold() with maxIterations=1 still returns a value between the clusters: " << (tCapped >= 50 && tCapped < 200 ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
 TEST(ImageMorphology, KernelShapes) {
 	std::stringstream passfail;
 
