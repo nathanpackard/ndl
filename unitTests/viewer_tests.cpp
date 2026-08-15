@@ -89,6 +89,45 @@ TEST(Viewer, PairwiseSliceAxisOrderIsNormalized) {
 	reportPassFail(passfail);
 }
 
+TEST(Viewer, PairwiseSlice4DAllPairsMatchDirectIndexing) {
+	std::stringstream passfail;
+	// A genuinely 4D case (3 space + 1 "time"-like axis, matching the
+	// nd_viewer demo's own shape) exercising every one of the
+	// for_each_axis_pair<4>-visited C(4,2)=6 pairs generically -- not
+	// just the one pair PairwiseSlice5DTrueNDCase happens to pick -- via
+	// the same std::integral_constant callback for_each_axis_pair()
+	// itself uses to unroll at compile time, so AxisA/AxisB stay real
+	// template arguments to pairwise_slice() here too.
+	int extent[4] = { 3, 4, 5, 6 };
+	std::size_t total = 1; for (int e : extent) total *= e;
+	std::vector<int> storage(total);
+	Image<int, 4> img(storage.data(), { extent[0], extent[1], extent[2], extent[3] });
+	for (const auto& c : img.coordinates()) img.at(c) = c[0] + 10 * c[1] + 100 * c[2] + 1000 * c[3];
+
+	std::array<int, 4> cursor = { 1, 2, 3, 4 };
+	int pairsChecked = 0;
+	bool allOk = true;
+	for_each_axis_pair<4>([&](auto i, auto j) {
+		constexpr int AxisA = decltype(i)::value;
+		constexpr int AxisB = decltype(j)::value;
+		auto view = pairwise_slice<AxisA, AxisB>(img, cursor);
+		bool ok = view.extent()[0] == extent[AxisA] && view.extent()[1] == extent[AxisB];
+		for (const auto& c : view.coordinates())
+		{
+			std::array<int, 4> full = cursor;
+			full[AxisA] = c[0];
+			full[AxisB] = c[1];
+			ok = ok && view.at(c) == img.at(full);
+		}
+		allOk = allOk && ok;
+		pairsChecked++;
+	});
+	passfail << "all C(4,2)=6 axis pairs visited: " << (pairsChecked == 6 ? "Pass" : "Fail") << std::endl;
+	passfail << "every pairwise_slice<AxisA,AxisB> on a 4D image matches direct indexing: " << (allOk ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
 TEST(Viewer, PairwiseSlice5DTrueNDCase) {
 	std::stringstream passfail;
 	// element = i0 + 10*i1 + 100*i2 + 1000*i3 + 10000*i4, DIM=5 -- not a

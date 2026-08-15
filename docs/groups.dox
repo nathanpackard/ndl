@@ -168,6 +168,15 @@
 /// near-singular input; ray_for_pixel() and Projection's own per-sample
 /// anti-aliasing footprint (below) are its two callers.
 ///
+/// @defgroup fit Curve Fitting
+/// polynomial_fit<Degree>() (fit.h) -- ordinary least-squares fit of a
+/// degree-Degree polynomial over a sequence of (x,y) sample pairs, solved
+/// by building the Vandermonde normal-equation system as a
+/// Matrix<double,Degree+1> (in power-sum form) and reusing this group's own
+/// SVD-based inverse(), rather than a hand-rolled solver per degree.
+/// linear_fit()/parabolic_fit() are small, named-field (slope/intercept,
+/// a/b/c) convenience wrappers over polynomial_fit<1>()/polynomial_fit<2>().
+///
 /// @defgroup interpolation Interpolation
 /// Nearest/Linear/Quadratic/Cubic interpolator tags and sample()
 /// (interpolation.h) -- reads a minimal-interface image at a fractional,
@@ -253,3 +262,12 @@
 /// @defgroup utilities Utilities
 /// Small standalone helpers (Timer, code_timer(), change_endian()) not specific
 /// to image processing.
+
+/// @defgroup viewer N-D Viewer
+/// pairwise_slice<AxisA,AxisB>()/for_each_axis_pair<DIM>() (viewer.h) -- zero-copy
+/// 2D views of every pairwise-axis plane through an Image<T,DIM>, generalizing the
+/// classic axial/coronal/sagittal synchronized triple view to any DIM and axis pair.
+/// normalize_to_u8()/write_web_volume() export a volume in the small binary format
+/// web/ndlviewer.js (a standalone, dependency-free WebGL viewer embedded directly
+/// into the generated tutorial pages -- see docs/generate_tutorial.py) reads to
+/// render and interactively cursor-sync every pairwise view in a browser.

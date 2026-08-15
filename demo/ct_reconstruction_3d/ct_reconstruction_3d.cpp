@@ -4,6 +4,7 @@
 #include <ndl/projection.h>
 #include <ndl/morphology.h>
 #include <ndl/visualize.h>
+#include <ndl/viewer.h>
 #include <iostream>
 #include <sstream>
 #include <filesystem>
@@ -539,6 +540,25 @@ int main()
 	saveSlice("DART reconstruction, axial slice (z=64)", dartVol, 2, W / 2, "09_dart_axial.png");
 	saveSlice("DART reconstruction, coronal slice (y=64)", dartVol, 1, W / 2, "10_dart_coronal.png");
 	saveSlice("DART reconstruction, sagittal slice (x=64)", dartVol, 0, W / 2, "11_dart_sagittal.png");
+
+	std::cout << "\n\n=== Embedding the interactive viewer ===\n";
+
+	step("embedNDViewer(\"DART reconstruction\", dartU8, \"dart_reconstruction.ndlv\")",
+		"09-11 above are 3 fixed slices through the DART reconstruction, picked by hand. viewer.h's\n"
+		"             pairwise_slice<AxisA,AxisB>() generalizes that to every pairwise-axis plane through the\n"
+		"             volume at once, synchronized through one shared cursor -- for a genuinely 3D Image this\n"
+		"             is exactly the axial/coronal/sagittal triple, but live and click-driven instead of 3\n"
+		"             pre-chosen indices. normalize_to_u8() first windows the volume to its own [5th,95th]\n"
+		"             density percentile (percentile_range(), the same windowing heatmap() above uses) --\n"
+		"             write_web_volume() can embed a raw double volume directly, but at 64^3 that's an 8x\n"
+		"             larger base64 payload in the generated page for no visible benefit, since the viewer\n"
+		"             only ever displays an 8-bit-windowed image anyway.");
+	OwnedImage<uint8_t, 3> dartU8(dartVol.extent());
+	{
+		auto [lo, hi] = percentile_range(dartVol, 5.0, 95.0);
+		normalize_to_u8(dartVol, dartU8, lo, hi);
+	}
+	embedNDViewer("DART reconstruction (64^3)", dartU8, "dart_reconstruction.ndlv");
 
 	std::cout <<
 		"\n\nAll outputs written to: " << outputDir << "\n"
