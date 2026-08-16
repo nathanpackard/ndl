@@ -35,7 +35,21 @@
 // rather than a separate legend a reader has to cross-reference against
 // the panels. The one thing that has no single axis/panel to live on, the
 // volume's own native value range, sits as a static line above the hover
-// readout instead.
+// readout instead. Two adjustable window sliders (min/max) sit above both
+// the grid and the volume panel below -- one shared intensity window
+// driving both the flat panels' grayscale mapping and the volume panel's
+// opacity mapping, plus a "Reset view" button restoring the cursor, window,
+// and volume rotation together.
+//
+// When the volume is at least 3D and the browser has WebGL2, one
+// additional panel -- never more than one, regardless of DIM, see
+// VolumePanel()'s own comment -- renders a rotatable, ray-marched 3D view
+// of a 3-axis sub-block (every other axis fixed at the cursor, same as any
+// 2D panel), the N-D generalization of the classic 4th "3D render" corner
+// in a clinical viewer. DIM=3 has only one possible 3-axis choice, shown
+// automatically; DIM>3 adds a small picker for which 3 axes to render.
+// Rotate by dragging the canvas or the 3 rotation-plane sliders (XY/XZ/YZ),
+// interchangeably -- both drive the same underlying angles.
 //
 // Click or drag inside any panel to move the cursor: the two axes that
 // panel shows update to the clicked position, and every panel is
@@ -176,6 +190,210 @@
 		if (parseFloat(s) === 0) s = s.replace('-', '');
 		return s;
 	}
+
+	// ---- 3D volume rendering: a single WebGL2, ray-marched, rotatable view
+	// of a 3-axis sub-block (every other axis fixed at the shared cursor,
+	// same as a 2D panel fixes every axis but its own two) -- the N-D
+	// generalization of the classic 4th "3D render" quadrant in a clinical
+	// axial/coronal/sagittal viewer. Genuinely optional: a browser without
+	// WebGL2 just doesn't get this one panel, everything else (the
+	// pairwise-slice grid) works exactly the same either way. Unlike the
+	// flat 2D panels (moved OFF WebGL earlier specifically because one
+	// context per panel blows past a browser's context ceiling at
+	// C(DIM,2) panels), there is only ever ONE of these per viewer instance
+	// regardless of DIM -- see create()'s own comment on why one, not
+	// C(DIM,3) -- so the context-ceiling problem that ruled out WebGL for
+	// the flat grid never applies here. ----
+
+	var VOLUME_VERTEX_SRC =
+		'#version 300 es\n' +
+		'in vec2 aPos;\n' +
+		'out vec2 vScreen;\n' +
+		'void main() {\n' +
+		'  vScreen = aPos;\n' +
+		'  gl_Position = vec4(aPos, 0.0, 1.0);\n' +
+		'}\n';
+
+	// Orthographic ray-march: every ray shares the same (rotated) direction,
+	// only the start point varies per-pixel -- true of any orthographic
+	// camera, and simpler than perspective's per-pixel ray direction for a
+	// first version (see the "orthographic vs. perspective" discussion this
+	// feature came out of: orthographic keeps proportions honest the same
+	// way the flat panels' own physical-extent sizing already does).
+	// uVolume is pre-windowed to [0,1] on the CPU side (extractVolumeBlock())
+	// using the SAME [windowMin,windowMax] the flat panels use for their own
+	// grayscale mapping -- so one shared control drives both grayscale
+	// brightness in the 2D panels and opacity here, exactly the "common to
+	// both" intensity mapping asked for -- which is why the shader can use
+	// the sampled value directly as both color and alpha with no separate
+	// transfer-function uniform. Front-to-back compositing over an implicit
+	// black background (accum starts at 0 and nothing outside the loop adds
+	// a background term), early-exiting once alpha saturates.
+	var VOLUME_FRAGMENT_SRC =
+		'#version 300 es\n' +
+		'precision highp float;\n' +
+		'precision highp sampler3D;\n' +
+		'uniform sampler3D uVolume;\n' +
+		'uniform mat3 uRotation;\n' +
+		'in vec2 vScreen;\n' +
+		'out vec4 fragColor;\n' +
+		'const int STEPS = 220;\n' +
+		'void main() {\n' +
+		'  vec3 rayDir = normalize(uRotation * vec3(0.0, 0.0, 1.0));\n' +
+		'  vec3 rayOrigin = uRotation * vec3(vScreen, 0.0);\n' +
+		'  float tStep = 2.0 * sqrt(3.0) / float(STEPS);\n' +
+		'  vec3 pos = rayOrigin - rayDir * sqrt(3.0);\n' +
+		'  vec4 accum = vec4(0.0);\n' +
+		'  for (int i = 0; i < STEPS; i++) {\n' +
+		'    vec3 texCoord = pos * 0.5 + 0.5;\n' +
+		'    if (all(greaterThanEqual(texCoord, vec3(0.0))) && all(lessThanEqual(texCoord, vec3(1.0)))) {\n' +
+		'      float v = texture(uVolume, texCoord).r;\n' +
+		'      accum.rgb += (1.0 - accum.a) * v * vec3(v);\n' +
+		'      accum.a += (1.0 - accum.a) * v;\n' +
+		'      if (accum.a > 0.98) break;\n' +
+		'    }\n' +
+		'    pos += rayDir * tStep;\n' +
+		'  }\n' +
+		'  fragColor = vec4(accum.rgb, 1.0);\n' +
+		'}\n';
+
+	function compileVolumeShader(gl, type, src) {
+		var shader = gl.createShader(type);
+		gl.shaderSource(shader, src);
+		gl.compileShader(shader);
+		if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+			throw new Error('NDLViewer: volume shader compile failed: ' + gl.getShaderInfoLog(shader));
+		return shader;
+	}
+
+	// Column-major 3x3 matrices throughout (matching gl.uniformMatrix3fv's
+	// own expected layout with transpose=false, so the JS side never needs
+	// to transpose before uploading).
+	function mat3RotationX(a) { var c = Math.cos(a), s = Math.sin(a); return [1, 0, 0, 0, c, s, 0, -s, c]; }
+	function mat3RotationY(a) { var c = Math.cos(a), s = Math.sin(a); return [c, 0, -s, 0, 1, 0, s, 0, c]; }
+	function mat3RotationZ(a) { var c = Math.cos(a), s = Math.sin(a); return [c, s, 0, -s, c, 0, 0, 0, 1]; }
+	function mat3Multiply(a, b) {
+		var r = new Array(9);
+		for (var col = 0; col < 3; col++)
+			for (var row = 0; row < 3; row++) {
+				var sum = 0;
+				for (var k = 0; k < 3; k++) sum += a[k * 3 + row] * b[col * 3 + k];
+				r[col * 3 + row] = sum;
+			}
+		return r;
+	}
+
+	// Extracts the (extent[ax0] x extent[ax1] x extent[ax2]) sub-block for
+	// the volume-render panel's own 3 chosen axes, every other axis fixed
+	// at cursor -- the direct 3-axis generalization of extractSliceU8()'s
+	// 2-axis extraction, windowed to a single [0,1] byte the same way (so
+	// the shader can read it as both grayscale color and opacity, per
+	// VOLUME_FRAGMENT_SRC's own comment). Layout is x-fastest, then y, then
+	// z, matching gl.texImage3D()'s own expected row-major-with-z-outermost
+	// layout for a WIDTHxHEIGHTxDEPTH upload.
+	function extractVolumeBlock(volume, strides, ax0, ax1, ax2, cursor, min, max) {
+		var extent = volume.extent, data = volume.data;
+		var w = extent[ax0], h = extent[ax1], d = extent[ax2];
+		var out = new Uint8Array(w * h * d);
+		var range = max - min;
+		var base = 0;
+		for (var k = 0; k < extent.length; k++)
+			if (k !== ax0 && k !== ax1 && k !== ax2) base += cursor[k] * strides[k];
+
+		var s0 = strides[ax0], s1 = strides[ax1], s2 = strides[ax2];
+		var p = 0;
+		for (var z = 0; z < d; z++) {
+			var zBase = base + z * s2;
+			for (var y = 0; y < h; y++) {
+				var yBase = zBase + y * s1;
+				for (var x = 0; x < w; x++) {
+					var v = data[yBase + x * s0];
+					out[p++] = range > 0 ? Math.max(0, Math.min(255, Math.round(((v - min) / range) * 255))) : 0;
+				}
+			}
+		}
+		return { data: out, w: w, h: h, d: d };
+	}
+
+	// The one 3D volume-render panel: a size x size WebGL2 canvas, ray-
+	// marching whichever 3-axis sub-block it's currently showing. Returns
+	// null (no panel) if WebGL2 isn't available -- see this section's own
+	// top comment on why that's an acceptable degradation and not a hard
+	// dependency for the rest of the viewer.
+	function VolumePanel(size, palette) {
+		var canvas = document.createElement('canvas');
+		canvas.width = size;
+		canvas.height = size;
+		canvas.style.cursor = 'grab';
+		var gl = canvas.getContext('webgl2');
+		if (!gl) return null;
+
+		this.canvas = canvas;
+		this.gl = gl;
+		this.size = size;
+		this.program = gl.createProgram();
+		gl.attachShader(this.program, compileVolumeShader(gl, gl.VERTEX_SHADER, VOLUME_VERTEX_SRC));
+		gl.attachShader(this.program, compileVolumeShader(gl, gl.FRAGMENT_SHADER, VOLUME_FRAGMENT_SRC));
+		gl.linkProgram(this.program);
+		if (!gl.getProgramParameter(this.program, gl.LINK_STATUS))
+			throw new Error('NDLViewer: volume program link failed: ' + gl.getProgramInfoLog(this.program));
+
+		var quad = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+		this.quadBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+		this.aPos = gl.getAttribLocation(this.program, 'aPos');
+		this.uVolume = gl.getUniformLocation(this.program, 'uVolume');
+		this.uRotation = gl.getUniformLocation(this.program, 'uRotation');
+
+		this.texture = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_3D, this.texture);
+		gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+		// LINEAR (trilinear across the 3D texture), unlike the flat panels'
+		// deliberate NEAREST -- a rotated ray-marched volume shows sampling
+		// artifacts far more readily than an axis-aligned 2D slice does, so
+		// smoothing here is the right default rather than the flat panels'
+		// own "show exact voxels" choice.
+		gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+		this.angleX = 0;
+		this.angleY = 0;
+		this.angleZ = 0;
+	}
+
+	// Re-extracts and re-uploads the 3D texture -- the expensive half of an
+	// update, needed whenever the actual DATA being shown changes (cursor
+	// moved on a fixed axis, window min/max changed, or which 3 axes are
+	// selected changed). Deliberately separate from render() (the cheap,
+	// GPU-only half): a pure rotation change never needs this.
+	VolumePanel.prototype.uploadBlock = function (block) {
+		var gl = this.gl;
+		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); // single-byte R8 texels at arbitrary width aren't 4-byte-row-aligned in general
+		gl.bindTexture(gl.TEXTURE_3D, this.texture);
+		gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, block.w, block.h, block.d, 0, gl.RED, gl.UNSIGNED_BYTE, block.data);
+	};
+
+	// The cheap half: draws the current texture with the current rotation.
+	// Safe to call on every slider tick / mousemove-while-dragging with no
+	// CPU-side re-extraction.
+	VolumePanel.prototype.render = function () {
+		var gl = this.gl;
+		var rotation = mat3Multiply(mat3RotationZ(this.angleZ), mat3Multiply(mat3RotationY(this.angleY), mat3RotationX(this.angleX)));
+
+		gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+		gl.useProgram(this.program);
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+		gl.enableVertexAttribArray(this.aPos);
+		gl.vertexAttribPointer(this.aPos, 2, gl.FLOAT, false, 0, 0);
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindTexture(gl.TEXTURE_3D, this.texture);
+		gl.uniform1i(this.uVolume, 0);
+		gl.uniformMatrix3fv(this.uRotation, false, rotation);
+		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+	};
 
 	// Rounds a physical coordinate (voxel-index * spacing) to 3 decimal
 	// places for display -- that multiplication routinely lands on
@@ -536,13 +754,22 @@
 
 		var volume = parseVolume(arrayBuffer);
 		var strides = flatStrides(volume.extent);
-		var range = computeMinMax(volume.data);
+		// dataRange: the volume's own true, fixed native range -- used for
+		// the readout's static "value range" line and as the window
+		// sliders' own min/max bounds, and never mutated. range: the
+		// user-adjustable WINDOW within it (starts equal to dataRange),
+		// shared by both the flat panels' grayscale mapping and the volume
+		// panel's opacity mapping -- see the window-slider wiring below and
+		// VOLUME_FRAGMENT_SRC's own comment on why one control drives both.
+		var dataRange = computeMinMax(volume.data);
+		var range = { min: dataRange.min, max: dataRange.max };
 		var perAxisPx = computePerAxisPixelSizes(volume.extent, volume.spacing, volume.unit, maxPanelPx, minPanelPx);
 		var valueIsFloat = isFloatingDtype(volume.data);
-		var valueDecimals = valueDecimalPlaces(range.max - range.min);
+		var valueDecimals = valueDecimalPlaces(dataRange.max - dataRange.min);
 
 		var cursor = new Array(volume.dim);
 		for (var k = 0; k < volume.dim; k++) cursor[k] = Math.floor(volume.extent[k] / 2);
+		var defaultCursor = cursor.slice();
 
 		// Axis limits (see axisLimitLabel()'s own comment), precomputed
 		// once per axis here since a given axis's own limits are the same
@@ -565,7 +792,7 @@
 		readout.style.fontFamily = 'monospace';
 		readout.style.marginBottom = '4px';
 		var readoutRange = document.createElement('div');
-		readoutRange.textContent = 'value range: ' + formatValue(range.min, valueDecimals, valueIsFloat) + ' – ' + formatValue(range.max, valueDecimals, valueIsFloat);
+		readoutRange.textContent = 'value range: ' + formatValue(dataRange.min, valueDecimals, valueIsFloat) + ' – ' + formatValue(dataRange.max, valueDecimals, valueIsFloat);
 		readout.appendChild(readoutRange);
 		var readoutVoxel = document.createElement('div');
 		readoutVoxel.style.minHeight = '1.2em';
@@ -573,6 +800,70 @@
 		var readoutPhysical = document.createElement('div');
 		if (volume.spacing) readout.appendChild(readoutPhysical);
 		container.appendChild(readout);
+
+		// Window controls: two sliders spanning the volume's own native
+		// range, adjusting `range.min`/`range.max` live -- the SAME window
+		// extractSliceU8() maps flat-panel grayscale through and
+		// extractVolumeBlock() maps volume-panel opacity through, so
+		// dragging either slider re-windows both at once. A "Reset view"
+		// button alongside resets this window, the cursor, AND the volume
+		// panel's rotation together (see resetView() below) -- "the whole
+		// viewer," not just one piece of it.
+		var controls = document.createElement('div');
+		controls.style.fontFamily = 'monospace';
+		controls.style.fontSize = '0.85em';
+		controls.style.marginBottom = '6px';
+		var windowSpan = (dataRange.max - dataRange.min) || 1;
+		var windowStep = windowSpan / 500;
+		function makeWindowSlider(labelText, initial, onInput) {
+			var row = document.createElement('div');
+			var label = document.createElement('span');
+			label.textContent = labelText + ': ';
+			label.style.display = 'inline-block';
+			label.style.width = '3.5em';
+			row.appendChild(label);
+			var slider = document.createElement('input');
+			slider.type = 'range';
+			slider.min = String(dataRange.min);
+			slider.max = String(dataRange.max);
+			slider.step = String(windowStep || 'any');
+			slider.value = String(initial);
+			slider.style.verticalAlign = 'middle';
+			row.appendChild(slider);
+			var valueLabel = document.createElement('span');
+			valueLabel.style.marginLeft = '0.5em';
+			row.appendChild(valueLabel);
+			slider.addEventListener('input', function () { onInput(parseFloat(slider.value)); });
+			controls.appendChild(row);
+			return { slider: slider, valueLabel: valueLabel };
+		}
+		var windowMinCtl = makeWindowSlider('min', range.min, function (v) {
+			range.min = Math.min(v, range.max);
+			refreshWindow();
+		});
+		var windowMaxCtl = makeWindowSlider('max', range.max, function (v) {
+			range.max = Math.max(v, range.min);
+			refreshWindow();
+		});
+		function refreshWindow() {
+			windowMinCtl.valueLabel.textContent = formatValue(range.min, valueDecimals, valueIsFloat);
+			windowMaxCtl.valueLabel.textContent = formatValue(range.max, valueDecimals, valueIsFloat);
+			redrawAll();
+			updateVolumeTexture();
+		}
+		var resetButton = document.createElement('button');
+		resetButton.textContent = 'Reset view';
+		resetButton.type = 'button';
+		resetButton.addEventListener('click', resetView);
+		controls.appendChild(resetButton);
+		container.appendChild(controls);
+
+		var mainRow = document.createElement('div');
+		mainRow.style.display = 'flex';
+		mainRow.style.flexWrap = 'wrap';
+		mainRow.style.alignItems = 'flex-start';
+		mainRow.style.gap = '12px';
+		container.appendChild(mainRow);
 
 		var grid = document.createElement('div');
 		grid.style.display = 'inline-grid';
@@ -587,7 +878,7 @@
 		for (var r = 1; r < volume.dim; r++) rowSizes.push(perAxisPx[r] + 'px');
 		grid.style.gridTemplateColumns = colSizes.join(' ');
 		grid.style.gridTemplateRows = rowSizes.join(' ');
-		container.appendChild(grid);
+		mainRow.appendChild(grid);
 
 		var panels = [];
 		for (var i = 0; i < volume.dim; i++) {
@@ -615,10 +906,154 @@
 		// selective-redraw optimization isn't worth the extra bookkeeping.
 		function redrawAll() { for (var p = 0; p < panels.length; p++) redrawPanel(panels[p]); }
 
+		// ---- The one 3D volume-render panel (see VolumePanel()'s own
+		// top comment for why exactly one, not one per axis-triple).
+		// volAxes picks which 3 of the volume's DIM axes it currently
+		// shows -- fixed at (0,1,2) with no picker UI when DIM===3 (there's
+		// only one possible choice); a 3-dropdown picker when DIM>3.
+		// null throughout this whole block whenever DIM<3 or the browser
+		// has no WebGL2, in which case none of it runs. ----
+		var volumePanel = null, volAxes = [0, 1, 2];
+		var resetRotationSliders = function () {}; // reassigned below when volumePanel exists; a no-op default keeps resetView() callable either way without an `if (volumePanel)` guard at the call site
+		if (volume.dim >= 3) volumePanel = new VolumePanel(maxPanelPx, palette);
+		if (volumePanel) {
+			var volSection = document.createElement('div');
+
+			if (volume.dim > 3) {
+				var axisPickerRow = document.createElement('div');
+				axisPickerRow.style.fontFamily = 'monospace';
+				axisPickerRow.style.fontSize = '0.85em';
+				axisPickerRow.style.marginBottom = '4px';
+				var axisSelects = [];
+				['X', 'Y', 'Z'].forEach(function (label, idx) {
+					var span = document.createElement('span');
+					span.textContent = label + ':';
+					axisPickerRow.appendChild(span);
+					var select = document.createElement('select');
+					for (var ax = 0; ax < volume.dim; ax++) {
+						var opt = document.createElement('option');
+						opt.value = String(ax);
+						opt.textContent = String(ax);
+						if (ax === volAxes[idx]) opt.selected = true;
+						select.appendChild(opt);
+					}
+					select.style.marginRight = '0.75em';
+					select.addEventListener('change', function () {
+						// Swap with whichever OTHER selector currently holds
+						// the newly-picked axis, rather than allowing two
+						// selectors to both point at the same axis (which
+						// would make the "3rd" axis of the sub-block
+						// degenerate -- extent 1, not a real volume).
+						var newAxis = parseInt(select.value, 10);
+						var clashIdx = volAxes.indexOf(newAxis);
+						if (clashIdx !== -1 && clashIdx !== idx) {
+							volAxes[clashIdx] = volAxes[idx];
+							axisSelects[clashIdx].value = String(volAxes[idx]);
+						}
+						volAxes[idx] = newAxis;
+						updateVolumeTexture();
+					});
+					axisSelects.push(select);
+					axisPickerRow.appendChild(select);
+				});
+				volSection.appendChild(axisPickerRow);
+			}
+
+			volumePanel.canvas.style.display = 'block';
+			volSection.appendChild(volumePanel.canvas);
+
+			// Rotation: 3 sliders (one per rotation plane, XY/XZ/YZ, i.e.
+			// standard Euler angles) in degrees for a human-readable range,
+			// converted to radians for VolumePanel's own angleX/Y/Z. Click-
+			// drag on the canvas itself adjusts the same two underlying
+			// angles (yaw from horizontal drag, pitch from vertical) and
+			// keeps the sliders in sync, rather than the drag and the
+			// sliders being two independent rotation representations that
+			// could drift apart.
+			var rotSection = document.createElement('div');
+			rotSection.style.fontFamily = 'monospace';
+			rotSection.style.fontSize = '0.85em';
+			rotSection.style.marginTop = '4px';
+			function makeRotationSlider(labelText, setAngle) {
+				var row = document.createElement('div');
+				var label = document.createElement('span');
+				label.textContent = labelText + ': ';
+				label.style.display = 'inline-block';
+				label.style.width = '2.5em';
+				row.appendChild(label);
+				var slider = document.createElement('input');
+				slider.type = 'range';
+				slider.min = '-180';
+				slider.max = '180';
+				slider.step = '1';
+				slider.value = '0';
+				row.appendChild(slider);
+				slider.addEventListener('input', function () { setAngle(parseFloat(slider.value)); renderVolumeOnly(); });
+				rotSection.appendChild(row);
+				return slider;
+			}
+			var rotXSlider = makeRotationSlider('X', function (deg) { volumePanel.angleX = deg * Math.PI / 180; });
+			var rotYSlider = makeRotationSlider('Y', function (deg) { volumePanel.angleY = deg * Math.PI / 180; });
+			var rotZSlider = makeRotationSlider('Z', function (deg) { volumePanel.angleZ = deg * Math.PI / 180; });
+			volSection.appendChild(rotSection);
+			mainRow.appendChild(volSection);
+
+			var DEG_PER_PIXEL = 0.5;
+			function wrapDegrees(d) { return ((d + 180) % 360 + 360) % 360 - 180; }
+			(function attachVolumeDrag() {
+				var dragging = false, lastX = 0, lastY = 0;
+				volumePanel.canvas.addEventListener('mousedown', function (evt) {
+					dragging = true; lastX = evt.clientX; lastY = evt.clientY;
+					volumePanel.canvas.style.cursor = 'grabbing';
+				});
+				window.addEventListener('mousemove', function (evt) {
+					if (!dragging) return;
+					var dx = evt.clientX - lastX, dy = evt.clientY - lastY;
+					lastX = evt.clientX; lastY = evt.clientY;
+					var newYawDeg = wrapDegrees(rotYSlider.value * 1 + dx * DEG_PER_PIXEL);
+					var newPitchDeg = wrapDegrees(rotXSlider.value * 1 + dy * DEG_PER_PIXEL);
+					rotYSlider.value = String(newYawDeg);
+					rotXSlider.value = String(newPitchDeg);
+					volumePanel.angleY = newYawDeg * Math.PI / 180;
+					volumePanel.angleX = newPitchDeg * Math.PI / 180;
+					renderVolumeOnly();
+				});
+				window.addEventListener('mouseup', function () {
+					if (dragging) volumePanel.canvas.style.cursor = 'grab';
+					dragging = false;
+				});
+			})();
+
+			resetRotationSliders = function () {
+				rotXSlider.value = '0'; rotYSlider.value = '0'; rotZSlider.value = '0';
+				volumePanel.angleX = volumePanel.angleY = volumePanel.angleZ = 0;
+			};
+		}
+
+		function updateVolumeTexture() {
+			if (!volumePanel) return;
+			var block = extractVolumeBlock(volume, strides, volAxes[0], volAxes[1], volAxes[2], cursor, range.min, range.max);
+			volumePanel.uploadBlock(block);
+			volumePanel.render();
+		}
+		function renderVolumeOnly() { if (volumePanel) volumePanel.render(); }
+
+		function resetView() {
+			range.min = dataRange.min; range.max = dataRange.max;
+			windowMinCtl.slider.value = String(range.min);
+			windowMaxCtl.slider.value = String(range.max);
+			windowMinCtl.valueLabel.textContent = formatValue(range.min, valueDecimals, valueIsFloat);
+			windowMaxCtl.valueLabel.textContent = formatValue(range.max, valueDecimals, valueIsFloat);
+			resetRotationSliders();
+			setCursor(defaultCursor);
+			updateVolumeTexture();
+		}
+
 		function setCursor(newCursor) {
 			for (var k = 0; k < volume.dim; k++)
 				cursor[k] = Math.max(0, Math.min(volume.extent[k] - 1, Math.round(newCursor[k])));
 			redrawAll();
+			updateVolumeTexture();
 		}
 
 		// Hovered-voxel data coordinates from a mouse event within panel's
@@ -677,11 +1112,12 @@
 		for (var p = 0; p < panels.length; p++) attachInteraction(panels[p]);
 
 		redrawAll();
+		updateVolumeTexture();
 
 		return {
 			cursor: cursor,
 			setCursor: setCursor,
-			destroy: function () { container.removeChild(grid); container.removeChild(readout); }
+			destroy: function () { container.removeChild(mainRow); container.removeChild(controls); container.removeChild(readout); }
 		};
 	}
 
