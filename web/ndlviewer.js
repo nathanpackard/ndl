@@ -219,6 +219,30 @@
 		this.overlay.style.cursor = 'crosshair';
 		wrap.appendChild(this.overlay);
 
+		// A non-interactive frame on top of the slice + crosshair, colored to
+		// match this panel's own two axis colors (left/right = axisI's
+		// vertical-crosshair color, top/bottom = axisJ's horizontal-crosshair
+		// color) -- every panel sharing an axis shares that axis's border
+		// color, so which panels are "the same axis" is visible at a glance
+		// without reading labels. A separate absolutely-positioned div rather
+		// than a CSS border on wrap itself: a border on wrap would grow past
+		// the WebGL/overlay canvases (which stay fixed at size x size) into
+		// the grid's own 4px gap, and pointer-events:none keeps it from
+		// stealing the overlay canvas's click/hover handling.
+		this.frame = document.createElement('div');
+		this.frame.style.position = 'absolute';
+		this.frame.style.left = '0';
+		this.frame.style.top = '0';
+		this.frame.style.width = size + 'px';
+		this.frame.style.height = size + 'px';
+		this.frame.style.boxSizing = 'border-box';
+		this.frame.style.pointerEvents = 'none';
+		this.frame.style.borderLeft = '3px solid ' + this.colorI;
+		this.frame.style.borderRight = '3px solid ' + this.colorI;
+		this.frame.style.borderTop = '3px solid ' + this.colorJ;
+		this.frame.style.borderBottom = '3px solid ' + this.colorJ;
+		wrap.appendChild(this.frame);
+
 		this.wrap = wrap;
 		this.size = size;
 
@@ -303,6 +327,12 @@
 		var cursor = new Array(volume.dim);
 		for (var k = 0; k < volume.dim; k++) cursor[k] = Math.floor(volume.extent[k] / 2);
 
+		var readout = document.createElement('div');
+		readout.style.fontFamily = 'monospace';
+		readout.style.minHeight = '1.2em';
+		readout.style.marginBottom = '4px';
+		container.appendChild(readout);
+
 		var grid = document.createElement('div');
 		grid.style.display = 'inline-grid';
 		grid.style.gap = '4px';
@@ -338,20 +368,48 @@
 			redrawAll();
 		}
 
+		// Hovered-voxel data coordinates from a mouse event within panel's
+		// overlay -- shared by moveTo() (click/drag navigation) and
+		// showValue() (readout on plain hover, no click needed) so both
+		// agree on exactly which voxel the mouse is over.
+		function dataCoordsFromEvent(panel, evt) {
+			var rect = panel.overlay.getBoundingClientRect();
+			var px = (evt.clientX - rect.left) / rect.width;
+			var py = (evt.clientY - rect.top) / rect.height;
+			return {
+				i: Math.max(0, Math.min(volume.extent[panel.axisI] - 1, Math.floor(px * volume.extent[panel.axisI]))),
+				j: Math.max(0, Math.min(volume.extent[panel.axisJ] - 1, Math.floor(py * volume.extent[panel.axisJ])))
+			};
+		}
+
+		// The full N-D voxel under the mouse in `panel`: its own two axes at
+		// (dataI, dataJ), every other axis at the shared cursor's current
+		// value -- exactly the voxel that panel's slice is showing at that
+		// pixel.
+		function showValue(panel, dataI, dataJ) {
+			var voxel = cursor.slice();
+			voxel[panel.axisI] = dataI;
+			voxel[panel.axisJ] = dataJ;
+			var offset = 0;
+			for (var k = 0; k < volume.dim; k++) offset += voxel[k] * strides[k];
+			readout.textContent = 'voxel (' + voxel.join(', ') + ') = ' + volume.data[offset];
+		}
+
 		function attachInteraction(panel) {
 			var dragging = false;
 			function moveTo(evt) {
-				var rect = panel.overlay.getBoundingClientRect();
-				var px = (evt.clientX - rect.left) / rect.width;
-				var py = (evt.clientY - rect.top) / rect.height;
-				var dataI = Math.floor(px * volume.extent[panel.axisI]);
-				var dataJ = Math.floor(py * volume.extent[panel.axisJ]);
+				var c = dataCoordsFromEvent(panel, evt);
 				var next = cursor.slice();
-				next[panel.axisI] = dataI;
-				next[panel.axisJ] = dataJ;
+				next[panel.axisI] = c.i;
+				next[panel.axisJ] = c.j;
 				setCursor(next);
 			}
 			panel.overlay.addEventListener('mousedown', function (evt) { dragging = true; moveTo(evt); });
+			panel.overlay.addEventListener('mousemove', function (evt) {
+				var c = dataCoordsFromEvent(panel, evt);
+				showValue(panel, c.i, c.j);
+			});
+			panel.overlay.addEventListener('mouseleave', function () { readout.textContent = ''; });
 			window.addEventListener('mousemove', function (evt) { if (dragging) moveTo(evt); });
 			window.addEventListener('mouseup', function () { dragging = false; });
 		}
@@ -362,7 +420,7 @@
 		return {
 			cursor: cursor,
 			setCursor: setCursor,
-			destroy: function () { container.removeChild(grid); }
+			destroy: function () { container.removeChild(grid); container.removeChild(readout); }
 		};
 	}
 
