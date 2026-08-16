@@ -44,11 +44,11 @@ int main()
 	fs::create_directories(outputDir);
 
 	std::cout <<
-		"This demo tours viewer.h's N-D pairwise-slice primitives on both a plain 3D\n"
-		"volume and a genuinely 4D one (3 space + 1 time), then embeds the actual\n"
-		"interactive WebGL viewer for each right in this page (if you're reading the\n"
-		"generated tutorial -- see docs/generate_tutorial.py) so you can click around\n"
-		"them yourself. Output lands in:\n    " << outputDir << "\n";
+		"This demo tours viewer.h's N-D pairwise-slice primitives on a plain 3D volume,\n"
+		"a genuinely 4D one (3 space + 1 time), and a genuinely 5D one (3 space + time +\n"
+		"channel), then embeds the actual interactive viewer for each right in this page\n"
+		"(if you're reading the generated tutorial -- see docs/generate_tutorial.py) so\n"
+		"you can click around them yourself. Output lands in:\n    " << outputDir << "\n";
 
 	std::cout << "\n\n=== Building a synthetic 3D volume ===\n";
 
@@ -120,12 +120,32 @@ int main()
 
 	std::cout << "\n\n=== Embedding the interactive viewer ===\n";
 
-	step("embedNDViewer(\"4D sphere\", vol, \"volume.ndlv\")",
-		"Writes the whole 4D volume in ndlviewer.js's binary format. In the generated tutorial page\n"
-		"             this becomes a live grid of all 6 pairwise views (space/space and space/time alike) --\n"
-		"             click or drag in any panel to move the shared cursor and watch every other panel\n"
-		"             (including the ones showing the time axis) jump to match.");
-	embedNDViewer("4D sphere (space x time)", vol, "volume.ndlv");
+	step("VoxelSpacing<4> spacing;   // 3 spatial axes in mm, the time axis in s",
+		"viewer.h's VoxelSpacing<DIM> is optional per-axis physical calibration -- deliberately not\n"
+		"             part of Image itself (see VoxelSpacing's own comment for why), so it's supplied\n"
+		"             separately, right where it's actually used. Axes 0-2 (space) share one unit (\"mm\"), axis 3\n"
+		"             (time) uses a different one (\"s\") entirely -- this is exactly the case a single shared\n"
+		"             physical scale can't handle: 2.0mm x 28 voxels is a 56mm cube, meaningfully compared\n"
+		"             between the 3 spatial axes, but there's no sane way to compare 56mm against 0.5s x 16\n"
+		"             frames = 8s, so the two stay on separate physical scales (see ndlviewer.js's own\n"
+		"             computePerAxisPixelSizes() comment for how the viewer resolves that).");
+	VoxelSpacing<4> spacing;
+	spacing.spacing = { 2.0, 2.0, 2.0, 0.5 };
+	spacing.unit = { "mm", "mm", "mm", "s" };
+
+	step("embedNDViewer(\"4D sphere\", vol, \"volume.ndlv\", &spacing)",
+		"Writes the whole 4D volume in ndlviewer.js's binary format, spacing included. In the generated\n"
+		"             tutorial page this becomes a live grid of all 6 pairwise views (space/space and space/time\n"
+		"             alike) -- click or drag in any panel to move the shared cursor and watch every other panel\n"
+		"             (including the ones showing the time axis) jump to match. Two visible effects of `spacing`\n"
+		"             specifically: the space/space panels are now perfect squares (all 3 spatial axes share\n"
+		"             \"mm\" at the same 2.0mm spacing, so their physical extents match exactly, unlike a\n"
+		"             voxel-count-only viewer that would already draw them square anyway since their voxel\n"
+		"             counts happen to match here too) -- but the space/time panels are visibly NOT square\n"
+		"             (56mm of physical space against 8s of physical time is not a 1:1 ratio), and hovering\n"
+		"             any panel now shows a second \"physical (...)\" line under the voxel line, in mm/s rather\n"
+		"             than raw indices.");
+	embedNDViewer("4D sphere (space x time)", vol, "volume.ndlv", &spacing);
 
 	std::cout << "\n\n=== Building a synthetic 5D (space x time x channel) volume ===\n";
 

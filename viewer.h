@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <array>
 #include <ostream>
+#include <string>
 #include <type_traits>
 #include "image.h"
 
@@ -18,7 +19,7 @@
 // or a compact binary export of a whole volume) -- it deliberately has no
 // rendering, no windowing UI, no interactivity, and no platform/GUI
 // dependency of any kind. The actual interactive viewer (crosshair
-// placement, drag-to-navigate, pairwise-view layout, WebGL rendering) is
+// placement, drag-to-navigate, pairwise-view layout, Canvas2D rendering) is
 // ndl/web/ndlviewer.js, a standalone JS file with no C++ dependency at
 // runtime -- it only needs the binary format write_web_volume() produces
 // to stay stable. Keeping the split this strict is deliberate: ndl stays
@@ -205,11 +206,11 @@ namespace ndl
 	{
 		// Dtype codes for the write_web_volume() binary format, one byte,
 		// matched by ndlviewer.js's own parser -- see that file for the
-		// JS-side counterpart. Only the types a WebGL texture/JS typed
-		// array can represent directly are covered (no std::complex, no
-		// bool -- those don't have a sane browser-side representation
-		// without a conversion step this header deliberately leaves to the
-		// caller, the same way image_io::save() leaves format-specific
+		// JS-side counterpart. Only the types a JS typed array can
+		// represent directly are covered (no std::complex, no bool --
+		// those don't have a sane browser-side representation without a
+		// conversion step this header deliberately leaves to the caller,
+		// the same way image_io::save() leaves format-specific
 		// conversions to the caller rather than guessing).
 		template<class T> struct WebDTypeCode;
 		template<> struct WebDTypeCode<uint8_t> { static constexpr uint8_t value = 0; };
@@ -225,6 +226,45 @@ namespace ndl
 		template<class T> struct HasWebDTypeCode<T, std::void_t<decltype(WebDTypeCode<T>::value)>> : std::true_type {};
 	}
 
+	// Optional per-axis physical calibration for write_web_volume()/
+	// embedNDViewer() -- deliberately NOT a member of Image<T,DIM> itself.
+	// Image stays the minimal, cheap, non-owning core type this whole
+	// library is built on (image.h's own top comment: construction,
+	// view()/slice()/swap_axes(), arithmetic, reductions -- nothing else),
+	// passed by value/reference through essentially every function here;
+	// most images that exist (FFT magnitude, a label mask, a distance
+	// transform, a difference image) have no physical unit at all, so
+	// forcing DIM-many spacing values and unit strings onto every Image
+	// ever constructed would be dead weight for the common case. Physical
+	// calibration is instead an optional, external annotation supplied
+	// only where it's actually meaningful -- passed alongside the Image to
+	// just the code that cares (here, and equally NRRD/DICOM readers that
+	// already parse spacing headers, e.g. imageIO/NRRD's own
+	// element_spacing) -- the same "toolkit layered on top, not baked
+	// into the core type" relationship convolution.h/morphology.h/
+	// viewer.h itself already have to Image.
+	//
+	// spacing[k] is the physical size of one voxel along axis k (so a
+	// volume's physical extent along axis k is spacing[k]*extent[k]);
+	// unit[k] is a short label ("mm", "s", ...) shared by every value
+	// expressed in spacing[k]'s own units. unit[k] left empty means axis k
+	// has no physical calibration at all (spacing[k] is then ignored) --
+	// different axes are free to mix calibrated and uncalibrated, or use
+	// entirely different units from each other (e.g. 3 spatial axes in
+	// "mm" alongside a time axis in "s", exactly demo/nd_viewer's own
+	// space+time volume) -- see ndlviewer.js's own comment on
+	// computePerAxisPixelSizes() for how the viewer resolves that mix into
+	// one pixel size per axis.
+	/// Optional per-axis physical calibration (voxel spacing + unit label) for write_web_volume()/embedNDViewer().
+	/// @tparam DIM Dimensionality; must match the Image this is passed alongside.
+	/// @ingroup viewer
+	template<int DIM>
+	struct VoxelSpacing
+	{
+		std::array<double, DIM> spacing{};      ///< Physical size of one voxel along each axis. Ignored for any axis whose `unit` entry is empty.
+		std::array<std::string, DIM> unit{};    ///< Per-axis unit label (e.g. "mm", "m", "s"); empty means axis k is not physically calibrated.
+	};
+
 	// Writes img to os in a small, self-describing binary format designed
 	// to be trivially parsed in a few lines of browser JS (DataView over
 	// an ArrayBuffer) -- not a general interchange format the way NRRD/DICOM
@@ -233,34 +273,42 @@ namespace ndl
 	// alongside it, so it stays deliberately minimal:
 	//
 	//   bytes 0-3   magic "NDLV"
-	//   byte  4     format version (currently 1)
+	//   byte  4     format version (1, or 2 if `spacing` is non-null)
 	//   byte  5     dtype code (detail::WebDTypeCode<T>::value)
 	//   byte  6     DIM (number of axes)
 	//   bytes 7..   DIM x uint32 extent, one per axis, little-endian
+	//   -- version 2 only, immediately after the extents --
+	//               DIM x float64 spacing, one per axis, little-endian
+	//               DIM x [uint8 byte-length][unit bytes, ASCII] --
+	//               length 0 means that axis has no unit
 	//   remaining   raw element data, native byte order, in Image's own
 	//               default packed layout (axis 0 fastest-varying --
 	//               i.e. element (i0,i1,...) is at flat offset
 	//               i0 + i1*extent[0] + i2*extent[0]*extent[1] + ...)
 	//
-	// Written assuming a little-endian host, which every realistic target
-	// for this (a browser's own JS engine, and every mainstream CPU
-	// architecture qvol/ndl actually run on) already is -- not
-	// byte-swapped defensively, the same way the rest of ndl doesn't
-	// defend against configurations that don't occur in practice.
+	// version stays 1 (byte-for-byte identical to before VoxelSpacing
+	// existed) whenever `spacing` is null -- the overwhelming majority of
+	// callers, who have no physical calibration to offer, pay nothing for
+	// this feature existing. Written assuming a little-endian host, which
+	// every realistic target for this (a browser's own JS engine, and
+	// every mainstream CPU architecture qvol/ndl actually run on) already
+	// is -- not byte-swapped defensively, the same way the rest of ndl
+	// doesn't defend against configurations that don't occur in practice.
 	/// Writes `img` to `os` in ndlviewer.js's binary volume format (see this function's own comment for the exact byte layout).
-	/// @tparam T   Element type; must be one of the types ndlviewer.js can read directly (uint8_t/int8_t/uint16_t/int16_t/uint32_t/int32_t/float/double) -- convert first (e.g. via normalize_to_u8()) if `img` holds something else.
-	/// @tparam DIM Dimensionality; must fit in a byte (DIM <= 255, never a real constraint in practice).
-	/// @param  img Source image.
-	/// @param  os  Destination stream, opened in binary mode.
+	/// @tparam T       Element type; must be one of the types ndlviewer.js can read directly (uint8_t/int8_t/uint16_t/int16_t/uint32_t/int32_t/float/double) -- convert first (e.g. via normalize_to_u8()) if `img` holds something else.
+	/// @tparam DIM     Dimensionality; must fit in a byte (DIM <= 255, never a real constraint in practice).
+	/// @param  img     Source image.
+	/// @param  os      Destination stream, opened in binary mode.
+	/// @param  spacing Optional per-axis physical calibration; when non-null, written as a version-2 volume (see this function's own comment) so the viewer can show physical coordinates and size panels proportional to physical extent, not just voxel count.
 	/// @ingroup viewer
 	template<class T, int DIM>
-	void write_web_volume(const Image<T, DIM>& img, std::ostream& os)
+	void write_web_volume(const Image<T, DIM>& img, std::ostream& os, const VoxelSpacing<DIM>* spacing = nullptr)
 	{
 		static_assert(detail::HasWebDTypeCode<T>::value, "ndl::write_web_volume() requires T to be one of uint8_t/int8_t/uint16_t/int16_t/uint32_t/int32_t/float/double -- convert first (e.g. via normalize_to_u8()) if your image holds something else, like std::complex or a wider/narrower type ndlviewer.js has no reader for");
 		static_assert(DIM >= 1 && DIM <= 255, "ndl::write_web_volume() requires 1 <= DIM <= 255 (DIM is written as a single byte)");
 
 		os.write("NDLV", 4);
-		const uint8_t version = 1;
+		const uint8_t version = spacing ? 2 : 1;
 		os.write(reinterpret_cast<const char*>(&version), 1);
 		const uint8_t dtype = detail::WebDTypeCode<T>::value;
 		os.write(reinterpret_cast<const char*>(&dtype), 1);
@@ -270,6 +318,21 @@ namespace ndl
 		{
 			const uint32_t extent = static_cast<uint32_t>(img.extent()[i]);
 			os.write(reinterpret_cast<const char*>(&extent), sizeof(extent));
+		}
+		if (spacing)
+		{
+			for (int i = 0; i < DIM; i++)
+			{
+				const double sp = spacing->spacing[i];
+				os.write(reinterpret_cast<const char*>(&sp), sizeof(sp));
+			}
+			for (int i = 0; i < DIM; i++)
+			{
+				const std::string& u = spacing->unit[i];
+				const uint8_t len = static_cast<uint8_t>(u.size() > 255 ? 255 : u.size());
+				os.write(reinterpret_cast<const char*>(&len), 1);
+				os.write(u.data(), len);
+			}
 		}
 		for (auto it = img.begin(); it != img.end(); ++it)
 		{

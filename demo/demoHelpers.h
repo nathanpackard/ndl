@@ -79,16 +79,26 @@ void saveForInspection(const std::string& label, const ndl::Image<T, DIM>& img, 
 // prints (imageIO.h) -- docs/generate_tutorial.py's EMBED_RE recognizes
 // this exact marker and turns it into an embedded <canvas>+<script> block
 // in the generated tutorial page, the same way SAVING_RE turns an
-// image_io::save() trace into an embedded `![]()`.
+// image_io::save() trace into an embedded `![]()`. spacing is optional
+// per-axis physical calibration (ndl::VoxelSpacing<DIM>, see viewer.h's own
+// comment) -- passed straight through to write_web_volume(); omit it (or
+// pass nullptr) for a volume with no physical units, exactly as before.
+// panelSize is an optional override for NDLViewer.create()'s own
+// options.panelSize (its largest-axis pixel size, see ndlviewer.js's own
+// comment) -- 0 (the default) means "don't override, let the viewer use
+// its own default," appended to the marker line as ` panelSize=N` only
+// when nonzero so every existing "embedding viewer: <path>" marker (and
+// EMBED_RE's own match against it) stays byte-for-byte unchanged for every
+// caller that doesn't need this.
 template<class T, int DIM>
-void embedNDViewer(const std::string& label, const ndl::Image<T, DIM>& img, const std::string& filename)
+void embedNDViewer(const std::string& label, const ndl::Image<T, DIM>& img, const std::string& filename, const ndl::VoxelSpacing<DIM>* spacing = nullptr, int panelSize = 0)
 {
 	std::string path = outputDir + "/" + filename;
 	std::ofstream out(path, std::ios::binary);
-	ndl::write_web_volume(img, out);
+	ndl::write_web_volume(img, out, spacing);
 	out.close();
 	std::cout << "    " << label << ": " << path << "\n";
-	std::cout << "embedding viewer: " << path << std::endl;
+	std::cout << "embedding viewer: " << path << (panelSize > 0 ? " panelSize=" + std::to_string(panelSize) : "") << std::endl;
 }
 
 // How many positions two same-shaped minimal-interface images disagree at,

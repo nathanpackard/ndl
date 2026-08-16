@@ -3,7 +3,6 @@
 #include <ndl/matrix.h>
 #include <ndl/projection.h>
 #include <ndl/morphology.h>
-#include <ndl/visualize.h>
 #include <ndl/viewer.h>
 #include <iostream>
 #include <sstream>
@@ -219,13 +218,6 @@ namespace
 		return best;
 	}
 
-	void saveSlice(const std::string& label, const Image<double, 3>& vol, int axis, int index, const std::string& filename)
-	{
-		auto slice = vol.slice(axis, index);
-		OwnedImage<uint8_t, 2> heat(slice.extent());
-		heatmap(slice, heat, (uint8_t)255);
-		saveForInspection(label, heat, filename);
-	}
 }
 
 int main()
@@ -238,7 +230,8 @@ int main()
 		"same forward_project()/back_project() (projection.h), a genuinely perspective geometry this\n"
 		"time. It's considerably slower than a 2D demo (64^3 volume, ~740k cone-beam rays per pass) --\n"
 		"expect roughly a minute and a half end to end, mostly PART 5's continuous reconstruction loop and\n"
-		"PART 6's DART refinement on top of it. Output PNGs land in:\n    " << outputDir << "\n";
+		"PART 6's DART refinement on top of it. Output (4 embedded interactive volume viewers --\n"
+		"sinogram, phantom, reconstruction, DART) lands in:\n    " << outputDir << "\n";
 
 	// ------------------------------------------------------------------
 	// PART 1: cone-beam geometry mechanics, on a single hand-checkable voxel
@@ -282,17 +275,22 @@ int main()
 		"The classic Shepp-Logan phantom, extended to a solid (Kak & Slaney) -- an idealized 3D head\n"
 		"             volume built from ten overlapping ellipsoids, evaluated directly onto a 64^3 grid (see\n"
 		"             PART 3's own comment for why 64^3 is the right match for this detector's own resolving power).\n"
-		"             Three orthogonal central slices are saved below (axial/coronal/sagittal) since a whole\n"
-		"             volume can't be viewed as one PNG.");
+		"             embedNDViewer() below embeds it as a live viewer.h grid rather than a few hand-picked\n"
+		"             slices.");
 	double half = (W - 1) / 2.0;
 	for (int z = 0; z < W; z++) for (int y = 0; y < W; y++) for (int x = 0; x < W; x++)
 	{
 		double nx = (x - half) / half, ny = (y - half) / half, nz = (z - half) / half;
 		phantom(x, y, z) = sheppLoganValue3D(nx, -ny, nz);
 	}
-	saveSlice("phantom, axial slice (z=64)", phantom, 2, W / 2, "01_phantom_axial.png");
-	saveSlice("phantom, coronal slice (y=64)", phantom, 1, W / 2, "02_phantom_coronal.png");
-	saveSlice("phantom, sagittal slice (x=64)", phantom, 0, W / 2, "03_phantom_sagittal.png");
+	step("embedNDViewer(\"phantom\", phantom, \"phantom.ndlv\")",
+		"pairwise_slice<AxisA,AxisB>() (viewer.h) generalizes \"pick 3 orthogonal slices by hand\" to every\n"
+		"             pairwise-axis plane through the volume at once, synchronized through one shared cursor --\n"
+		"             for a genuinely 3D Image this is exactly the axial/coronal/sagittal triple, but live and\n"
+		"             click-driven instead of 3 pre-chosen indices. Embedded as phantom's own native doubles\n"
+		"             (not windowed/quantized to 8 bits first) so the viewer's hover readout shows the real\n"
+		"             density value under the cursor, not a display-rescaled approximation of it.");
+	embedNDViewer("Shepp-Logan phantom (64^3)", phantom, "phantom.ndlv");
 
 	// ------------------------------------------------------------------
 	// PART 3: cone-beam forward projection into a sinogram
@@ -321,23 +319,24 @@ int main()
 	auto geometry = buildConeBeamGeometry(numViews, volCenter, /*sourceDistance=*/150, /*detectorDistance=*/150, detW, detH, /*detPixelSpacing=*/3.5);
 
 	step("forward_project(phantom, sinogram, geometry)   // 180 cone-beam views over 360 degrees",
-		"Each of the 180 saved views is a full 64x64 cone-beam projection image (not a single 1D row,\n"
-		"             unlike the 2D demo's sinogram) -- 04_projection_view0.png shows one representative view;\n"
-		"             05_sinogram_slice.png shows the classic sinogram layout (view angle x detector row) for\n"
-		"             just the detector's own central row, across all 180 views.");
+		"Each of the 180 views is a full 64x64 cone-beam projection image (not a single 1D row, unlike\n"
+		"             the 2D demo's sinogram) -- so `sinogram` (axes: view angle, detector U, detector V) is\n"
+		"             itself a genuine 3D volume, the same as phantom/recon/dartVol, just one whose axes are\n"
+		"             (angle, detector-column, detector-row) instead of (x,y,z). embedNDViewer() below embeds\n"
+		"             it the same way: its (detU,detV) panel is a single cone-beam view at whatever angle the\n"
+		"             cursor is on (the classic \"one projection image\" view); its (view,detU) and (view,detV)\n"
+		"             panels are the classic sinogram layout (view angle x detector row/column), live for any\n"
+		"             row or column instead of one hand-picked central one -- and its hover readout reads off\n"
+		"             `sinogram`'s own native line-integral values, not a display-rescaled approximation.");
 	std::vector<double> sinogramData((std::size_t)numViews * detW * detH);
 	Image<double, 3> sinogram(sinogramData.data(), { numViews, detW, detH });
 	forward_project(phantom, sinogram, geometry, Linear{}, /*autoAA=*/false);
-
-	auto view0 = sinogram.slice(0, 0);
-	OwnedImage<uint8_t, 2> view0Heat(view0.extent());
-	heatmap(view0, view0Heat, (uint8_t)255);
-	saveForInspection("cone-beam projection, view 0", view0Heat, "04_projection_view0.png");
-
-	auto sinoSlice = sinogram.slice(2, detH / 2);
-	OwnedImage<uint8_t, 2> sinoSliceHeat(sinoSlice.extent());
-	heatmap(sinoSlice, sinoSliceHeat, (uint8_t)255);
-	saveForInspection("sinogram slice (central detector row, all views)", sinoSliceHeat, "05_sinogram_slice.png");
+	// panelSize doubled from the viewer's own default (320): sinogram's
+	// own 180:64 aspect ratio already squashes its (view,detU)/(view,detV)
+	// panels down to a short strip at the default size (320 x ~114) --
+	// twice the pixel budget keeps that short axis legible without
+	// changing the underlying detector data at all.
+	embedNDViewer("cone-beam sinogram (180 views x 64x64 detector)", sinogram, "sinogram.ndlv", static_cast<const VoxelSpacing<3>*>(nullptr), /*panelSize=*/640);
 
 	// ------------------------------------------------------------------
 	// PART 4: automatic anti-aliasing is genuinely spatially variable here
@@ -435,9 +434,13 @@ int main()
 		showText("iteration " + std::to_string(iter), "RMSE vs. ground truth = " + std::to_string(rmse(reconData, phantomData)));
 	}
 
-	saveSlice("reconstruction, axial slice (z=64)", recon, 2, W / 2, "06_reconstruction_axial.png");
-	saveSlice("reconstruction, coronal slice (y=64)", recon, 1, W / 2, "07_reconstruction_coronal.png");
-	saveSlice("reconstruction, sagittal slice (x=64)", recon, 0, W / 2, "08_reconstruction_sagittal.png");
+	step("embedNDViewer(\"reconstruction\", recon, \"reconstruction.ndlv\")",
+		"Same live pairwise-axis grid as the phantom's own viewer above, this time over the recovered\n"
+		"             volume -- drag any panel's crosshair and compare its shape/proportions against the\n"
+		"             phantom viewer at the same cursor position, and its hover readout against phantom's own\n"
+		"             (they won't match exactly voxel-for-voxel -- that gap IS the reconstruction error PART\n"
+		"             5's own RMSE numbers above are tracking).");
+	embedNDViewer("continuous reconstruction (64^3)", recon, "reconstruction.ndlv");
 
 	// ------------------------------------------------------------------
 	// PART 6: discrete-label refinement (DART), exploiting a known,
@@ -537,64 +540,50 @@ int main()
 	// a shortcut.
 	showText("final DART RMSE vs. ground truth (frozen voxels discrete, remaining boundary voxels left continuous)", std::to_string(rmse(dartData, phantomData)) + "   (continuous-only PART 5 result was " + std::to_string(rmse(reconData, phantomData)) + ")");
 
-	saveSlice("DART reconstruction, axial slice (z=64)", dartVol, 2, W / 2, "09_dart_axial.png");
-	saveSlice("DART reconstruction, coronal slice (y=64)", dartVol, 1, W / 2, "10_dart_coronal.png");
-	saveSlice("DART reconstruction, sagittal slice (x=64)", dartVol, 0, W / 2, "11_dart_sagittal.png");
-
-	std::cout << "\n\n=== Embedding the interactive viewer ===\n";
-
-	step("embedNDViewer(\"DART reconstruction\", dartU8, \"dart_reconstruction.ndlv\")",
-		"09-11 above are 3 fixed slices through the DART reconstruction, picked by hand. viewer.h's\n"
-		"             pairwise_slice<AxisA,AxisB>() generalizes that to every pairwise-axis plane through the\n"
-		"             volume at once, synchronized through one shared cursor -- for a genuinely 3D Image this\n"
-		"             is exactly the axial/coronal/sagittal triple, but live and click-driven instead of 3\n"
-		"             pre-chosen indices. normalize_to_u8() first windows the volume to its own [5th,95th]\n"
-		"             density percentile (percentile_range(), the same windowing heatmap() above uses) --\n"
-		"             write_web_volume() can embed a raw double volume directly, but at 64^3 that's an 8x\n"
-		"             larger base64 payload in the generated page for no visible benefit, since the viewer\n"
-		"             only ever displays an 8-bit-windowed image anyway.");
-	OwnedImage<uint8_t, 3> dartU8(dartVol.extent());
-	{
-		auto [lo, hi] = percentile_range(dartVol, 5.0, 95.0);
-		normalize_to_u8(dartVol, dartU8, lo, hi);
-	}
-	embedNDViewer("DART reconstruction (64^3)", dartU8, "dart_reconstruction.ndlv");
+	step("embedNDViewer(\"DART reconstruction\", dartVol, \"dart_reconstruction.ndlv\")",
+		"The fourth and last of this demo's live pairwise-axis grids -- compare its panels against the\n"
+		"             continuous reconstruction viewer above at the same cursor position to see DART's\n"
+		"             flatter, more piecewise-constant result directly, and its hover readout against the\n"
+		"             same voxel in the reconstruction viewer to see the exact snapped density level, rather\n"
+		"             than only via the RMSE numbers.");
+	embedNDViewer("DART reconstruction (64^3)", dartVol, "dart_reconstruction.ndlv");
 
 	std::cout <<
 		"\n\nAll outputs written to: " << outputDir << "\n"
-		"01-03 are the ground-truth phantom's three central slices; 04-05 show the cone-beam sinogram\n"
-		"(what a real cone-beam CT scanner's detector would actually measure); 06-08 are the\n"
-		"reconstruction's matching slices, recovered from ONLY that sinogram (with a genuine per-ray-sample\n"
-		"autoAA and the max_density_bound() constraint applied -- PART 5's own comment covers both).\n"
-		"Compare 06-08 against 01-03 -- the background is clean (max_density_bound()'s whole point: no bright\n"
-		"stray-pixel overshoot) and the overall shape, proportions, and internal structure are recognizable,\n"
-		"without a ring/grid null-space pattern in the object's interior. That's the direct payoff of PART 3's\n"
-		"resolution choice: reconstructing onto a 64^3 grid matched to this 64x64/180-view detector's own\n"
-		"resolving power keeps the system overdetermined (737k measurements for only 262k unknowns) rather\n"
-		"than underdetermined, where multiple different volumes would fit the same sinogram equally well and\n"
-		"the residual ambiguity would show up as structured aliasing -- AA and max_density_bound() only ever\n"
-		"mitigate that kind of mismatch, they don't fix it outright the way matching resolution does. The real\n"
-		"tradeoff: some of the phantom's own finest structures (its smallest ellipsoids, only a few voxels\n"
-		"wide even at this grid's own resolution) are close to what a 64x64 detector can resolve at all, so\n"
-		"64^3 is genuinely the ceiling here -- recovering meaningfully finer detail would take a\n"
-		"higher-resolution detector (more, or smaller, detector pixels) together with a correspondingly finer\n"
-		"volume grid, or more views, not a finer reconstruction grid on its own.\n"
-		"09-11 are PART 6's DART-refined slices, starting from 06-08's own continuous result and using the\n"
-		"phantom's own (assumed a priori known) tissue-density count -- visually flatter/cleaner than 06-08\n"
-		"(compare the coronal slices in particular), and a real, if modest, RMSE improvement over PART 5's\n"
-		"continuous-only result (PART 6's own printed numbers above). DART is a genuinely different,\n"
-		"complementary lever from PART 3's resolution choice: it doesn't change how many measurements vs.\n"
-		"unknowns there are, it changes how much each unknown is ALLOWED to vary, which is why it still helps\n"
-		"even on an already-overdetermined 64^3 system. Two honest caveats worth stating directly rather than\n"
-		"glossing over: it depends entirely on knowing K correctly (too few tissue types assumed and genuinely\n"
-		"distinct structures get merged into one label; too many, and noise gets mistaken for real structure),\n"
-		"and PART 6's own per-iteration RMSE isn't perfectly monotonic either -- it improves for the first few\n"
-		"outer iterations, then drifts slightly worse (a milder echo of PART 5's own semi-convergence risk,\n"
-		"here from voxels freezing to a slightly-off label estimate permanently rather than from an\n"
-		"unconstrained update overshooting). This demo doesn't correct that drift the way PART 5's box\n"
-		"constraint corrects semi-convergence there -- doing so honestly would need a stopping rule computed\n"
-		"from the data alone (e.g. the sinogram residual, not ground-truth RMSE, which no real reconstruction\n"
-		"has access to), which is a reasonable next step but out of scope here.\n";
+		"The phantom viewer shows the ground-truth volume; the sinogram viewer shows the cone-beam data (what\n"
+		"a real cone-beam CT scanner's detector would actually measure) that's ALL the reconstruction viewer\n"
+		"is recovered from (with a genuine per-ray-sample autoAA and the max_density_bound() constraint\n"
+		"applied -- PART 5's own comment covers both). Drag the same panel's crosshair to the same position in\n"
+		"the phantom viewer and the reconstruction viewer -- the background is clean (max_density_bound()'s\n"
+		"whole point: no bright stray-pixel overshoot) and the overall shape, proportions, and internal\n"
+		"structure are recognizable, without a ring/grid null-space pattern in the object's interior. That's\n"
+		"the direct payoff of PART 3's resolution choice: reconstructing onto a 64^3 grid matched to this\n"
+		"64x64/180-view detector's own resolving power keeps the system overdetermined (737k measurements for\n"
+		"only 262k unknowns) rather than underdetermined, where multiple different volumes would fit the same\n"
+		"sinogram equally well and the residual ambiguity would show up as structured aliasing -- AA and\n"
+		"max_density_bound() only ever mitigate that kind of mismatch, they don't fix it outright the way\n"
+		"matching resolution does. The real tradeoff: some of the phantom's own finest structures (its\n"
+		"smallest ellipsoids, only a few voxels wide even at this grid's own resolution) are close to what a\n"
+		"64x64 detector can resolve at all, so 64^3 is genuinely the ceiling here -- recovering meaningfully\n"
+		"finer detail would take a higher-resolution detector (more, or smaller, detector pixels) together\n"
+		"with a correspondingly finer volume grid, or more views, not a finer reconstruction grid on its own.\n"
+		"The DART viewer is PART 6's discrete-label refinement, starting from the reconstruction viewer's own\n"
+		"continuous result and using the phantom's own (assumed a priori known) tissue-density count --\n"
+		"visually flatter/cleaner than the continuous reconstruction (compare the coronal panels of each\n"
+		"viewer in particular), and a real, if modest, RMSE improvement over PART 5's continuous-only result\n"
+		"(PART 6's own printed numbers above). DART is a genuinely different, complementary lever from PART\n"
+		"3's resolution choice: it doesn't change how many measurements vs. unknowns there are, it changes how\n"
+		"much each unknown is ALLOWED to vary, which is why it still helps even on an already-overdetermined\n"
+		"64^3 system. Two honest caveats worth stating directly rather than glossing over: it depends entirely\n"
+		"on knowing K correctly (too few tissue types assumed and genuinely distinct structures get merged\n"
+		"into one label; too many, and noise gets mistaken for real structure), and PART 6's own\n"
+		"per-iteration RMSE isn't perfectly monotonic either -- it improves for the first few outer iterations,\n"
+		"then drifts slightly worse (a milder echo of PART 5's own semi-convergence risk, here from voxels\n"
+		"freezing to a slightly-off label estimate permanently rather than from an unconstrained update\n"
+		"overshooting). This demo doesn't correct that drift the way PART 5's box constraint corrects\n"
+		"semi-convergence there -- doing so honestly would need a stopping rule computed from the data alone\n"
+		"(e.g. the sinogram residual, not ground-truth RMSE, which no real reconstruction has access to),\n"
+		"which is a reasonable next step but out of scope here.\n";
 
 	return 0;
 }

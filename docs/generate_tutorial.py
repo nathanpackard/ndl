@@ -40,7 +40,7 @@ EXPLAIN_RE = re.compile(r'^\s{4}explain:\s*(.*)$')
 SECTION_RE = re.compile(r'^===\s*(.*?)\s*===$')
 SAVING_RE = re.compile(r'^saving output file:\s*(\S+)$')
 LOADING_RE = re.compile(r'^loading file:\s*(\S+)$')
-EMBED_RE = re.compile(r'^embedding viewer:\s*(\S+)$')
+EMBED_RE = re.compile(r'^embedding viewer:\s*(\S+)(?:\s+panelSize=(\d+))?$')
 
 
 def indent_of(line):
@@ -201,6 +201,7 @@ def render_markdown(lines, page_label, image_dir_rel, link_images=True):
         if m:
             flush_data()
             bin_path = Path(m.group(1))
+            panel_size = m.group(2)  # optional; embedNDViewer()'s own panelSize argument, see demoHelpers.h's comment on it
             embed_count[0] += 1
             container_id = f'ndlviewer-{page_label}-{embed_count[0]}'
             # Base64-inlined directly into the page (not a separately
@@ -268,7 +269,8 @@ def render_markdown(lines, page_label, image_dir_rel, link_images=True):
             out.append('var raw = atob(b64);')
             out.append('var bytes = new Uint8Array(raw.length);')
             out.append('for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);')
-            out.append(f'NDLViewer.create(document.getElementById("{container_id}"), bytes.buffer);')
+            options = f', {{panelSize: {panel_size}}}' if panel_size else ''
+            out.append(f'NDLViewer.create(document.getElementById("{container_id}"), bytes.buffer{options});')
             out.append('})();')
             out.append('</script>')
             out.append(r'\endhtmlonly')

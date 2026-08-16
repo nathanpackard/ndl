@@ -190,6 +190,48 @@ TEST(Viewer, NormalizeToU8ClampsAndRescales) {
 	reportPassFail(passfail);
 }
 
+TEST(Viewer, WriteWebVolumeSpacingRoundTrip) {
+	std::stringstream passfail;
+	uint8_t data[2 * 3] = { 0, 1, 2, 3, 4, 5 };
+	Image<uint8_t, 2> img(data, { 2, 3 });
+
+	VoxelSpacing<2> spacing;
+	spacing.spacing[0] = 2.5; spacing.unit[0] = "mm";
+	spacing.spacing[1] = 1.0; spacing.unit[1] = ""; // deliberately uncalibrated, to check mixed calibrated/uncalibrated axes round-trip independently
+
+	std::ostringstream out(std::ios::binary);
+	write_web_volume(img, out, &spacing);
+	std::string bytes = out.str();
+
+	uint8_t version = static_cast<uint8_t>(bytes[4]);
+	passfail << "version byte is 2 when spacing is supplied: " << (version == 2 ? "Pass" : "Fail") << std::endl;
+
+	// Header up through the extents is unchanged from version 1: magic(4) + version(1) + dtype(1) + dim(1) + 2*uint32 extent = 15 bytes.
+	std::size_t offset = 15;
+	double sp0, sp1;
+	std::memcpy(&sp0, bytes.data() + offset, sizeof(double)); offset += sizeof(double);
+	std::memcpy(&sp1, bytes.data() + offset, sizeof(double)); offset += sizeof(double);
+	passfail << "spacing[0] round-trips as 2.5: " << (sp0 == 2.5 ? "Pass" : "Fail") << std::endl;
+	passfail << "spacing[1] round-trips as 1.0: " << (sp1 == 1.0 ? "Pass" : "Fail") << std::endl;
+
+	uint8_t len0 = static_cast<uint8_t>(bytes[offset]); offset += 1;
+	std::string unit0 = bytes.substr(offset, len0); offset += len0;
+	uint8_t len1 = static_cast<uint8_t>(bytes[offset]); offset += 1;
+	std::string unit1 = bytes.substr(offset, len1); offset += len1;
+	passfail << "unit[0] round-trips as \"mm\": " << (unit0 == "mm" ? "Pass" : "Fail") << std::endl;
+	passfail << "unit[1] round-trips as empty (uncalibrated axis): " << (len1 == 0 && unit1.empty() ? "Pass" : "Fail") << std::endl;
+
+	bool dataOk = bytes.size() == offset + 6 && std::memcmp(bytes.data() + offset, data, 6) == 0;
+	passfail << "raw element data follows the spacing/unit block, unchanged: " << (dataOk ? "Pass" : "Fail") << std::endl;
+
+	std::ostringstream outNoSpacing(std::ios::binary);
+	write_web_volume(img, outNoSpacing);
+	uint8_t versionNoSpacing = static_cast<uint8_t>(outNoSpacing.str()[4]);
+	passfail << "version byte stays 1 (byte-for-byte unchanged) when no spacing is passed at all: " << (versionNoSpacing == 1 ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
 TEST(Viewer, WriteWebVolumeRoundTrip) {
 	std::stringstream passfail;
 	uint16_t data[2 * 3 * 4];
