@@ -63,6 +63,12 @@ ndl_add_test_executable(sampling_tests          sampling_tests.cpp)
 ndl_add_test_executable(projection_tests        projection_tests.cpp)
 ndl_add_test_executable(viewer_tests            viewer_tests.cpp)
 ndl_add_test_executable(fit_tests               fit_tests.cpp)
+ndl_add_test_executable(video_io_tests          video_io_tests.cpp)
+# video_io_tests specifically (not any other test executable) exercises
+# imageIO/video_io.h's save_video(), which needs the two vendored codec
+# libraries' actual compiled code -- see ndl_video_codec's own comment in
+# the root CMakeLists.txt.
+target_link_libraries(video_io_tests PRIVATE ndl_video_codec)
 
 # Negative-compilation regression tests: confirm the static_assert-based
 # type restrictions in image/core.h, morphology.h, and image/owned.h

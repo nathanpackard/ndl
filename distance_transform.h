@@ -89,36 +89,53 @@ namespace ndl
 		}
 	}
 
+	// Which side of the foreground/background boundary a distance transform
+	// measures FROM -- ToBackground (the default, and the only option this
+	// file offered before) gives every foreground pixel its distance to the
+	// nearest background pixel, background pixels trivially 0 (OpenCV's own
+	// distanceTransform() convention); ToForeground is the mirror image,
+	// every background pixel's distance to the nearest foreground pixel,
+	// foreground trivially 0. ToForeground used to require a separate
+	// ndl::invert(src, ...)'d copy (morphology.h) passed back into the
+	// ToBackground-only transform -- one line, but a whole extra image
+	// allocated and swept just to flip a comparison. Instead this flips the
+	// seed predicate directly (see distance_transform_squared() below),
+	// which costs nothing extra and is also what distance_transform_signed()
+	// (further below) needs internally anyway, computing both sides at once.
+	/// @ingroup distance_transform
+	enum class DistanceSide { ToBackground, ToForeground };
+
 	// Exact squared Euclidean distance transform: dst(coord) = squared
-	// distance from coord to the nearest position where src is
-	// "background" (contextually false/zero) -- the same convention
-	// OpenCV's own distanceTransform() uses (a foreground pixel gets its
-	// distance to the nearest background pixel; a background pixel is
-	// trivially 0). Want distance to the nearest FOREGROUND pixel instead?
-	// Run this against an ndl::invert(src, ...)'d source (morphology.h) --
-	// distance_transform.h doesn't need its own separate "which way" flag,
-	// since inverting the source is already a one-line, well-tested
-	// operation.
+	// distance from coord to the nearest position on the OTHER side of the
+	// foreground/background boundary from coord itself -- see DistanceSide's
+	// own comment for the exact convention each side means, and note the
+	// asymmetry: a coordinate on side X always reads its distance to the
+	// nearest position on the OPPOSITE side, is trivially 0 if coord is
+	// already NOT on side... concretely: side==ToBackground means "distance
+	// to background", so foreground coords get a real distance and
+	// background coords read 0 (they already sit on the target side);
+	// side==ToForeground is the mirror image.
 	//
 	// Computed via one detail::lowerEnvelope1DSquared() pass per axis:
-	// background positions seed f=0, foreground positions seed
+	// positions already on the target side seed f=0, the rest seed
 	// f=kDistanceTransformInfinity; the first axis pass turns that into the
 	// exact squared distance considering only movement along axis 0, and
 	// each subsequent axis pass folds in another axis, so after all DIM
 	// passes every position holds its true squared distance considering
-	// movement along every axis at once. An image with no background pixel
-	// at all has no finite answer (there's nothing to measure distance to);
-	// such a position's result is exactly kDistanceTransformInfinity,
-	// unmodified by any axis pass, rather than a crash or a misleadingly
-	// small number.
-	/// Exact squared Euclidean distance transform: dst(coord) = squared distance from coord to the nearest position where src is false/zero.
+	// movement along every axis at once. An image with no position at all
+	// on the target side has no finite answer (there's nothing to measure
+	// distance to); such a position's result is exactly
+	// kDistanceTransformInfinity, unmodified by any axis pass, rather than
+	// a crash or a misleadingly small number.
+	/// Exact squared Euclidean distance transform: dst(coord) = squared distance from coord to the nearest position on the opposite side of the foreground/background boundary (see DistanceSide).
 	/// @tparam SrcImageT Any minimal-interface image type whose value_type is contextually convertible to bool (nonzero/true = foreground).
 	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT) whose value_type is floating-point, to hold a squared distance.
 	/// @param  src       Source image.
 	/// @param  dst       Destination; must already exist with `src`'s own extent.
+	/// @param  side      Which side to measure distance TO -- ToBackground (default) or ToForeground; see DistanceSide's own comment.
 	/// @ingroup distance_transform
 	template<class SrcImageT, class DstImageT>
-	void distance_transform_squared(const SrcImageT& src, DstImageT& dst)
+	void distance_transform_squared(const SrcImageT& src, DstImageT& dst, DistanceSide side = DistanceSide::ToBackground)
 	{
 		using SrcT = typename SrcImageT::value_type;
 		using DstT = typename DstImageT::value_type;
@@ -129,8 +146,12 @@ namespace ndl
 		auto extent = src.extent();
 		constexpr int DIM = std::tuple_size<decltype(extent)>::value;
 
+		bool seedIsForeground = (side == DistanceSide::ToForeground);
 		for (const auto& coord : src.coordinates())
-			dst.at(coord) = static_cast<DstT>((src.at(coord) != SrcT(0)) ? detail::kDistanceTransformInfinity : 0.0);
+		{
+			bool isForeground = (src.at(coord) != SrcT(0));
+			dst.at(coord) = static_cast<DstT>((isForeground == seedIsForeground) ? 0.0 : detail::kDistanceTransformInfinity);
+		}
 
 		std::vector<double> fiber, transformed;
 		for (int axis = 0; axis < DIM; axis++)
@@ -149,21 +170,66 @@ namespace ndl
 	}
 
 	// True Euclidean distance transform: distance_transform_squared() (see
-	// its own comment for the exact algorithm and the background/foreground
-	// convention) followed by one elementwise sqrt pass -- computed
-	// directly into dst, then square-rooted in place, so no separate
-	// scratch buffer is needed for the unsquared result.
-	/// Exact Euclidean distance transform: dst(coord) = distance from coord to the nearest position where src is false/zero.
+	// its own comment for the exact algorithm and DistanceSide for the
+	// direction convention) followed by one elementwise sqrt pass --
+	// computed directly into dst, then square-rooted in place, so no
+	// separate scratch buffer is needed for the unsquared result.
+	/// Exact Euclidean distance transform: dst(coord) = distance from coord to the nearest position on the opposite side of the foreground/background boundary (see DistanceSide).
 	/// @tparam SrcImageT Any minimal-interface image type whose value_type is contextually convertible to bool (nonzero/true = foreground).
 	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT) whose value_type is floating-point, to hold a distance.
 	/// @param  src       Source image.
 	/// @param  dst       Destination; must already exist with `src`'s own extent.
+	/// @param  side      Which side to measure distance TO -- ToBackground (default) or ToForeground; see DistanceSide's own comment.
 	/// @ingroup distance_transform
 	template<class SrcImageT, class DstImageT>
-	void distance_transform(const SrcImageT& src, DstImageT& dst)
+	void distance_transform(const SrcImageT& src, DstImageT& dst, DistanceSide side = DistanceSide::ToBackground)
 	{
-		distance_transform_squared(src, dst);
+		distance_transform_squared(src, dst, side);
 		for (const auto& coord : dst.coordinates())
 			dst.at(coord) = static_cast<typename DstImageT::value_type>(std::sqrt(static_cast<double>(dst.at(coord))));
+	}
+
+	// Signed ("bidirectional") distance transform: positive inside
+	// foreground (its own distance to the nearest background pixel, same
+	// magnitude distance_transform()'s default ToBackground mode already
+	// gives), negative inside background (the negated distance to the
+	// nearest foreground pixel) -- the classic signed-distance-field
+	// convention (zero exactly at the boundary, magnitude growing either
+	// direction away from it), useful wherever a single field needs to
+	// describe "how far, and which side" at once, e.g. isosurface
+	// extraction or a smooth interior/exterior falloff. Genuinely needs
+	// BOTH directions computed (unlike ToForeground alone, this can't be
+	// had by flipping one predicate), so this runs
+	// distance_transform_squared() twice -- once per side, ToForeground
+	// into a scratch buffer -- and combines with a sign based on which side
+	// `src` itself is actually on at each coordinate.
+	/// Signed Euclidean distance transform: positive inside foreground (distance to nearest background), negative inside background (distance to nearest foreground), zero at the boundary.
+	/// @tparam SrcImageT Any minimal-interface image type whose value_type is contextually convertible to bool (nonzero/true = foreground).
+	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT) whose value_type is floating-point, to hold a signed distance.
+	/// @param  src       Source image.
+	/// @param  dst       Destination; must already exist with `src`'s own extent.
+	/// @ingroup distance_transform
+	template<class SrcImageT, class DstImageT>
+	void distance_transform_signed(const SrcImageT& src, DstImageT& dst)
+	{
+		using SrcT = typename SrcImageT::value_type;
+		using DstT = typename DstImageT::value_type;
+		static_assert(std::is_floating_point_v<DstT>, "ndl::distance_transform_signed() requires a floating-point destination value_type, to hold a signed distance");
+		assert(dst.extent() == src.extent());
+
+		distance_transform_squared(src, dst, DistanceSide::ToBackground);
+
+		auto extent = src.extent();
+		constexpr int DIM = std::tuple_size<decltype(extent)>::value;
+		OwnedImage<DstT, DIM> toForeground(extent);
+		distance_transform_squared(src, toForeground, DistanceSide::ToForeground);
+
+		for (const auto& coord : src.coordinates())
+		{
+			bool isForeground = (src.at(coord) != SrcT(0));
+			double sq = isForeground ? static_cast<double>(dst.at(coord)) : static_cast<double>(toForeground.at(coord));
+			double signedDist = std::sqrt(sq) * (isForeground ? 1.0 : -1.0);
+			dst.at(coord) = static_cast<DstT>(signedDist);
+		}
 	}
 }

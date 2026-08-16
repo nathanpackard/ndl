@@ -38,6 +38,22 @@ target_include_directories(ndl INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
 )
 
+# The two vendored codec libraries imageIO/video_io.h wraps (save_video()/
+# load_video()) -- see that header's own top comment, and each *_impl.cpp's
+# own, for exactly why these need to be their own compiled translation
+# units rather than header-only like the rest of ndl (name AND macro
+# collisions between the two libraries if they ever shared a TU). Only
+# whatever links video_io.h's declarations against actual code (i.e. links
+# this target) pays for it; nothing else in ndl depends on it.
+add_library(ndl_video_codec STATIC
+    imageIO/mp4/minimp4_impl.cpp
+    imageIO/mp4/minih264e_impl.cpp
+)
+target_link_libraries(ndl_video_codec PUBLIC ndl::ndl)
+if(NOT MSVC)
+    target_link_libraries(ndl_video_codec PUBLIC m)
+endif()
+
 # Optional: fft.h's fftn()/ifftn() parallelize across an image's independent
 # FFT "fibers" (rows, columns, etc.) using std::execution::par. libstdc++'s
 # parallel algorithms need TBB linked in to actually run multi-threaded --
@@ -74,6 +90,7 @@ if(NDL_BUILD_DEMOS)
     add_subdirectory(demo/ct_reconstruction)
     add_subdirectory(demo/ct_reconstruction_3d)
     add_subdirectory(demo/nd_viewer)
+    add_subdirectory(demo/color_video)
 
     # Smoke tests: each demo is a real, multi-step pipeline (image I/O,
     # convolution, FFT, morphology) the unit tests don't exercise end-to-end
@@ -91,7 +108,7 @@ if(NDL_BUILD_DEMOS)
     # run) would still include them. Use `ctest -LE smoke` for the fast,
     # unit-tests-only loop, and `ctest -L smoke` to run just these.
     if(NDL_BUILD_TESTS)
-        foreach(demo_target multiview convolution morphology histogram distance_transform summed_area_table motion ct_reconstruction nd_viewer)
+        foreach(demo_target multiview convolution morphology histogram distance_transform summed_area_table motion ct_reconstruction nd_viewer color_video)
             add_test(NAME demo_${demo_target} COMMAND ${demo_target} WORKING_DIRECTORY $<TARGET_FILE_DIR:${demo_target}>)
             # TIMEOUT is a safety net, not a tuned budget: convolution (the
             # slowest) takes ~10s on a throttled CPU, so 120s leaves ample
@@ -147,9 +164,9 @@ if(NDL_BUILD_DOCS)
             if(Python3_FOUND)
                 set(NDL_GENERATED_DOCS_DIR ${CMAKE_CURRENT_BINARY_DIR}/docs/generated)
                 set(NDL_TUTORIAL_PAGES "")
-                set(_ndl_tutorial_targets multiview convolution morphology histogram distance_transform summed_area_table motion ct_reconstruction ct_reconstruction_3d nd_viewer)
-                set(_ndl_tutorial_labels multiview_tutorial convolution_tutorial morphology_tutorial histogram_tutorial distance_transform_tutorial summed_area_table_tutorial motion_tutorial ct_reconstruction_tutorial ct_reconstruction_3d_tutorial nd_viewer_tutorial)
-                set(_ndl_tutorial_titles "Multiview Tutorial" "Convolution Tutorial" "Morphology Tutorial" "Histogram Tutorial" "Distance Transform Tutorial" "Summed-Area Table Tutorial" "Motion (Optical Flow / SIFT) Tutorial" "CT Reconstruction Tutorial" "3D Cone-Beam CT Reconstruction Tutorial" "N-D Viewer Tutorial")
+                set(_ndl_tutorial_targets multiview convolution morphology histogram distance_transform summed_area_table motion ct_reconstruction ct_reconstruction_3d nd_viewer color_video)
+                set(_ndl_tutorial_labels multiview_tutorial convolution_tutorial morphology_tutorial histogram_tutorial distance_transform_tutorial summed_area_table_tutorial motion_tutorial ct_reconstruction_tutorial ct_reconstruction_3d_tutorial nd_viewer_tutorial color_video_tutorial)
+                set(_ndl_tutorial_titles "Multiview Tutorial" "Convolution Tutorial" "Morphology Tutorial" "Histogram Tutorial" "Distance Transform Tutorial" "Summed-Area Table Tutorial" "Motion (Optical Flow / SIFT) Tutorial" "CT Reconstruction Tutorial" "3D Cone-Beam CT Reconstruction Tutorial" "N-D Viewer Tutorial" "Color Video Tutorial")
                 list(LENGTH _ndl_tutorial_targets _ndl_tutorial_count)
                 math(EXPR _ndl_tutorial_last "${_ndl_tutorial_count} - 1")
                 foreach(_i RANGE ${_ndl_tutorial_last})

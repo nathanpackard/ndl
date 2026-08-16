@@ -96,12 +96,17 @@ void saveForInspection(const std::string& label, const ndl::Image<T, DIM>& img, 
 // panelSize is an optional override for NDLViewer.create()'s own
 // options.panelSize (its largest-axis pixel size, see ndlviewer.js's own
 // comment) -- 0 (the default) means "don't override, let the viewer use
-// its own default," appended to the marker line as ` panelSize=N` only
-// when nonzero so every existing "embedding viewer: <path>" marker (and
-// EMBED_RE's own match against it) stays byte-for-byte unchanged for every
-// caller that doesn't need this.
+// its own default." colorAxis is an optional override for
+// options.colorAxis (which axis holds RGB channels -- see ndlviewer.js's
+// own comment on it) -- -1 (the default) means "no color axis, every panel
+// grayscale," exactly as before this parameter existed. Both are appended
+// to the marker line (` panelSize=N`/` colorAxis=N`) only when actually
+// set (nonzero/non-negative respectively), in that fixed order, so every
+// existing "embedding viewer: <path>" marker (and EMBED_RE's own match
+// against it) stays byte-for-byte unchanged for every caller that doesn't
+// need either.
 template<class T, int DIM>
-void embedNDViewer(const std::string& label, const ndl::Image<T, DIM>& img, const std::string& filename, const ndl::VoxelSpacing<DIM>* spacing = nullptr, int panelSize = 0)
+void embedNDViewer(const std::string& label, const ndl::Image<T, DIM>& img, const std::string& filename, const ndl::VoxelSpacing<DIM>* spacing = nullptr, int panelSize = 0, int colorAxis = -1)
 {
 	std::string path = outputDir + "/" + filename;
 	std::ofstream out(path, std::ios::binary);
@@ -115,7 +120,10 @@ void embedNDViewer(const std::string& label, const ndl::Image<T, DIM>& img, cons
 	// rewritten into the embedded viewer block, never echoed into the
 	// final doc as-is.
 	std::cout << "    " << label << ": " << filename << "\n";
-	std::cout << "embedding viewer: " << path << (panelSize > 0 ? " panelSize=" + std::to_string(panelSize) : "") << std::endl;
+	std::cout << "embedding viewer: " << path
+		<< (panelSize > 0 ? " panelSize=" + std::to_string(panelSize) : "")
+		<< (colorAxis >= 0 ? " colorAxis=" + std::to_string(colorAxis) : "")
+		<< std::endl;
 }
 
 // How many positions two same-shaped minimal-interface images disagree at,

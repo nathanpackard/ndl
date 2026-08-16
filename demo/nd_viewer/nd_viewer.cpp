@@ -1,5 +1,6 @@
 #include <ndl/image.h>
 #include <ndl/viewer.h>
+#include <ndl/distance_transform.h>
 #include <iostream>
 #include <filesystem>
 #include <cstdint>
@@ -53,10 +54,14 @@ int main()
 	std::cout << "\n\n=== Building a synthetic 3D volume ===\n";
 
 	step("Image<uint8_t,3> vol3d(data, {n,n,n})",
-		"A torus (donut shape), the classic axial/coronal/sagittal case viewer.h generalizes:\n"
-		"             DIM=3 has exactly C(3,2)=3 pairwise views, one per pair of the 3 spatial axes -- the\n"
-		"             same axial/coronal/sagittal triple a clinical volume viewer shows, just synchronized\n"
-		"             through pairwise_slice()'s one shared cursor instead of 3 separately-coded planes.");
+		"A torus (donut shape), the classic axial/coronal/sagittal case viewer.h generalizes: DIM=3\n"
+		"             has exactly C(3,2)=3 pairwise views, one per pair of the 3 spatial axes -- the same\n"
+		"             axial/coronal/sagittal triple a clinical volume viewer shows, just synchronized through\n"
+		"             pairwise_slice()'s one shared cursor instead of 3 separately-coded planes. Built as a plain\n"
+		"             threshold mask (2 values), then immediately made grayscale below via a one-sided distance\n"
+		"             transform -- distance_transform.h's own distance_transform() turns a binary mask into a real,\n"
+		"             continuously-varying field, exactly the difference between a segmentation mask and the kind\n"
+		"             of continuously-varying volume most real scan data actually is.");
 
 	const int n3 = 40;
 	std::vector<uint8_t> storage3(static_cast<std::size_t>(n3) * n3 * n3);
@@ -74,11 +79,49 @@ int main()
 	}
 	showText("vol3d.extent()", "{" + std::to_string(n3) + "," + std::to_string(n3) + "," + std::to_string(n3) + "}");
 
-	step("embedNDViewer(\"3D torus\", vol3d, \"volume3d.ndlv\")",
+	step("distance_transform(torusMask, distField)   // DistanceSide::ToBackground (the default): distance FROM inside the torus TO its nearest edge",
+		"DistanceSide::ToBackground (the default, and what \"one-sided (inward)\" means here) gives every\n"
+		"             voxel INSIDE the torus its own distance to the nearest voxel OUTSIDE it -- background voxels\n"
+		"             stay flat 0, unchanged, since a one-sided transform only measures FROM one side. (The other\n"
+		"             side -- DistanceSide::ToForeground -- and distance_transform_signed(), which combines both\n"
+		"             into one field, positive inside and negative out, are the same file's own two other options;\n"
+		"             see distance_transform.h's own comment on DistanceSide.) Inverted below (255 - normalized\n"
+		"             distance) before display, so the tube reads brightest right at its own surface and dims\n"
+		"             smoothly toward its centerline -- an edge-highlighting look, rather than the raw transform's\n"
+		"             own bright-center/dark-edge default.");
+	// distance_transform() just needs a value_type "contextually convertible
+	// to bool" (nonzero == foreground) -- a plain uint8_t 0/1 mask works
+	// directly, no separate boolean image type needed (OwnedImage<bool,DIM>
+	// specifically doesn't exist -- see OwnedImage's own comment on why).
+	OwnedImage<uint8_t, 3> torusMask(vol3d.extent());
+	for (const auto& c : vol3d.coordinates()) torusMask.at(c) = vol3d.at(c) > 128 ? 1 : 0;
+
+	OwnedImage<double, 3> distField(vol3d.extent());
+	distance_transform(torusMask, distField);
+
+	double maxDist = 0;
+	for (const auto& c : distField.coordinates()) maxDist = std::max(maxDist, distField.at(c));
+
+	// Inverted (255 - ...) so brightness peaks at the surface (distance 0)
+	// and fades toward the centerline (distance maxDist) -- background
+	// voxels are kept explicitly at 0 via torusMask rather than folded into
+	// the same formula, since their own distField value is ALSO trivially 0
+	// (see distance_transform_squared()'s own comment) and would otherwise
+	// invert to 255 right along with the torus surface.
+	OwnedImage<uint8_t, 3> torusGray(vol3d.extent());
+	for (const auto& c : distField.coordinates())
+		torusGray.at(c) = (torusMask.at(c) && maxDist > 0)
+			? static_cast<uint8_t>(std::lround(255.0 * (1.0 - distField.at(c) / maxDist)))
+			: 0;
+	showText("max distance (voxels)", std::to_string(maxDist));
+
+	step("embedNDViewer(\"3D torus, distance-transformed\", torusGray, \"volume3d_distance.ndlv\")",
 		"In the generated tutorial page this becomes a live grid of all 3 pairwise views -- click or\n"
-		"             drag in any panel to move the shared cursor and watch the other two panels jump to\n"
-		"             match, exactly the clinical triple-view interaction, generalized.");
-	embedNDViewer("3D torus", vol3d, "volume3d.ndlv");
+		"             drag in any panel to move the shared cursor and watch the other two panels jump to match,\n"
+		"             exactly the clinical triple-view interaction, generalized -- every voxel's own brightness now\n"
+		"             carrying real information (how close to the tube's own surface it sits) instead of just\n"
+		"             marking membership.");
+	embedNDViewer("3D torus, distance-transformed (grayscale)", torusGray, "volume3d_distance.ndlv");
 
 	std::cout << "\n\n=== Building a synthetic 4D (space x time) volume ===\n";
 
@@ -183,14 +226,14 @@ int main()
 
 	std::cout <<
 		"\n\nAll output written to: build/demo/nd_viewer/output\n"
-		"If you're viewing the generated tutorial page, scroll up to the three embedded viewers: the 3D\n"
-		"torus's 3 panels are the classic synchronized axial/coronal/sagittal triple; the 4D sphere's\n"
-		"top-left 3 panels (axes 0-1, 0-2, 1-2) are the same kind of synchronized space/space views, while\n"
-		"its other 3 (0-3, 1-3, 2-3) plot space against time, so dragging the time axis's own crosshair\n"
-		"scrubs through the sphere's drift and pulse directly; the 5D sphere adds a channel axis on top of\n"
-		"that, so its (3,4) panel is the one pure time-vs-channel view. Same viewer code, same\n"
-		"pairwise_slice() primitive, DIM=3 through DIM=5 alike -- nothing about it is special-cased to any\n"
-		"particular dimension count.\n";
+		"If you're viewing the generated tutorial page, scroll up to the embedded viewers: the 3D torus's\n"
+		"3 panels are the classic synchronized axial/coronal/sagittal triple, made grayscale by a one-sided\n"
+		"distance transform; the 4D sphere's top-left 3 panels (axes 0-1, 0-2, 1-2) are the same kind of\n"
+		"synchronized space/space views, while its other 3 (0-3, 1-3, 2-3) plot space against time, so\n"
+		"dragging the time axis's own crosshair scrubs through the sphere's drift and pulse directly; the\n"
+		"5D sphere adds a channel axis on top of that, so its (3,4) panel is the one pure time-vs-channel\n"
+		"view. Same viewer code, same pairwise_slice() primitive, DIM=3 through DIM=5 alike -- nothing\n"
+		"about it is special-cased to any particular dimension count.\n";
 
 	return 0;
 }

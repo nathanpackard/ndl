@@ -176,3 +176,61 @@ TEST(DistanceTransform, InvertGivesDistanceToForeground) {
 	passfail << "distance_transform(invert(src)) gives distance to nearest TRUE pixel in the original: " << (allMatch ? "Pass" : "Fail") << std::endl;
 	reportPassFail(passfail);
 }
+
+TEST(DistanceTransform, ToForegroundSideMatchesInvertWorkaround) {
+	std::stringstream passfail;
+	std::cout << std::endl << "DISTANCE TRANSFORM -- DistanceSide::ToForeground MATCHES THE invert() WORKAROUND" << std::endl;
+
+	// Same source/expectation as InvertGivesDistanceToForeground above, but
+	// via the new side parameter directly on the ORIGINAL (non-inverted)
+	// source -- should give byte-for-byte the same answer as inverting
+	// first and running the default ToBackground transform, without the
+	// extra image.
+	bool data[5] = { false, false, true, false, false };
+	Image<bool, 1> src(data, { 5 });
+
+	double outData[5];
+	Image<double, 1> dt(outData, { 5 });
+	distance_transform(src, dt, DistanceSide::ToForeground);
+
+	double expected[5] = { 2, 1, 0, 1, 2 };
+	bool allMatch = true;
+	for (int i = 0; i < 5; i++) if (std::abs(outData[i] - expected[i]) > 1e-9) allMatch = false;
+	passfail << "distance_transform(src, DistanceSide::ToForeground) gives distance to nearest TRUE pixel directly: " << (allMatch ? "Pass" : "Fail") << std::endl;
+
+	// And ToBackground (explicit or defaulted) must still match the
+	// original, un-inverted behavior.
+	double bgData[5];
+	Image<double, 1> bg(bgData, { 5 });
+	distance_transform(src, bg); // defaults to ToBackground
+	double expectedBg[5] = { 0, 0, 1, 0, 0 };
+	bool bgMatch = true;
+	for (int i = 0; i < 5; i++) if (std::abs(bgData[i] - expectedBg[i]) > 1e-9) bgMatch = false;
+	passfail << "distance_transform(src) (defaulted ToBackground) still gives distance to nearest FALSE pixel: " << (bgMatch ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
+TEST(DistanceTransform, SignedCombinesBothSides) {
+	std::stringstream passfail;
+	std::cout << std::endl << "DISTANCE TRANSFORM -- distance_transform_signed()" << std::endl;
+
+	// A single foreground run in the middle: signed distance should be
+	// POSITIVE inside it (matching the plain ToBackground magnitude
+	// exactly) and NEGATIVE outside it (matching the ToForeground
+	// magnitude, negated), zero nowhere here since no pixel sits exactly
+	// on a fractional boundary at integer sample points.
+	bool data[7] = { false, false, false, true, true, false, false };
+	Image<bool, 1> src(data, { 7 });
+
+	double outData[7];
+	Image<double, 1> dt(outData, { 7 });
+	distance_transform_signed(src, dt);
+
+	double expected[7] = { -3, -2, -1, 1, 1, -1, -2 };
+	bool allMatch = true;
+	for (int i = 0; i < 7; i++) if (std::abs(outData[i] - expected[i]) > 1e-9) allMatch = false;
+	passfail << "distance_transform_signed(): positive inside foreground, negative outside, matching magnitudes: " << (allMatch ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
