@@ -83,7 +83,7 @@ int main()
         "the same way demo/convolution teaches convolve(): each step shows the code, explains\n"
         "it, and shows the result -- first on small numbers you can check by hand, then on\n"
         "real images whose results you check by *looking at the saved PNG*. Output PNGs\n"
-        "land in:\n    " << outputDir << "\n";
+        "land in:\n    build/demo/morphology/output\n";
 
     // ------------------------------------------------------------------
     // PART 1: the mechanics, on numbers you can check by hand
@@ -438,7 +438,7 @@ int main()
     showText("memory: PackedBitImage", std::to_string(packedImageBytes) + " bytes (" + std::to_string(byteImageBytes / (double)packedImageBytes) + "x smaller)");
 
     std::cout <<
-        "\n\nAll outputs written to: " << outputDir << "\n"
+        "\n\nAll outputs written to: build/demo/morphology/output\n"
         "Open 01_original.png alongside 02/03 to see bright regions shrink/grow. Open\n"
         "05_noisy.png alongside 06/07 to see median_filter() remove salt-and-pepper noise\n"
         "cleanly where gaussian_blur() only smears it. 08/09/10 should look like a smooth\n"

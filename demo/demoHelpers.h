@@ -61,13 +61,23 @@ inline std::string outputDir;
 
 // Saves img as a PNG under the demo's output folder and prints where it
 // went plus min/max/mean, so the numbers and the picture can be checked
-// against each other rather than eyeballing the picture alone.
+// against each other rather than eyeballing the picture alone. The
+// human-readable label line intentionally prints `filename` alone, not the
+// full `path` -- `path` is built from `outputDir`, which is an ABSOLUTE
+// path baked in at compile time from CMAKE_CURRENT_BINARY_DIR (see each
+// demo's own CMakeLists.txt), i.e. whoever's local machine happened to
+// build it. This line's own text ends up verbatim in the committed
+// docs/tutorials/*.md (unlike the SAVING_RE-matched "saving output file:
+// <path>" trace right below, which generate_tutorial.py rewrites into a
+// relative image link and never echoes as-is) -- printing the bare
+// filename here is what keeps a contributor's own home-directory path out
+// of the public docs/git history.
 template<class T, int DIM>
 void saveForInspection(const std::string& label, const ndl::Image<T, DIM>& img, const std::string& filename)
 {
 	std::string path = outputDir + "/" + filename;
 	ndl::image_io::save(img, path);
-	std::cout << "    " << label << ": " << path << "\n";
+	std::cout << "    " << label << ": " << filename << "\n";
 	std::cout << "        extent = {";
 	for (int i = 0; i < DIM; i++) std::cout << (i ? ", " : "") << img.extent()[i];
 	std::cout << "}   min=" << (int)img.min() << "  max=" << (int)img.max() << "  mean=" << img.mean() << "\n";
@@ -97,7 +107,14 @@ void embedNDViewer(const std::string& label, const ndl::Image<T, DIM>& img, cons
 	std::ofstream out(path, std::ios::binary);
 	ndl::write_web_volume(img, out, spacing);
 	out.close();
-	std::cout << "    " << label << ": " << path << "\n";
+	// filename, not path, in the human-readable line -- same reasoning as
+	// saveForInspection()'s own comment above. The "embedding viewer:
+	// <path>" marker line right below is left as the real `path`
+	// deliberately: EMBED_RE needs a path it can actually open to read the
+	// file's bytes, and (unlike this line above it) that marker is
+	// rewritten into the embedded viewer block, never echoed into the
+	// final doc as-is.
+	std::cout << "    " << label << ": " << filename << "\n";
 	std::cout << "embedding viewer: " << path << (panelSize > 0 ? " panelSize=" + std::to_string(panelSize) : "") << std::endl;
 }
 

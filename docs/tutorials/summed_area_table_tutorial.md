@@ -1,6 +1,6 @@
 # Summed-Area Table Tutorial {#summed_area_table_tutorial}
 
-This demo teaches ndl::summed_area_table()/rectangle_sum() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo whose results you check by *looking at the saved PNG* and the printed numbers. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/summed_area_table/output
+This demo teaches ndl::summed_area_table()/rectangle_sum() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo whose results you check by *looking at the saved PNG* and the printed numbers. Output PNGs land in: build/demo/summed_area_table/output
 
 ## PART 1: summed_area_table() on a 1D row
 
@@ -64,7 +64,6 @@ direct brute-force sum, for comparison:   117
 ## PART 3: a real photo
 
 ```text
-Opening the input file: /home/nathanpackard/git/ndl/demo/summed_area_table/../../unitTests/data/ng_bwgirl_crop.jpg.
 width: 560
 height: 300
 width * height: 168000
@@ -74,7 +73,7 @@ size: 504000
 [![summed_area_table_tutorial_01_original.png](images/summed_area_table_tutorial/summed_area_table_tutorial_01_original.png)](images/summed_area_table_tutorial/summed_area_table_tutorial_01_original.png)
 
 ```text
-photo: /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/01_original.png
+photo: 01_original.png
     extent = {3, 560, 300}   min=0  max=255  mean=121.08
 ```
 
@@ -99,7 +98,7 @@ What does a summed-area table actually look like? heatmap() (visualize.h) render
 [![summed_area_table_tutorial_02_sat_heatmap.png](images/summed_area_table_tutorial/summed_area_table_tutorial_02_sat_heatmap.png)](images/summed_area_table_tutorial/summed_area_table_tutorial_02_sat_heatmap.png)
 
 ```text
-summed-area table (0=barely summed, white=full running sum): /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/02_sat_heatmap.png
+summed-area table (0=barely summed, white=full running sum): 02_sat_heatmap.png
     extent = {560, 300}   min=0  max=255  mean=51.57
 ```
 
@@ -124,22 +123,22 @@ box_blur(grey, out, radius, BorderMode::Wrap)   vs.   convolve(grey, kernel, out
 convolve()'s cost scales with kernel size (every output pixel visits every kernel tap, (2*radius+1)^2 of them); box_blur()'s cost per pixel is always exactly one rectangle_sum() call -- 4 table lookups -- no matter how large radius gets, the same 'pay once, query cheaply' trade fftn() makes for repeated convolutions demo/convolution's own Part 6 times against spatial convolve(). Both are given the same BorderMode::Wrap here, so unlike a border-naive summed-area-table box blur (which would need to skip or fudge the border pixels its window can't fully reach), these two should now match pixel-for-pixel everywhere, border included -- checked below, not just eyeballed. The timings are the actual point.
 
 ```text
-radius=2 (5x5 kernel):   SAT box blur 5.634155 ms   vs   convolve() 12.154673 ms
-radius=8 (17x17 kernel):   SAT box blur 5.015208 ms   vs   convolve() 124.365633 ms
-radius=32 (65x65 kernel):   SAT box blur 5.889923 ms   vs   convolve() 1826.497660 ms
+radius=2 (5x5 kernel):   SAT box blur 5.322809 ms   vs   convolve() 12.001620 ms
+radius=8 (17x17 kernel):   SAT box blur 5.132096 ms   vs   convolve() 126.353498 ms
+radius=32 (65x65 kernel):   SAT box blur 5.930223 ms   vs   convolve() 1827.468113 ms
 ```
 
 [![summed_area_table_tutorial_03_sat_box_blur.png](images/summed_area_table_tutorial/summed_area_table_tutorial_03_sat_box_blur.png)](images/summed_area_table_tutorial/summed_area_table_tutorial_03_sat_box_blur.png)
 
 ```text
-SAT box blur (radius=32, BorderMode::Wrap): /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/03_sat_box_blur.png
+SAT box blur (radius=32, BorderMode::Wrap): 03_sat_box_blur.png
     extent = {560, 300}   min=37  max=222  mean=120.26
 ```
 
 [![summed_area_table_tutorial_04_convolve_box_blur.png](images/summed_area_table_tutorial/summed_area_table_tutorial_04_convolve_box_blur.png)](images/summed_area_table_tutorial/summed_area_table_tutorial_04_convolve_box_blur.png)
 
 ```text
-convolve() box blur (radius=32, BorderMode::Wrap): /home/nathanpackard/git/ndl/build/demo/summed_area_table/output/04_convolve_box_blur.png
+convolve() box blur (radius=32, BorderMode::Wrap): 04_convolve_box_blur.png
     extent = {560, 300}   min=37  max=222  mean=120.26
 ```
 
@@ -155,5 +154,5 @@ mismatched pixels, box_blur() vs convolve() (both BorderMode::Wrap):   15 out of
 largest per-pixel difference among those mismatches:   1  (expected 1 -- a rounding tie, not a real disagreement)
 ```
 
-All outputs written to: /home/nathanpackard/git/ndl/build/demo/summed_area_table/output 01 is the original photo. 02 is that photo's own summed-area table, visualized directly -- a cumulative running sum, not a picture, so it should look like a smooth gradient from near-black (top-left) to white (bottom-right), nothing like 01. 03/04 are the same radius-32 box blur computed two independent ways -- both using BorderMode::Wrap, they should look pixel-for-pixel identical almost everywhere, border included (confirmed by the mismatch count just above: a tiny handful of pixels differing by exactly 1, floating-point rounding noise between two different summation orders, not a real disagreement). The timings above are the real point: convolve()'s cost should grow sharply with radius while box_blur()'s stays roughly flat.
+All outputs written to: build/demo/summed_area_table/output 01 is the original photo. 02 is that photo's own summed-area table, visualized directly -- a cumulative running sum, not a picture, so it should look like a smooth gradient from near-black (top-left) to white (bottom-right), nothing like 01. 03/04 are the same radius-32 box blur computed two independent ways -- both using BorderMode::Wrap, they should look pixel-for-pixel identical almost everywhere, border included (confirmed by the mismatch count just above: a tiny handful of pixels differing by exactly 1, floating-point rounding noise between two different summation orders, not a real disagreement). The timings above are the real point: convolve()'s cost should grow sharply with radius while box_blur()'s stays roughly flat.
 

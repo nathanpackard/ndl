@@ -1,6 +1,6 @@
 # Distance Transform Tutorial {#distance_transform_tutorial}
 
-This demo teaches ndl::distance_transform()/distance_transform_squared() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo whose results you check by *looking at the saved PNG*. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/distance_transform/output
+This demo teaches ndl::distance_transform()/distance_transform_squared() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo whose results you check by *looking at the saved PNG*. Output PNGs land in: build/demo/distance_transform/output
 
 ## PART 1: distance_transform() on a 1D row
 
@@ -76,7 +76,6 @@ Want distance to the nearest FOREGROUND pixel instead? distance_transform.h does
 ## PART 3: a real photo
 
 ```text
-Opening the input file: /home/nathanpackard/git/ndl/demo/distance_transform/../../unitTests/data/ng_bwgirl_crop.jpg.
 width: 560
 height: 300
 width * height: 168000
@@ -86,7 +85,7 @@ size: 504000
 [![distance_transform_tutorial_01_original.png](images/distance_transform_tutorial/distance_transform_tutorial_01_original.png)](images/distance_transform_tutorial/distance_transform_tutorial_01_original.png)
 
 ```text
-photo: /home/nathanpackard/git/ndl/build/demo/distance_transform/output/01_original.png
+photo: 01_original.png
     extent = {3, 560, 300}   min=0  max=255  mean=121.08
 ```
 
@@ -107,7 +106,7 @@ distance_transform() needs a binary-ish source, so the smoothed greyscale photo 
 [![distance_transform_tutorial_02_mask.png](images/distance_transform_tutorial/distance_transform_tutorial_02_mask.png)](images/distance_transform_tutorial/distance_transform_tutorial_02_mask.png)
 
 ```text
-binary mask (smoothed, then otsu-thresholded): /home/nathanpackard/git/ndl/build/demo/distance_transform/output/02_mask.png
+binary mask (smoothed, then otsu-thresholded): 02_mask.png
     extent = {560, 300}   min=0  max=255  mean=137.21
 ```
 
@@ -125,9 +124,9 @@ max distance found:   86.539009
 [![distance_transform_tutorial_03_distance.png](images/distance_transform_tutorial/distance_transform_tutorial_03_distance.png)](images/distance_transform_tutorial/distance_transform_tutorial_03_distance.png)
 
 ```text
-distance field (0=black, max=white): /home/nathanpackard/git/ndl/build/demo/distance_transform/output/03_distance.png
+distance field (0=black, max=white): 03_distance.png
     extent = {560, 300}   min=0  max=255  mean=36.87
 ```
 
-All outputs written to: /home/nathanpackard/git/ndl/build/demo/distance_transform/output 01 is the original photo. 02 is its (smoothed first, then) Otsu-thresholded binary mask -- smoothing away the photo's own film grain before thresholding is what keeps this mask free of the stray single-pixel speckling that grain would otherwise punch through a raw threshold. 03 is the distance transform of that mask, visualized as greyscale -- it should look like a soft glow filling the interior of 02's bright regions, brightest at each region's own 'deepest' point (its approximate medial axis) and fading smoothly to black at every edge, not fractured by grain-sized local maxima.
+All outputs written to: build/demo/distance_transform/output 01 is the original photo. 02 is its (smoothed first, then) Otsu-thresholded binary mask -- smoothing away the photo's own film grain before thresholding is what keeps this mask free of the stray single-pixel speckling that grain would otherwise punch through a raw threshold. 03 is the distance transform of that mask, visualized as greyscale -- it should look like a soft glow filling the interior of 02's bright regions, brightest at each region's own 'deepest' point (its approximate medial axis) and fading smoothly to black at every edge, not fractured by grain-sized local maxima.
 

@@ -1,6 +1,6 @@
 # Convolution Tutorial {#convolution_tutorial}
 
-This demo teaches ndl::convolve() (and ndl::gaussian_blur(), which is built on it) the same way demo/multiview teaches view()/slice(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo whose results you check by *looking at the saved PNG*. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/convolution/output
+This demo teaches ndl::convolve() (and ndl::gaussian_blur(), which is built on it) the same way demo/multiview teaches view()/slice(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo whose results you check by *looking at the saved PNG*. Output PNGs land in: build/demo/convolution/output
 
 ## PART 1: how convolve() works
 
@@ -91,7 +91,6 @@ out2(0,0) with Reflect:   27  (should match the Reflect breakdown above)
 ## PART 2: a real photo, box blur
 
 ```text
-Opening the input file: /home/nathanpackard/git/ndl/demo/convolution/../../unitTests/data/ng_bwgirl_crop.jpg.
 width: 560
 height: 300
 width * height: 168000
@@ -108,7 +107,7 @@ A real photo: extent {channel, x, y}, channel-interleaved, loaded exactly like e
 [![convolution_tutorial_01_original.png](images/convolution_tutorial/convolution_tutorial_01_original.png)](images/convolution_tutorial/convolution_tutorial_01_original.png)
 
 ```text
-photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/01_original.png
+photo: 01_original.png
     extent = {3, 560, 300}   min=0  max=255  mean=121.08
 ```
 
@@ -122,7 +121,7 @@ The exact same sumKernel idea from Part 1, just normalized (weights sum to 1 ins
 [![convolution_tutorial_02_box_blur.png](images/convolution_tutorial/convolution_tutorial_02_box_blur.png)](images/convolution_tutorial/convolution_tutorial_02_box_blur.png)
 
 ```text
-box-blurred photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/02_box_blur.png
+box-blurred photo: 02_box_blur.png
     extent = {3, 560, 300}   min=20  max=239  mean=120.59
 ```
 
@@ -160,7 +159,7 @@ The same gaussian_blur() call, on the real photo, per channel. sigma=2.0 gives a
 [![convolution_tutorial_03_gaussian_sigma2.png](images/convolution_tutorial/convolution_tutorial_03_gaussian_sigma2.png)](images/convolution_tutorial/convolution_tutorial_03_gaussian_sigma2.png)
 
 ```text
-gaussian-blurred (sigma=2.0): /home/nathanpackard/git/ndl/build/demo/convolution/output/03_gaussian_sigma2.png
+gaussian-blurred (sigma=2.0): 03_gaussian_sigma2.png
     extent = {3, 560, 300}   min=27  max=232  mean=120.57
 ```
 
@@ -174,7 +173,7 @@ A much larger sigma -- the radius grows with it too (ceil(3*6.0)=18, a 37x37 ker
 [![convolution_tutorial_04_gaussian_sigma6.png](images/convolution_tutorial/convolution_tutorial_04_gaussian_sigma6.png)](images/convolution_tutorial/convolution_tutorial_04_gaussian_sigma6.png)
 
 ```text
-gaussian-blurred (sigma=6.0): /home/nathanpackard/git/ndl/build/demo/convolution/output/04_gaussian_sigma6.png
+gaussian-blurred (sigma=6.0): 04_gaussian_sigma6.png
     extent = {3, 560, 300}   min=31  max=229  mean=120.56
 ```
 
@@ -190,7 +189,7 @@ The start image for this Part and the frequency-domain Part 6 below -- saved on 
 [![convolution_tutorial_05_marbles_original.png](images/convolution_tutorial/convolution_tutorial_05_marbles_original.png)](images/convolution_tutorial/convolution_tutorial_05_marbles_original.png)
 
 ```text
-marbles: /home/nathanpackard/git/ndl/build/demo/convolution/output/05_marbles_original.png
+marbles: 05_marbles_original.png
     extent = {3, 710, 501}   min=0  max=254  mean=120.81
 ```
 
@@ -236,7 +235,7 @@ Gradient magnitude is sqrt(gx^2 + gy^2) -- built here from the non-mutating arit
 [![convolution_tutorial_06_sobel_edges.png](images/convolution_tutorial/convolution_tutorial_06_sobel_edges.png)](images/convolution_tutorial/convolution_tutorial_06_sobel_edges.png)
 
 ```text
-Sobel edge magnitude: /home/nathanpackard/git/ndl/build/demo/convolution/output/06_sobel_edges.png
+Sobel edge magnitude: 06_sobel_edges.png
     extent = {1, 710, 501}   min=0  max=255  mean=44.13
 ```
 
@@ -259,7 +258,7 @@ convolve() places no restriction on kernel weights -- here center=5, neighbors=-
 [![convolution_tutorial_07_sharpen.png](images/convolution_tutorial/convolution_tutorial_07_sharpen.png)](images/convolution_tutorial/convolution_tutorial_07_sharpen.png)
 
 ```text
-sharpened photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/07_sharpen.png
+sharpened photo: 07_sharpen.png
     extent = {3, 560, 300}   min=0  max=255  mean=122.49
 ```
 
@@ -280,7 +279,7 @@ An asymmetric kernel: it responds to change along one diagonal and is flat along
 [![convolution_tutorial_08_emboss.png](images/convolution_tutorial/convolution_tutorial_08_emboss.png)](images/convolution_tutorial/convolution_tutorial_08_emboss.png)
 
 ```text
-embossed photo: /home/nathanpackard/git/ndl/build/demo/convolution/output/08_emboss.png
+embossed photo: 08_emboss.png
     extent = {3, 560, 300}   min=0  max=255  mean=190.91
 ```
 
@@ -296,7 +295,7 @@ fftn()/ifftn() handle ANY extent, via Bluestein's algorithm (the chirp-z transfo
 [![convolution_tutorial_09_crop.png](images/convolution_tutorial/convolution_tutorial_09_crop.png)](images/convolution_tutorial/convolution_tutorial_09_crop.png)
 
 ```text
-crop: /home/nathanpackard/git/ndl/build/demo/convolution/output/09_crop.png
+crop: 09_crop.png
     extent = {3, 150, 112}   min=18  max=254  mean=141.32
 ```
 
@@ -310,7 +309,7 @@ The magnitude of each complex output value says how much of that frequency is pr
 [![convolution_tutorial_10_spectrum.png](images/convolution_tutorial/convolution_tutorial_10_spectrum.png)](images/convolution_tutorial/convolution_tutorial_10_spectrum.png)
 
 ```text
-log-magnitude spectrum (fftshifted): /home/nathanpackard/git/ndl/build/demo/convolution/output/10_spectrum.png
+log-magnitude spectrum (fftshifted): 10_spectrum.png
     extent = {1, 150, 112}   min=15  max=255  mean=97.76
 ```
 
@@ -329,21 +328,21 @@ The crop shown again just above is this comparison's starting point. fftCorrelat
 [![convolution_tutorial_09_crop.png](images/convolution_tutorial/convolution_tutorial_09_crop.png)](images/convolution_tutorial/convolution_tutorial_09_crop.png)
 
 ```text
-crop (this comparison's starting point, shown again for convenience): /home/nathanpackard/git/ndl/build/demo/convolution/output/09_crop.png
+crop (this comparison's starting point, shown again for convenience): 09_crop.png
     extent = {3, 150, 112}   min=18  max=254  mean=141.32
 ```
 
 [![convolution_tutorial_11_fft_box_blur.png](images/convolution_tutorial/convolution_tutorial_11_fft_box_blur.png)](images/convolution_tutorial/convolution_tutorial_11_fft_box_blur.png)
 
 ```text
-FFT-domain box blur: /home/nathanpackard/git/ndl/build/demo/convolution/output/11_fft_box_blur.png
+FFT-domain box blur: 11_fft_box_blur.png
     extent = {3, 150, 112}   min=25  max=254  mean=140.82
 ```
 
 [![convolution_tutorial_12_spatial_box_blur_wrap.png](images/convolution_tutorial/convolution_tutorial_12_spatial_box_blur_wrap.png)](images/convolution_tutorial/convolution_tutorial_12_spatial_box_blur_wrap.png)
 
 ```text
-spatial-domain box blur (BorderMode::Wrap, for a fair comparison): /home/nathanpackard/git/ndl/build/demo/convolution/output/12_spatial_box_blur_wrap.png
+spatial-domain box blur (BorderMode::Wrap, for a fair comparison): 12_spatial_box_blur_wrap.png
     extent = {3, 150, 112}   min=25  max=253  mean=140.83
 largest per-pixel difference between the two:   1 (out of 0-255) -- 11 and 12 should look identical
 ```
@@ -356,11 +355,11 @@ timing: spatial convolve() vs FFT correlation, at two very different kernel size
 convolve()'s cost scales with image size TIMES kernel size (every output pixel visits every kernel tap); fftn()'s cost scales with image size alone (kernel size only changes how the kernel gets *built*, not the transform cost) -- so which one wins depends entirely on the kernel. A 3x3 kernel is 9 taps; the 5x5 one already used above for the visual comparison is 25, ~2.8x more spatial work for the exact same image, while the FFT side barely changes (same 7 image-sized transforms either way -- 1 for the kernel, 2 per channel). Averaged over a few repetitions below.
 
 ```text
-3x3 kernel  -- spatial convolve():   2.081184 ms/call
-3x3 kernel  -- FFT correlation:   4.804239 ms/call
-5x5 kernel -- spatial convolve():   5.631899 ms/call
-5x5 kernel -- FFT correlation:   5.300486 ms/call
+3x3 kernel  -- spatial convolve():   2.151543 ms/call
+3x3 kernel  -- FFT correlation:   4.817339 ms/call
+5x5 kernel -- spatial convolve():   5.920903 ms/call
+5x5 kernel -- FFT correlation:   4.767075 ms/call
 ```
 
-All outputs written to: /home/nathanpackard/git/ndl/build/demo/convolution/output Open 01_original.png alongside the rest to compare by eye: 02/03/04 should look progressively softer. 06 should show bright edges on a dark background -- compare it to 05, marbles' own unmodified original. 07 should look crisper than the original, and 08 should look like a grey relief carving. 10 is what the 150x112 crop (09) looks like in the frequency domain -- a bright center fading outward, with any strong directional texture in the crop showing up as streaks through it. 11 and 12 should be visually indistinguishable -- a 5-pixel box blur, computed two independent ways (frequency domain and spatial domain), that agree to within a pixel or two of rounding.
+All outputs written to: build/demo/convolution/output Open 01_original.png alongside the rest to compare by eye: 02/03/04 should look progressively softer. 06 should show bright edges on a dark background -- compare it to 05, marbles' own unmodified original. 07 should look crisper than the original, and 08 should look like a grey relief carving. 10 is what the 150x112 crop (09) looks like in the frequency domain -- a bright center fading outward, with any strong directional texture in the crop showing up as streaks through it. 11 and 12 should be visually indistinguishable -- a 5-pixel box blur, computed two independent ways (frequency domain and spatial domain), that agree to within a pixel or two of rounding.
 

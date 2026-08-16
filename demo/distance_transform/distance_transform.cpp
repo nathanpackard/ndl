@@ -39,7 +39,7 @@ int main()
         "same way demo/convolution teaches convolve(): each step shows the code, explains\n"
         "it, and shows the result -- first on small numbers you can check by hand, then\n"
         "on a real photo whose results you check by *looking at the saved PNG*. Output\n"
-        "PNGs land in:\n    " << outputDir << "\n";
+        "PNGs land in:\n    build/demo/distance_transform/output\n";
 
     // ------------------------------------------------------------------
     // PART 1: the mechanics, on a 1D row you can check by hand
@@ -170,7 +170,7 @@ int main()
     saveForInspection("distance field (0=black, max=white)", distImg, "03_distance.png");
 
     std::cout <<
-        "\n\nAll outputs written to: " << outputDir << "\n"
+        "\n\nAll outputs written to: build/demo/distance_transform/output\n"
         "01 is the original photo. 02 is its (smoothed first, then) Otsu-thresholded binary mask --\n"
         "smoothing away the photo's own film grain before thresholding is what keeps this mask free of\n"
         "the stray single-pixel speckling that grain would otherwise punch through a raw threshold. 03 is\n"

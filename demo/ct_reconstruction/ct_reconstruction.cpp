@@ -109,7 +109,7 @@ int main()
 		"This demo teaches ndl::forward_project()/ndl::back_project() (projection.h) the same\n"
 		"way demo/convolution teaches convolve(): each step shows the code, explains it, and\n"
 		"shows the result -- first on small numbers you can check by hand, then on a real (if\n"
-		"synthetic) CT reconstruction problem. Output PNGs land in:\n    " << outputDir << "\n";
+		"synthetic) CT reconstruction problem. Output PNGs land in:\n    build/demo/ct_reconstruction/output\n";
 
 	// ------------------------------------------------------------------
 	// PART 1: forward_project() mechanics, on a single hand-checkable voxel
@@ -246,7 +246,7 @@ int main()
 	saveForInspection("reconstruction after " + std::to_string(numIterations) + " box-constrained Landweber iterations", reconHeatmap, "03_reconstruction.png");
 
 	std::cout <<
-		"\n\nAll outputs written to: " << outputDir << "\n"
+		"\n\nAll outputs written to: build/demo/ct_reconstruction/output\n"
 		"01 is the ground-truth phantom; 02 is its sinogram (what a real CT scanner would actually\n"
 		"measure); 03 is the reconstruction recovered from ONLY that sinogram, via forward_project()/\n"
 		"back_project() alone (plus the sinogram-derived box constraint described above) -- compare 03\n"

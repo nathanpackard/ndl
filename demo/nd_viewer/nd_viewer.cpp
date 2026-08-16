@@ -48,7 +48,7 @@ int main()
 		"a genuinely 4D one (3 space + 1 time), and a genuinely 5D one (3 space + time +\n"
 		"channel), then embeds the actual interactive viewer for each right in this page\n"
 		"(if you're reading the generated tutorial -- see docs/generate_tutorial.py) so\n"
-		"you can click around them yourself. Output lands in:\n    " << outputDir << "\n";
+		"you can click around them yourself. Output lands in:\n    build/demo/nd_viewer/output\n";
 
 	std::cout << "\n\n=== Building a synthetic 3D volume ===\n";
 
@@ -182,7 +182,7 @@ int main()
 	embedNDViewer("5D sphere (space x time x channel)", vol5d, "volume5d.ndlv");
 
 	std::cout <<
-		"\n\nAll output written to: " << outputDir << "\n"
+		"\n\nAll output written to: build/demo/nd_viewer/output\n"
 		"If you're viewing the generated tutorial page, scroll up to the three embedded viewers: the 3D\n"
 		"torus's 3 panels are the classic synchronized axial/coronal/sagittal triple; the 4D sphere's\n"
 		"top-left 3 panels (axes 0-1, 0-2, 1-2) are the same kind of synchronized space/space views, while\n"

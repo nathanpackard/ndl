@@ -163,7 +163,7 @@ int main()
         "the same way demo/multiview teaches view()/slice(): each step shows the code,\n"
         "explains it, and shows the result -- first on small numbers you can check by\n"
         "hand, then on a real photo whose results you check by *looking at the saved\n"
-        "PNG*. Output PNGs land in:\n    " << outputDir << "\n";
+        "PNG*. Output PNGs land in:\n    build/demo/convolution/output\n";
 
     // ------------------------------------------------------------------
     // PART 1: the mechanics, on numbers you can check by hand
@@ -535,7 +535,7 @@ int main()
     showText("5x5 kernel -- FFT correlation", std::to_string(ms(t3, t4)) + " ms/call");
 
     std::cout <<
-        "\n\nAll outputs written to: " << outputDir << "\n"
+        "\n\nAll outputs written to: build/demo/convolution/output\n"
         "Open 01_original.png alongside the rest to compare by eye: 02/03/04 should look\n"
         "progressively softer. 06 should show bright edges on a dark background -- compare it to 05,\n"
         "marbles' own unmodified original. 07 should look crisper than the original, and 08 should\n"

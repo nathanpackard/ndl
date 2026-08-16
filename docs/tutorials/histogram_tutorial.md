@@ -1,6 +1,6 @@
 # Histogram Tutorial {#histogram_tutorial}
 
-This demo teaches ndl::Histogram<VDIM> and ndl::histogram_equalize() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo whose results you check by *looking at the saved PNGs*, the histograms themselves included (histogram_image(), a real bar chart or heatmap, not ASCII). Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/histogram/output
+This demo teaches ndl::Histogram<VDIM> and ndl::histogram_equalize() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo whose results you check by *looking at the saved PNGs*, the histograms themselves included (histogram_image(), a real bar chart or heatmap, not ASCII). Output PNGs land in: build/demo/histogram/output
 
 ## PART 1: how Histogram<1> works
 
@@ -42,7 +42,7 @@ The same Histogram<1>, rendered as an actual image instead of text: bar_chart() 
 [![histogram_tutorial_00_small_hist.png](images/histogram_tutorial/histogram_tutorial_00_small_hist.png)](images/histogram_tutorial/histogram_tutorial_00_small_hist.png)
 
 ```text
-small histogram, as an image: /home/nathanpackard/git/ndl/build/demo/histogram/output/00_small_hist.png
+small histogram, as an image: 00_small_hist.png
     extent = {3, 80, 40}   min=0  max=255  mean=127.5
 ```
 
@@ -60,7 +60,6 @@ otsu_threshold(small):   2
 ## PART 2: a real photo's histogram
 
 ```text
-Opening the input file: /home/nathanpackard/git/ndl/demo/histogram/../../unitTests/data/ng_bwgirl_crop.jpg.
 width: 560
 height: 300
 width * height: 168000
@@ -70,7 +69,7 @@ size: 504000
 [![histogram_tutorial_01_original.png](images/histogram_tutorial/histogram_tutorial_01_original.png)](images/histogram_tutorial/histogram_tutorial_01_original.png)
 
 ```text
-photo: /home/nathanpackard/git/ndl/build/demo/histogram/output/01_original.png
+photo: 01_original.png
     extent = {3, 560, 300}   min=0  max=255  mean=121.076
 ```
 
@@ -84,7 +83,7 @@ The same Histogram<1>, now over a real photo's greyscale values, at the default 
 [![histogram_tutorial_02_photo_histogram.png](images/histogram_tutorial/histogram_tutorial_02_photo_histogram.png)](images/histogram_tutorial/histogram_tutorial_02_photo_histogram.png)
 
 ```text
-photo histogram: /home/nathanpackard/git/ndl/build/demo/histogram/output/02_photo_histogram.png
+photo histogram: 02_photo_histogram.png
     extent = {3, 256, 120}   min=0  max=255  mean=137.801
 ```
 
@@ -100,21 +99,21 @@ Remaps grey's values so their cumulative distribution is closer to uniform acros
 [![histogram_tutorial_03_grey_original.png](images/histogram_tutorial/histogram_tutorial_03_grey_original.png)](images/histogram_tutorial/histogram_tutorial_03_grey_original.png)
 
 ```text
-grey (unequalized): /home/nathanpackard/git/ndl/build/demo/histogram/output/03_grey_original.png
+grey (unequalized): 03_grey_original.png
     extent = {560, 300}   min=0  max=255  mean=120.765
 ```
 
 [![histogram_tutorial_04_equalized.png](images/histogram_tutorial/histogram_tutorial_04_equalized.png)](images/histogram_tutorial/histogram_tutorial_04_equalized.png)
 
 ```text
-equalized: /home/nathanpackard/git/ndl/build/demo/histogram/output/04_equalized.png
+equalized: 04_equalized.png
     extent = {560, 300}   min=0  max=255  mean=127.585
 ```
 
 [![histogram_tutorial_05_equalized_histogram.png](images/histogram_tutorial/histogram_tutorial_05_equalized_histogram.png)](images/histogram_tutorial/histogram_tutorial_05_equalized_histogram.png)
 
 ```text
-equalized histogram: /home/nathanpackard/git/ndl/build/demo/histogram/output/05_equalized_histogram.png
+equalized histogram: 05_equalized_histogram.png
     extent = {3, 256, 120}   min=0  max=255  mean=127.965
 ```
 
@@ -134,9 +133,9 @@ joint.total():   168000  (expected: one per pixel)
 [![histogram_tutorial_06_joint_histogram.png](images/histogram_tutorial/histogram_tutorial_06_joint_histogram.png)](images/histogram_tutorial/histogram_tutorial_06_joint_histogram.png)
 
 ```text
-joint red/green histogram: /home/nathanpackard/git/ndl/build/demo/histogram/output/06_joint_histogram.png
+joint red/green histogram: 06_joint_histogram.png
     extent = {3, 64, 64}   min=0  max=255  mean=4.41357
 ```
 
-All outputs written to: /home/nathanpackard/git/ndl/build/demo/histogram/output 00 is a tiny hand-checkable bar chart -- 4 bars matching count(0..3) = 5,0,4,1 from Part 1. 01 is the original photo. 02 is its greyscale histogram. 03/04 are the greyscale photo before/after histogram_equalize(), and 05 is the equalized histogram -- it should look visibly flatter than 02. 06 is the joint red/green distribution across every pixel as a heatmap -- brighter pixels mark (red,green) value combinations that occur more often in this photo, and should cluster near the diagonal for a natural photo (red and green tend to rise and fall together).
+All outputs written to: build/demo/histogram/output 00 is a tiny hand-checkable bar chart -- 4 bars matching count(0..3) = 5,0,4,1 from Part 1. 01 is the original photo. 02 is its greyscale histogram. 03/04 are the greyscale photo before/after histogram_equalize(), and 05 is the equalized histogram -- it should look visibly flatter than 02. 06 is the joint red/green distribution across every pixel as a heatmap -- brighter pixels mark (red,green) value combinations that occur more often in this photo, and should cluster near the diagonal for a natural photo (red and green tend to rise and fall together).
 

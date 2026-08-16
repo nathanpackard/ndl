@@ -1,6 +1,6 @@
 # Morphology Tutorial {#morphology_tutorial}
 
-This demo teaches ndl::erode()/ndl::dilate()/ndl::median_filter()/ndl::percentile_filter() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on real images whose results you check by *looking at the saved PNG*. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/morphology/output
+This demo teaches ndl::erode()/ndl::dilate()/ndl::median_filter()/ndl::percentile_filter() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on real images whose results you check by *looking at the saved PNG*. Output PNGs land in: build/demo/morphology/output
 
 ## PART 1: how erode()/dilate()/median_filter() work
 
@@ -157,7 +157,7 @@ Dilating a single 1-pixel dot with a structuring element traces out that element
 [![morphology_tutorial_01_original.png](images/morphology_tutorial/morphology_tutorial_01_original.png)](images/morphology_tutorial/morphology_tutorial_01_original.png)
 
 ```text
-marbles: /home/nathanpackard/git/ndl/build/demo/morphology/output/01_original.png
+marbles: 01_original.png
     extent = {3, 710, 501}   min=0  max=254  mean=120.81
 ```
 
@@ -171,7 +171,7 @@ erode() on a real photo shrinks bright regions and thickens dark ones -- the bri
 [![morphology_tutorial_02_eroded.png](images/morphology_tutorial/morphology_tutorial_02_eroded.png)](images/morphology_tutorial/morphology_tutorial_02_eroded.png)
 
 ```text
-eroded: /home/nathanpackard/git/ndl/build/demo/morphology/output/02_eroded.png
+eroded: 02_eroded.png
     extent = {3, 710, 501}   min=0  max=254  mean=105.98
 ```
 
@@ -185,7 +185,7 @@ The mirror image: bright regions grow, dark regions shrink -- compare 02_eroded.
 [![morphology_tutorial_03_dilated.png](images/morphology_tutorial/morphology_tutorial_03_dilated.png)](images/morphology_tutorial/morphology_tutorial_03_dilated.png)
 
 ```text
-dilated: /home/nathanpackard/git/ndl/build/demo/morphology/output/03_dilated.png
+dilated: 03_dilated.png
     extent = {3, 710, 501}   min=0  max=254  mean=135.90
 ```
 
@@ -194,7 +194,7 @@ dilated: /home/nathanpackard/git/ndl/build/demo/morphology/output/03_dilated.png
 [![morphology_tutorial_04_crop.png](images/morphology_tutorial/morphology_tutorial_04_crop.png)](images/morphology_tutorial/morphology_tutorial_04_crop.png)
 
 ```text
-crop: /home/nathanpackard/git/ndl/build/demo/morphology/output/04_crop.png
+crop: 04_crop.png
     extent = {3, 256, 256}   min=0  max=254  mean=128.14
 ```
 
@@ -208,7 +208,7 @@ Salt-and-pepper noise -- scattered pixels forced to 0 or 255, nothing in between
 [![morphology_tutorial_05_noisy.png](images/morphology_tutorial/morphology_tutorial_05_noisy.png)](images/morphology_tutorial/morphology_tutorial_05_noisy.png)
 
 ```text
-noisy: /home/nathanpackard/git/ndl/build/demo/morphology/output/05_noisy.png
+noisy: 05_noisy.png
     extent = {3, 256, 256}   min=0  max=255  mean=128.12
 ```
 
@@ -222,7 +222,7 @@ Each noisy pixel is very likely to be outvoted by its (uncorrupted) neighbors' m
 [![morphology_tutorial_06_median_cleaned.png](images/morphology_tutorial/morphology_tutorial_06_median_cleaned.png)](images/morphology_tutorial/morphology_tutorial_06_median_cleaned.png)
 
 ```text
-median-cleaned: /home/nathanpackard/git/ndl/build/demo/morphology/output/06_median_cleaned.png
+median-cleaned: 06_median_cleaned.png
     extent = {3, 256, 256}   min=0  max=254  mean=128.14
 ```
 
@@ -236,7 +236,7 @@ For comparison: the same noisy image run through demo/convolution's Part 3 tool 
 [![morphology_tutorial_07_gaussian_cleaned.png](images/morphology_tutorial/morphology_tutorial_07_gaussian_cleaned.png)](images/morphology_tutorial/morphology_tutorial_07_gaussian_cleaned.png)
 
 ```text
-gaussian-cleaned: /home/nathanpackard/git/ndl/build/demo/morphology/output/07_gaussian_cleaned.png
+gaussian-cleaned: 07_gaussian_cleaned.png
     extent = {3, 256, 256}   min=0  max=253  mean=127.62
 total |cleaned - original crop| difference, median:   171366
 total |cleaned - original crop| difference, gaussian:   1190928  (lower is closer to the noise-free original)
@@ -254,21 +254,21 @@ percentile_filter() generalizes all three: percentile 0 is erode() (the minimum)
 [![morphology_tutorial_08_percentile_10.png](images/morphology_tutorial/morphology_tutorial_08_percentile_10.png)](images/morphology_tutorial/morphology_tutorial_08_percentile_10.png)
 
 ```text
-percentile 10 (soft erode): /home/nathanpackard/git/ndl/build/demo/morphology/output/08_percentile_10.png
+percentile 10 (soft erode): 08_percentile_10.png
     extent = {3, 256, 256}   min=0  max=254  mean=120.11
 ```
 
 [![morphology_tutorial_09_percentile_50.png](images/morphology_tutorial/morphology_tutorial_09_percentile_50.png)](images/morphology_tutorial/morphology_tutorial_09_percentile_50.png)
 
 ```text
-percentile 50 (== median_filter): /home/nathanpackard/git/ndl/build/demo/morphology/output/09_percentile_50.png
+percentile 50 (== median_filter): 09_percentile_50.png
     extent = {3, 256, 256}   min=0  max=254  mean=128.14
 ```
 
 [![morphology_tutorial_10_percentile_90.png](images/morphology_tutorial/morphology_tutorial_10_percentile_90.png)](images/morphology_tutorial/morphology_tutorial_10_percentile_90.png)
 
 ```text
-percentile 90 (soft dilate): /home/nathanpackard/git/ndl/build/demo/morphology/output/10_percentile_90.png
+percentile 90 (soft dilate): 10_percentile_90.png
     extent = {3, 256, 256}   min=0  max=255  mean=136.09
 ```
 
@@ -284,7 +284,7 @@ Two of the operations above, composed: erode then dilate ("opening" in the stand
 [![morphology_tutorial_11_opened.png](images/morphology_tutorial/morphology_tutorial_11_opened.png)](images/morphology_tutorial/morphology_tutorial_11_opened.png)
 
 ```text
-opened (erode then dilate): /home/nathanpackard/git/ndl/build/demo/morphology/output/11_opened.png
+opened (erode then dilate): 11_opened.png
     extent = {3, 256, 256}   min=0  max=254  mean=122.95
 ```
 
@@ -298,7 +298,7 @@ The other order: dilate then erode ("closing") instead fills small dark specks -
 [![morphology_tutorial_12_closed.png](images/morphology_tutorial/morphology_tutorial_12_closed.png)](images/morphology_tutorial/morphology_tutorial_12_closed.png)
 
 ```text
-closed (dilate then erode): /home/nathanpackard/git/ndl/build/demo/morphology/output/12_closed.png
+closed (dilate then erode): 12_closed.png
     extent = {3, 256, 256}   min=0  max=255  mean=133.50
 ```
 
@@ -325,7 +325,7 @@ otsu_threshold() on the noisy greyscale:   126
 [![morphology_tutorial_13_binary_noisy.png](images/morphology_tutorial/morphology_tutorial_13_binary_noisy.png)](images/morphology_tutorial/morphology_tutorial_13_binary_noisy.png)
 
 ```text
-binary (thresholded directly, noisy): /home/nathanpackard/git/ndl/build/demo/morphology/output/13_binary_noisy.png
+binary (thresholded directly, noisy): 13_binary_noisy.png
     extent = {1, 256, 256}   min=0  max=255  mean=130.35
 ```
 
@@ -339,7 +339,7 @@ Denoising first (median_filter(), Part 4's own tool for this exact corruption) r
 [![morphology_tutorial_14_binary_clean.png](images/morphology_tutorial/morphology_tutorial_14_binary_clean.png)](images/morphology_tutorial/morphology_tutorial_14_binary_clean.png)
 
 ```text
-binary (clean crop, ground truth): /home/nathanpackard/git/ndl/build/demo/morphology/output/14_binary_clean.png
+binary (clean crop, ground truth): 14_binary_clean.png
     extent = {1, 256, 256}   min=0  max=255  mean=130.32
 otsu_threshold(): clean / noisy / denoised:   126 / 126 / 127
 ```
@@ -347,7 +347,7 @@ otsu_threshold(): clean / noisy / denoised:   126 / 126 / 127
 [![morphology_tutorial_15_binary_denoised.png](images/morphology_tutorial/morphology_tutorial_15_binary_denoised.png)](images/morphology_tutorial/morphology_tutorial_15_binary_denoised.png)
 
 ```text
-binary (denoised first): /home/nathanpackard/git/ndl/build/demo/morphology/output/15_binary_denoised.png
+binary (denoised first): 15_binary_denoised.png
     extent = {1, 256, 256}   min=0  max=255  mean=129.03
 pixels disagreeing with the clean-crop ground truth, noisy threshold:   1618
 pixels disagreeing with the clean-crop ground truth, denoised threshold:   501  (lower is closer to the truth)
@@ -365,14 +365,14 @@ The same erode()/dilate() from Parts 1 and 3, now on a genuinely binary (0/255) 
 [![morphology_tutorial_16_binary_eroded.png](images/morphology_tutorial/morphology_tutorial_16_binary_eroded.png)](images/morphology_tutorial/morphology_tutorial_16_binary_eroded.png)
 
 ```text
-binary eroded: /home/nathanpackard/git/ndl/build/demo/morphology/output/16_binary_eroded.png
+binary eroded: 16_binary_eroded.png
     extent = {1, 256, 256}   min=0  max=255  mean=116.04
 ```
 
 [![morphology_tutorial_17_binary_dilated.png](images/morphology_tutorial/morphology_tutorial_17_binary_dilated.png)](images/morphology_tutorial/morphology_tutorial_17_binary_dilated.png)
 
 ```text
-binary dilated: /home/nathanpackard/git/ndl/build/demo/morphology/output/17_binary_dilated.png
+binary dilated: 17_binary_dilated.png
     extent = {1, 256, 256}   min=0  max=255  mean=142.37
 ```
 
@@ -386,14 +386,14 @@ One more opening/closing pass (Part 6's idea again, applied here to the ALREADY-
 [![morphology_tutorial_18_binary_opened.png](images/morphology_tutorial/morphology_tutorial_18_binary_opened.png)](images/morphology_tutorial/morphology_tutorial_18_binary_opened.png)
 
 ```text
-binary opened: /home/nathanpackard/git/ndl/build/demo/morphology/output/18_binary_opened.png
+binary opened: 18_binary_opened.png
     extent = {1, 256, 256}   min=0  max=255  mean=128.42
 ```
 
 [![morphology_tutorial_19_binary_closed.png](images/morphology_tutorial/morphology_tutorial_19_binary_closed.png)](images/morphology_tutorial/morphology_tutorial_19_binary_closed.png)
 
 ```text
-binary closed: /home/nathanpackard/git/ndl/build/demo/morphology/output/19_binary_closed.png
+binary closed: 19_binary_closed.png
     extent = {1, 256, 256}   min=0  max=255  mean=129.65
 ```
 
@@ -420,5 +420,5 @@ memory: Image<uint8_t,2> mask:   65536 bytes
 memory: PackedBitImage:   8192 bytes (8.000000x smaller)
 ```
 
-All outputs written to: /home/nathanpackard/git/ndl/build/demo/morphology/output Open 01_original.png alongside 02/03 to see bright regions shrink/grow. Open 05_noisy.png alongside 06/07 to see median_filter() remove salt-and-pepper noise cleanly where gaussian_blur() only smears it. 08/09/10 should look like a smooth progression from soft-erode to median to soft-dilate. 11/12 should look close to 05_noisy.png but with most of the speckled noise gone. 13 (thresholded directly) should look visibly speckled compared to 15 (denoised first) -- open both alongside 14, the ground-truth threshold of the never-corrupted crop. 16-19 show binary erode/dilate/opening/closing starting from 15, the cleaner of the two thresholded results. Part 9 has no new PNGs -- it reruns 16/17's erode/dilate through PackedBitImage instead and confirms the result matches exactly, at a fraction of the memory.
+All outputs written to: build/demo/morphology/output Open 01_original.png alongside 02/03 to see bright regions shrink/grow. Open 05_noisy.png alongside 06/07 to see median_filter() remove salt-and-pepper noise cleanly where gaussian_blur() only smears it. 08/09/10 should look like a smooth progression from soft-erode to median to soft-dilate. 11/12 should look close to 05_noisy.png but with most of the speckled noise gone. 13 (thresholded directly) should look visibly speckled compared to 15 (denoised first) -- open both alongside 14, the ground-truth threshold of the never-corrupted crop. 16-19 show binary erode/dilate/opening/closing starting from 15, the cleaner of the two thresholded results. Part 9 has no new PNGs -- it reruns 16/17's erode/dilate through PackedBitImage instead and confirms the result matches exactly, at a fraction of the memory.
 

@@ -1,6 +1,6 @@
 # Motion (Optical Flow / SIFT) Tutorial {#motion_tutorial}
 
-This demo teaches ndl::lucas_kanade_flow() and ndl::sift_flow() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo pair whose results you check by *looking at the saved PNG*. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/motion/output
+This demo teaches ndl::lucas_kanade_flow() and ndl::sift_flow() the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real photo pair whose results you check by *looking at the saved PNG*. Output PNGs land in: build/demo/motion/output
 
 ## PART 1: gradient() -- the building block both algorithms share
 
@@ -60,14 +60,14 @@ The Middlebury RubberWhale pair (see this file's own top comment for the citatio
 [![motion_tutorial_01_frame0.png](images/motion_tutorial/motion_tutorial_01_frame0.png)](images/motion_tutorial/motion_tutorial_01_frame0.png)
 
 ```text
-frame0: /home/nathanpackard/git/ndl/build/demo/motion/output/01_frame0.png
+frame0: 01_frame0.png
     extent = {4, 292, 194}   min=3  max=254  mean=157.46
 ```
 
 [![motion_tutorial_02_frame1.png](images/motion_tutorial/motion_tutorial_02_frame1.png)](images/motion_tutorial/motion_tutorial_02_frame1.png)
 
 ```text
-frame1: /home/nathanpackard/git/ndl/build/demo/motion/output/02_frame1.png
+frame1: 02_frame1.png
     extent = {4, 292, 194}   min=3  max=254  mean=157.72
 ```
 
@@ -88,7 +88,7 @@ hue = direction, brightness = magnitude (scaled to the field's own max). RubberW
 [![motion_tutorial_03_lk_flow_color.png](images/motion_tutorial/motion_tutorial_03_lk_flow_color.png)](images/motion_tutorial/motion_tutorial_03_lk_flow_color.png)
 
 ```text
-Lucas-Kanade flow, color-coded: /home/nathanpackard/git/ndl/build/demo/motion/output/03_lk_flow_color.png
+Lucas-Kanade flow, color-coded: 03_lk_flow_color.png
     extent = {3, 292, 194}   min=0  max=255  mean=42.58
 ```
 
@@ -106,7 +106,7 @@ The other standard way to read a 2D vector field: a literal arrow per sampled po
 [![motion_tutorial_04_lk_flow_arrows.png](images/motion_tutorial/motion_tutorial_04_lk_flow_arrows.png)](images/motion_tutorial/motion_tutorial_04_lk_flow_arrows.png)
 
 ```text
-Lucas-Kanade flow, arrow overlay on frame0 (90th-percentile-capped): /home/nathanpackard/git/ndl/build/demo/motion/output/04_lk_flow_arrows.png
+Lucas-Kanade flow, arrow overlay on frame0 (90th-percentile-capped): 04_lk_flow_arrows.png
     extent = {4, 292, 194}   min=0  max=255  mean=155.83
 mean flow magnitude (Lucas-Kanade):   0.665479 px
 ```
@@ -141,7 +141,7 @@ matched pairs (nearest-neighbor + Lowe's ratio test):   74
 [![motion_tutorial_05_sift_keypoints.png](images/motion_tutorial/motion_tutorial_05_sift_keypoints.png)](images/motion_tutorial/motion_tutorial_05_sift_keypoints.png)
 
 ```text
-frame0 with matched keypoints marked in red: /home/nathanpackard/git/ndl/build/demo/motion/output/05_sift_keypoints.png
+frame0 with matched keypoints marked in red: 05_sift_keypoints.png
     extent = {4, 292, 194}   min=0  max=255  mean=156.60
 ```
 
@@ -166,7 +166,7 @@ flow_to_color()'s default "scale brightness to the field's own true max magnitud
 [![motion_tutorial_06_sift_flow_color.png](images/motion_tutorial/motion_tutorial_06_sift_flow_color.png)](images/motion_tutorial/motion_tutorial_06_sift_flow_color.png)
 
 ```text
-SIFT-inspired flow, color-coded (95th-percentile-capped): /home/nathanpackard/git/ndl/build/demo/motion/output/06_sift_flow_color.png
+SIFT-inspired flow, color-coded (95th-percentile-capped): 06_sift_flow_color.png
     extent = {3, 292, 194}   min=0  max=255  mean=57.98
 ```
 
@@ -180,7 +180,7 @@ The same arrow overlay 04_lk_flow_arrows.png used for lucas_kanade_flow(), here 
 [![motion_tutorial_07_sift_flow_arrows.png](images/motion_tutorial/motion_tutorial_07_sift_flow_arrows.png)](images/motion_tutorial/motion_tutorial_07_sift_flow_arrows.png)
 
 ```text
-SIFT-inspired flow, arrow overlay on frame0 (95th-percentile-capped): /home/nathanpackard/git/ndl/build/demo/motion/output/07_sift_flow_arrows.png
+SIFT-inspired flow, arrow overlay on frame0 (95th-percentile-capped): 07_sift_flow_arrows.png
     extent = {4, 292, 194}   min=0  max=255  mean=156.38
 ```
 
@@ -211,7 +211,7 @@ The scalar mean above says HOW MUCH the two methods disagree on average, but not
 [![motion_tutorial_08_flow_residual_arrows.png](images/motion_tutorial/motion_tutorial_08_flow_residual_arrows.png)](images/motion_tutorial/motion_tutorial_08_flow_residual_arrows.png)
 
 ```text
-lucas_kanade_flow - sift_flow residual, arrow overlay on frame0 (95th-percentile-capped): /home/nathanpackard/git/ndl/build/demo/motion/output/08_flow_residual_arrows.png
+lucas_kanade_flow - sift_flow residual, arrow overlay on frame0 (95th-percentile-capped): 08_flow_residual_arrows.png
     extent = {4, 292, 194}   min=0  max=255  mean=157.26
 ```
 
@@ -226,5 +226,5 @@ The general {2,W,H} representation converted to Image<std::complex<double>,2> --
 strongest-motion pixel:   (26,175)  magnitude=1.961985px  angle=-113.392009 degrees
 ```
 
-All outputs written to: /home/nathanpackard/git/ndl/build/demo/motion/output 01/02 are the two RubberWhale frames. 03/04 are Lucas-Kanade's dense flow: 03 color-coded (hue= direction, brightness=magnitude), 04 the same field as red arrows over frame0 -- two views of identical data, pick whichever reads more clearly for a given vector. 05 marks every matched SIFT-inspired keypoint in red on frame0; 06/07 are sift_flow()'s own dense field, color-coded and arrow-overlaid the same two ways (green arrows this time). 03 and 06 (or 04 and 07) should broadly agree -- same real motion, two independent methods -- while 06/07 look visibly smoother/blockier than 03/04, exactly the dense-vs-sparse tradeoff this demo set out to show. 08 is the two methods' own DISAGREEMENT as a third flow field (lkFlow - siftFlow, blue arrows): mostly short/absent arrows would mean the two methods agree almost everywhere; a handful of longer ones concentrated in one region says exactly where and how much they diverge, which the single scalar mean printed in PART 6 above can't show on its own.
+All outputs written to: build/demo/motion/output 01/02 are the two RubberWhale frames. 03/04 are Lucas-Kanade's dense flow: 03 color-coded (hue= direction, brightness=magnitude), 04 the same field as red arrows over frame0 -- two views of identical data, pick whichever reads more clearly for a given vector. 05 marks every matched SIFT-inspired keypoint in red on frame0; 06/07 are sift_flow()'s own dense field, color-coded and arrow-overlaid the same two ways (green arrows this time). 03 and 06 (or 04 and 07) should broadly agree -- same real motion, two independent methods -- while 06/07 look visibly smoother/blockier than 03/04, exactly the dense-vs-sparse tradeoff this demo set out to show. 08 is the two methods' own DISAGREEMENT as a third flow field (lkFlow - siftFlow, blue arrows): mostly short/absent arrows would mean the two methods agree almost everywhere; a handful of longer ones concentrated in one region says exactly where and how much they diverge, which the single scalar mean printed in PART 6 above can't show on its own.
 

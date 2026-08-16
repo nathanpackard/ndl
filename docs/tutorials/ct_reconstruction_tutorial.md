@@ -1,6 +1,6 @@
 # CT Reconstruction Tutorial {#ct_reconstruction_tutorial}
 
-This demo teaches ndl::forward_project()/ndl::back_project() (projection.h) the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real (if synthetic) CT reconstruction problem. Output PNGs land in: /home/nathanpackard/git/ndl/build/demo/ct_reconstruction/output
+This demo teaches ndl::forward_project()/ndl::back_project() (projection.h) the same way demo/convolution teaches convolve(): each step shows the code, explains it, and shows the result -- first on small numbers you can check by hand, then on a real (if synthetic) CT reconstruction problem. Output PNGs land in: build/demo/ct_reconstruction/output
 
 ## PART 1: forward_project() -- a single voxel, checked by hand
 
@@ -30,7 +30,7 @@ The classic Shepp-Logan phantom (Shepp & Logan, 1974) -- the standard synthetic 
 [![ct_reconstruction_tutorial_01_phantom.png](images/ct_reconstruction_tutorial/ct_reconstruction_tutorial_01_phantom.png)](images/ct_reconstruction_tutorial/ct_reconstruction_tutorial_01_phantom.png)
 
 ```text
-Shepp-Logan phantom (ground truth): /home/nathanpackard/git/ndl/build/demo/ct_reconstruction/output/01_phantom.png
+Shepp-Logan phantom (ground truth): 01_phantom.png
     extent = {100, 100}   min=0  max=255  mean=68.4022
 ```
 
@@ -46,7 +46,7 @@ Each row of 02_sinogram.png is one view's own 1D projection (a line integral thr
 [![ct_reconstruction_tutorial_02_sinogram.png](images/ct_reconstruction_tutorial/ct_reconstruction_tutorial_02_sinogram.png)](images/ct_reconstruction_tutorial/ct_reconstruction_tutorial_02_sinogram.png)
 
 ```text
-sinogram (one row per view): /home/nathanpackard/git/ndl/build/demo/ct_reconstruction/output/02_sinogram.png
+sinogram (one row per view): 02_sinogram.png
     extent = {90, 145}   min=0  max=255  mean=94.0869
 ```
 
@@ -72,9 +72,9 @@ iteration 59:   RMSE vs. ground truth = 0.107569
 [![ct_reconstruction_tutorial_03_reconstruction.png](images/ct_reconstruction_tutorial/ct_reconstruction_tutorial_03_reconstruction.png)](images/ct_reconstruction_tutorial/ct_reconstruction_tutorial_03_reconstruction.png)
 
 ```text
-reconstruction after 60 box-constrained Landweber iterations: /home/nathanpackard/git/ndl/build/demo/ct_reconstruction/output/03_reconstruction.png
+reconstruction after 60 box-constrained Landweber iterations: 03_reconstruction.png
     extent = {100, 100}   min=0  max=255  mean=65.8801
 ```
 
-All outputs written to: /home/nathanpackard/git/ndl/build/demo/ct_reconstruction/output 01 is the ground-truth phantom; 02 is its sinogram (what a real CT scanner would actually measure); 03 is the reconstruction recovered from ONLY that sinogram, via forward_project()/ back_project() alone (plus the sinogram-derived box constraint described above) -- compare 03 against 01 to judge reconstruction quality, and the RMSE numbers above to see it decrease monotonically as the iteration progresses.
+All outputs written to: build/demo/ct_reconstruction/output 01 is the ground-truth phantom; 02 is its sinogram (what a real CT scanner would actually measure); 03 is the reconstruction recovered from ONLY that sinogram, via forward_project()/ back_project() alone (plus the sinogram-derived box constraint described above) -- compare 03 against 01 to judge reconstruction quality, and the RMSE numbers above to see it decrease monotonically as the iteration progresses.
 

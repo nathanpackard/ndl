@@ -231,7 +231,7 @@ int main()
 		"time. It's considerably slower than a 2D demo (64^3 volume, ~740k cone-beam rays per pass) --\n"
 		"expect roughly a minute and a half end to end, mostly PART 5's continuous reconstruction loop and\n"
 		"PART 6's DART refinement on top of it. Output (4 embedded interactive volume viewers --\n"
-		"sinogram, phantom, reconstruction, DART) lands in:\n    " << outputDir << "\n";
+		"sinogram, phantom, reconstruction, DART) lands in:\n    build/demo/ct_reconstruction_3d/output\n";
 
 	// ------------------------------------------------------------------
 	// PART 1: cone-beam geometry mechanics, on a single hand-checkable voxel
@@ -549,7 +549,7 @@ int main()
 	embedNDViewer("DART reconstruction (64^3)", dartVol, "dart_reconstruction.ndlv");
 
 	std::cout <<
-		"\n\nAll outputs written to: " << outputDir << "\n"
+		"\n\nAll outputs written to: build/demo/ct_reconstruction_3d/output\n"
 		"The phantom viewer shows the ground-truth volume; the sinogram viewer shows the cone-beam data (what\n"
 		"a real cone-beam CT scanner's detector would actually measure) that's ALL the reconstruction viewer\n"
 		"is recovered from (with a genuine per-ray-sample autoAA and the max_density_bound() constraint\n"

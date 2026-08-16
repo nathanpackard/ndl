@@ -39,7 +39,7 @@ int main()
         "demo/convolution teaches convolve(): each step shows the code, explains it, and\n"
         "shows the result -- first on small numbers you can check by hand, then on a\n"
         "real photo whose results you check by *looking at the saved PNG* and the\n"
-        "printed numbers. Output PNGs land in:\n    " << outputDir << "\n";
+        "printed numbers. Output PNGs land in:\n    build/demo/summed_area_table/output\n";
 
     // ------------------------------------------------------------------
     // PART 1: the mechanics, on a 1D row you can check by hand
@@ -198,7 +198,7 @@ int main()
     showText("largest per-pixel difference among those mismatches", std::to_string(boxBlurDiff.maxDiff) + "  (expected 1 -- a rounding tie, not a real disagreement)");
 
     std::cout <<
-        "\n\nAll outputs written to: " << outputDir << "\n"
+        "\n\nAll outputs written to: build/demo/summed_area_table/output\n"
         "01 is the original photo. 02 is that photo's own summed-area table, visualized directly --\n"
         "a cumulative running sum, not a picture, so it should look like a smooth gradient from\n"
         "near-black (top-left) to white (bottom-right), nothing like 01. 03/04 are the same radius-32\n"

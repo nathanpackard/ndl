@@ -60,7 +60,7 @@ int main()
         "demo/convolution teaches convolve(): each step shows the code, explains it, and\n"
         "shows the result -- first on small numbers you can check by hand, then on a real\n"
         "photo pair whose results you check by *looking at the saved PNG*. Output PNGs\n"
-        "land in:\n    " << outputDir << "\n";
+        "land in:\n    build/demo/motion/output\n";
 
     // ------------------------------------------------------------------
     // PART 1: gradient() mechanics, on a hand-checkable linear ramp
@@ -339,7 +339,7 @@ int main()
     showText("strongest-motion pixel", "(" + std::to_string(strongest[0]) + "," + std::to_string(strongest[1]) + ")  magnitude=" + std::to_string(std::abs(cval)) + "px  angle=" + std::to_string(std::arg(cval) * 180.0 / M_PI) + " degrees");
 
     std::cout <<
-        "\n\nAll outputs written to: " << outputDir << "\n"
+        "\n\nAll outputs written to: build/demo/motion/output\n"
         "01/02 are the two RubberWhale frames. 03/04 are Lucas-Kanade's dense flow: 03 color-coded (hue=\n"
         "direction, brightness=magnitude), 04 the same field as red arrows over frame0 -- two views of\n"
         "identical data, pick whichever reads more clearly for a given vector. 05 marks every matched\n"

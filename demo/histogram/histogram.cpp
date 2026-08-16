@@ -41,7 +41,7 @@ int main()
         "it, and shows the result -- first on small numbers you can check by hand,\n"
         "then on a real photo whose results you check by *looking at the saved PNGs*,\n"
         "the histograms themselves included (histogram_image(), a real bar chart or\n"
-        "heatmap, not ASCII). Output PNGs land in:\n    " << outputDir << "\n";
+        "heatmap, not ASCII). Output PNGs land in:\n    build/demo/histogram/output\n";
 
     // ------------------------------------------------------------------
     // PART 1: the mechanics, on numbers you can check by hand
@@ -160,7 +160,7 @@ int main()
     saveForInspection("joint red/green histogram", jointImg, "06_joint_histogram.png");
 
     std::cout <<
-        "\n\nAll outputs written to: " << outputDir << "\n"
+        "\n\nAll outputs written to: build/demo/histogram/output\n"
         "00 is a tiny hand-checkable bar chart -- 4 bars matching count(0..3) = 5,0,4,1 from Part 1.\n"
         "01 is the original photo. 02 is its greyscale histogram. 03/04 are the greyscale photo\n"
         "before/after histogram_equalize(), and 05 is the equalized histogram -- it should look visibly\n"

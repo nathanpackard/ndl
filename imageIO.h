@@ -40,7 +40,6 @@ namespace ndl
 				size_t size;
 				uint8_t *buf;
 				FILE *f;
-				printf("Opening the input file: %s.\n", fileName.c_str());
 				f = fopen(fileName.c_str(), "rb");
 				if (!f) throw std::runtime_error("failed to open input file: " + fileName);
 				fseek(f, 0, SEEK_END);
