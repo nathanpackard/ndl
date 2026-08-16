@@ -54,6 +54,16 @@ ndl_add_test_executable(fft_tests               fft_tests.cpp)
 ndl_add_test_executable(type_coverage_tests     type_coverage_tests.cpp)
 ndl_add_test_executable(histogram_tests         histogram_tests.cpp)
 ndl_add_test_executable(distance_transform_tests distance_transform_tests.cpp)
+ndl_add_test_executable(ring_buffer_tests       ring_buffer_tests.cpp)
+ndl_add_test_executable(json_tests              json_tests.cpp)
+# websocket_server_tests specifically (not any other test executable) uses
+# real std::thread (WebSocketServer's own accept/per-client threads) --
+# find_package(Threads) is what actually supplies -lpthread's platform-
+# correct equivalent, not something to hardcode as a raw linker flag.
+find_package(Threads REQUIRED)
+ndl_add_test_executable(websocket_server_tests  websocket_server_tests.cpp)
+target_link_libraries(websocket_server_tests PRIVATE Threads::Threads)
+ndl_add_test_executable(viewport_tests          viewport_tests.cpp)
 ndl_add_test_executable(summed_area_table_tests summed_area_table_tests.cpp)
 ndl_add_test_executable(visualize_tests         visualize_tests.cpp)
 ndl_add_test_executable(optical_flow_tests      optical_flow_tests.cpp)
@@ -64,11 +74,13 @@ ndl_add_test_executable(projection_tests        projection_tests.cpp)
 ndl_add_test_executable(viewer_tests            viewer_tests.cpp)
 ndl_add_test_executable(fit_tests               fit_tests.cpp)
 ndl_add_test_executable(video_io_tests          video_io_tests.cpp)
-# video_io_tests specifically (not any other test executable) exercises
-# imageIO/video_io.h's save_video(), which needs the two vendored codec
-# libraries' actual compiled code -- see ndl_video_codec's own comment in
-# the root CMakeLists.txt.
+ndl_add_test_executable(video_stream_reader_tests video_stream_reader_tests.cpp)
+# video_io_tests/video_stream_reader_tests specifically (not any other test
+# executable) exercise imageIO/video_io.h's save_video(), which needs the
+# two vendored codec libraries' actual compiled code -- see
+# ndl_video_codec's own comment in the root CMakeLists.txt.
 target_link_libraries(video_io_tests PRIVATE ndl_video_codec)
+target_link_libraries(video_stream_reader_tests PRIVATE ndl_video_codec)
 
 # Negative-compilation regression tests: confirm the static_assert-based
 # type restrictions in image/core.h, morphology.h, and image/owned.h

@@ -170,6 +170,50 @@ namespace ndl
 				if (parsed >= 3 && fpsDen > 0) info.fps = (double)fpsNum / fpsDen;
 				return info;
 			}
+
+			struct ResolvedScale { int width; int height; std::string scaleFilter; };
+
+			// Shared by load_video() and VideoStreamReader below: given the
+			// source's own probed size and a caller's target width/height
+			// (either, both, or neither may be 0 -- see load_video()'s own
+			// comment on what each combination means), resolves the actual
+			// width/height to decode at and the ffmpeg `-vf scale=W:H`
+			// filter to request it (empty if decoding at native size, so
+			// callers don't add a no-op filter to their ffmpeg command
+			// line). Factored out here specifically so this aspect-
+			// preserving-when-only-one-target-is-given logic (already
+			// tested via load_video()'s own tests) has exactly one
+			// implementation, not one per caller.
+			inline ResolvedScale resolveScale(const VideoInfo& info, int targetWidth, int targetHeight)
+			{
+				int width, height;
+				if (targetWidth > 0 && targetHeight > 0)
+				{
+					width = targetWidth; height = targetHeight;
+				}
+				else if (targetWidth > 0)
+				{
+					width = targetWidth;
+					height = (int)((double)targetWidth * info.height / info.width + 0.5);
+					height -= height % 2;
+				}
+				else if (targetHeight > 0)
+				{
+					height = targetHeight;
+					width = (int)((double)targetHeight * info.width / info.height + 0.5);
+					width -= width % 2;
+				}
+				else
+				{
+					width = info.width; height = info.height;
+				}
+				ResolvedScale result;
+				result.width = width;
+				result.height = height;
+				if (width != info.width || height != info.height)
+					result.scaleFilter = "scale=" + std::to_string(width) + ":" + std::to_string(height);
+				return result;
+			}
 		}
 
 		// Saves frames as a real, standalone .mp4 (H.264 baseline-profile
@@ -358,33 +402,11 @@ namespace ndl
 			// whether either was.
 			detail_video::VideoInfo info = detail_video::probeVideo(fileName);
 
-			int width, height;
-			if (targetWidth > 0 && targetHeight > 0)
-			{
-				width = targetWidth; height = targetHeight;
-			}
-			else if (targetWidth > 0)
-			{
-				width = targetWidth;
-				height = (int)((double)targetWidth * info.height / info.width + 0.5);
-				height -= height % 2;
-			}
-			else if (targetHeight > 0)
-			{
-				height = targetHeight;
-				width = (int)((double)targetHeight * info.width / info.height + 0.5);
-				width -= width % 2;
-			}
-			else
-			{
-				width = info.width; height = info.height;
-			}
-			std::string scaleFilter;
-			if (width != info.width || height != info.height)
-				scaleFilter = "scale=" + std::to_string(width) + ":" + std::to_string(height);
+			detail_video::ResolvedScale resolved = detail_video::resolveScale(info, targetWidth, targetHeight);
+			int width = resolved.width, height = resolved.height;
 
 			std::string cmd = "ffmpeg -v error -i " + detail_video::shellQuote(fileName);
-			if (!scaleFilter.empty()) cmd += " -vf " + detail_video::shellQuote(scaleFilter);
+			if (!resolved.scaleFilter.empty()) cmd += " -vf " + detail_video::shellQuote(resolved.scaleFilter);
 			if (targetFps > 0) cmd += " -r " + std::to_string(targetFps);
 			cmd += " -f rawvideo -pix_fmt rgb24 -";
 			FILE* pipe = popen(cmd.c_str(), "r");
@@ -432,5 +454,118 @@ namespace ndl
 			Image<uint8_t, 4> view(data.data(), extent);
 			return OwnedImage<uint8_t, 4>(view);
 		}
+
+		// The incremental counterpart to load_video() above: opens the
+		// ffmpeg pipe ONCE, in the constructor, and keeps it open across
+		// calls, so a caller can read a real-world video file one frame at
+		// a time (readFrame()) instead of load_video()'s "decode the
+		// whole thing into one std::vector before returning" -- the
+		// difference that matters once a file is too large to hold
+		// entirely in memory (or the source is effectively unbounded --
+		// a live feed piped through ffmpeg rather than a finite file).
+		//
+		// Pairs directly with RingBufferImage's own zero-copy write path
+		// (ring_buffer.h): `if (reader.readFrame(ring.nextWriteSlot()))
+		// ring.commitWrite();` reads straight into the ring's own backing
+		// storage, no intermediate frame buffer.
+		//
+		// Move-only (like the FILE* pipe it owns): reopening a fresh file
+		// (e.g. looping a finite demo clip to simulate a continuous live
+		// source) is `reader = VideoStreamReader(path, ...);`, not a
+		// separate "reset" method.
+		/// Incrementally reads one video frame at a time from an open ffmpeg pipe, for files too large (or
+		/// effectively unbounded) to decode all at once the way load_video()/load_video_owned() do.
+		/// @ingroup image_io
+		class VideoStreamReader
+		{
+		public:
+			/// Opens fileName and starts the ffmpeg process immediately (not lazily on the first readFrame()).
+			/// @param fileName     Path to open; any format/codec the system ffmpeg supports.
+			/// @param targetWidth  If >0, scale to this width during decode. May be given alone (targetHeight left 0) to preserve the source's own aspect ratio; both 0 (the default) decodes at the source's native resolution.
+			/// @param targetHeight If >0, scale to this height during decode. May be given alone (targetWidth left 0) to preserve the source's own aspect ratio; both 0 (the default) decodes at the source's native resolution.
+			/// @param targetFps    If >0, resample to this frame rate (via frame drop/duplication) during decode.
+			/// @throws std::runtime_error if ffmpeg/ffprobe aren't found on PATH, or the ffmpeg process fails to start.
+			explicit VideoStreamReader(std::string fileName, int targetWidth = 0, int targetHeight = 0, double targetFps = 0) :
+				fileName_(std::move(fileName))
+			{
+				if (!detail_video::commandExists("ffprobe") || !detail_video::commandExists("ffmpeg"))
+					throw std::runtime_error("VideoStreamReader requires ffmpeg/ffprobe on PATH to decode real-world video files (see imageIO/video_io.h's own top comment for why); neither was found");
+
+				detail_video::VideoInfo info = detail_video::probeVideo(fileName_);
+				detail_video::ResolvedScale resolved = detail_video::resolveScale(info, targetWidth, targetHeight);
+				width_ = resolved.width;
+				height_ = resolved.height;
+				fps_ = targetFps > 0 ? targetFps : info.fps;
+				frameBytes_ = (size_t)width_ * height_ * 3;
+
+				std::string cmd = "ffmpeg -v error -i " + detail_video::shellQuote(fileName_);
+				if (!resolved.scaleFilter.empty()) cmd += " -vf " + detail_video::shellQuote(resolved.scaleFilter);
+				if (targetFps > 0) cmd += " -r " + std::to_string(targetFps);
+				cmd += " -f rawvideo -pix_fmt rgb24 -";
+				pipe_ = popen(cmd.c_str(), "r");
+				if (!pipe_) throw std::runtime_error("VideoStreamReader: failed to run ffmpeg for: " + fileName_);
+			}
+
+			VideoStreamReader(const VideoStreamReader&) = delete;
+			VideoStreamReader& operator=(const VideoStreamReader&) = delete;
+			VideoStreamReader(VideoStreamReader&& other) noexcept :
+				fileName_(std::move(other.fileName_)), pipe_(other.pipe_),
+				width_(other.width_), height_(other.height_), fps_(other.fps_), frameBytes_(other.frameBytes_)
+			{
+				other.pipe_ = nullptr;
+			}
+			VideoStreamReader& operator=(VideoStreamReader&& other) noexcept
+			{
+				if (this != &other)
+				{
+					if (pipe_) pclose(pipe_);
+					fileName_ = std::move(other.fileName_);
+					pipe_ = other.pipe_;
+					width_ = other.width_; height_ = other.height_; fps_ = other.fps_; frameBytes_ = other.frameBytes_;
+					other.pipe_ = nullptr;
+				}
+				return *this;
+			}
+			~VideoStreamReader()
+			{
+				if (pipe_) pclose(pipe_);
+			}
+
+			int width() const { return width_; }
+			int height() const { return height_; }
+			double fps() const { return fps_; }
+			/// Byte count readFrame() writes on a successful read (width()*height()*3, packed RGB).
+			size_t frameBytes() const { return frameBytes_; }
+
+			/// Same channels/px/px/s convention load_video()'s own spacingOut parameter uses -- see that function's own comment.
+			VoxelSpacing<4> spacing() const
+			{
+				VoxelSpacing<4> s;
+				s.unit = { "channels", "px", "px", fps_ > 0 ? "s" : "" };
+				s.spacing = { 1, 1, 1, fps_ > 0 ? 1.0 / fps_ : 1 };
+				return s;
+			}
+
+			/// Reads exactly one frame (frameBytes() bytes, packed RGB) directly into dst -- no intermediate
+			/// copy, so it pairs with RingBufferImage::nextWriteSlot() for a genuinely zero-copy read.
+			/// @param  dst Must have room for frameBytes() bytes.
+			/// @return     true if a full frame was read; false at a clean end of stream.
+			/// @throws std::runtime_error if the stream ends mid-frame (a truncated/corrupt source).
+			bool readFrame(uint8_t* dst)
+			{
+				size_t n = fread(dst, 1, frameBytes_, pipe_);
+				if (n == 0) return false;
+				if (n != frameBytes_)
+					throw std::runtime_error("VideoStreamReader::readFrame(): stream ended mid-frame for: " + fileName_);
+				return true;
+			}
+
+		private:
+			std::string fileName_;
+			FILE* pipe_ = nullptr;
+			int width_ = 0, height_ = 0;
+			double fps_ = 0;
+			size_t frameBytes_ = 0;
+		};
 	}
 }

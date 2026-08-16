@@ -72,6 +72,7 @@ endif()
 
 option(NDL_BUILD_TESTS "Build the ndl unit test suite" ON)
 option(NDL_BUILD_DEMOS "Build the ndl demo programs" ON)
+option(NDL_BUILD_APPS "Build the ndl apps (interactive client/server programs, e.g. live_video_stream -- unlike demo/, these can't be captured into a static tutorial page)" ON)
 option(NDL_BUILD_DOCS "Add a 'docs' target that generates Doxygen documentation (requires Doxygen; off by default since it's not part of the normal build/test loop)" OFF)
 
 if(NDL_BUILD_TESTS)
@@ -124,6 +125,28 @@ if(NDL_BUILD_DEMOS)
         # minute even where the rest finish in single-digit seconds.
         add_test(NAME demo_ct_reconstruction_3d COMMAND ct_reconstruction_3d WORKING_DIRECTORY $<TARGET_FILE_DIR:ct_reconstruction_3d>)
         set_tests_properties(demo_ct_reconstruction_3d PROPERTIES LABELS "smoke" TIMEOUT 600)
+    endif()
+endif()
+
+if(NDL_BUILD_APPS)
+    add_subdirectory(apps/live_video_stream)
+
+    if(NDL_BUILD_TESTS)
+        # apps/ programs are interactive client/server processes, not
+        # run-to-completion pipelines -- live_video_stream is SUPPOSED to
+        # run forever until stopped, so it can't be smoke-tested the way
+        # demo/'s own "run it, check the exit code" loop above tests those.
+        # Its own self-test mode (NDL_LIVE_VIDEO_STREAM_SELFTEST, see that
+        # app's own comment) makes it behave like an ordinary demo for
+        # exactly this purpose: still does everything a real run does
+        # (opens the file, builds the ring buffer, starts the WebSocket
+        # server, streams a few frames), then stops itself -- so this is
+        # still just "run it, expect exit 0," the same pattern every demo
+        # smoke test above already uses.
+        add_test(NAME app_live_video_stream COMMAND live_video_stream WORKING_DIRECTORY $<TARGET_FILE_DIR:live_video_stream>)
+        set_tests_properties(app_live_video_stream PROPERTIES
+            LABELS "smoke" TIMEOUT 30
+            ENVIRONMENT "NDL_LIVE_VIDEO_STREAM_SELFTEST=1")
     endif()
 endif()
 
@@ -194,6 +217,37 @@ if(NDL_BUILD_DOCS)
                 add_dependencies(docs tutorials)
             else()
                 message(STATUS "ndl: Python3 interpreter not found -- 'docs' will skip regenerating the tutorial pages (any previously generated ones are still used)")
+            endif()
+        endif()
+
+        # Apps (apps/) get their own, much simpler doc-generation step --
+        # see docs/generate_app_doc.py's own top comment for why this
+        # can't reuse generate_tutorial.py's "run it, capture stdout"
+        # pipeline: an app is a live client/server program with no
+        # "completed output" to capture. Still depends on the app's own
+        # TARGET (so at least a compile failure is caught before docs
+        # claims success) even though the generated page never runs it.
+        if(NDL_BUILD_APPS)
+            find_package(Python3 QUIET COMPONENTS Interpreter)
+            if(Python3_FOUND)
+                set(NDL_GENERATED_DOCS_DIR ${CMAKE_CURRENT_BINARY_DIR}/docs/generated)
+                set(_app_page_file ${NDL_GENERATED_DOCS_DIR}/live_video_stream_app.md)
+                add_custom_command(
+                    OUTPUT ${_app_page_file}
+                    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/docs/generate_app_doc.py
+                            ${CMAKE_CURRENT_SOURCE_DIR}/apps/live_video_stream/live_video_stream.cpp
+                            live_video_stream_app "Live Video Stream App"
+                            "./live_video_stream <videoPath> [port]"
+                            live_video_stream
+                            ${NDL_GENERATED_DOCS_DIR}
+                    DEPENDS live_video_stream ${CMAKE_CURRENT_SOURCE_DIR}/apps/live_video_stream/live_video_stream.cpp ${CMAKE_CURRENT_SOURCE_DIR}/docs/generate_app_doc.py
+                    COMMENT "Generating live_video_stream's app doc page (source only -- the app itself is never run)"
+                    VERBATIM
+                )
+                add_custom_target(app_docs DEPENDS ${_app_page_file})
+                add_dependencies(docs app_docs)
+            else()
+                message(STATUS "ndl: Python3 interpreter not found -- 'docs' will skip regenerating the app doc pages (any previously generated ones are still used)")
             endif()
         endif()
     else()
