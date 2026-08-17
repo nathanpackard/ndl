@@ -1,5 +1,5 @@
 #include <ndl/image.h>
-#include <ndl/viewer.h>
+#include <ndl/viewer/viewer.h>
 #include <ndl/imageIO/video_io.h>
 #include <iostream>
 #include <filesystem>

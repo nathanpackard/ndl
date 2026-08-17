@@ -1,7 +1,7 @@
 #include <ndl/image.h>
 #include <ndl/imageIO.h>
-#include <ndl/histogram.h>
-#include <ndl/morphology.h>
+#include <ndl/processing/histogram.h>
+#include <ndl/processing/morphology.h>
 #include <iostream>
 #include <sstream>
 #include <filesystem>

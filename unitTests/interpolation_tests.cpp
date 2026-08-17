@@ -6,7 +6,7 @@
 #include <random>
 
 #include <ndl/image.h>
-#include <ndl/interpolation.h>
+#include <ndl/processing/interpolation.h>
 
 #include "testHelpers.h"
 

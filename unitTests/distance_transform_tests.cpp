@@ -8,8 +8,8 @@
 #include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/morphology.h>
-#include <ndl/distance_transform.h>
+#include <ndl/processing/morphology.h>
+#include <ndl/processing/distance_transform.h>
 
 #include "testHelpers.h"
 

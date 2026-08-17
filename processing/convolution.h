@@ -5,10 +5,10 @@
 #include <array>
 #include <limits>
 #include <type_traits>
-#include "image/border_mode.h"
-#include "image/detail.h"
-#include "image.h"
-#include "mathHelpers.h"
+#include "../image/border_mode.h"
+#include "../image/detail.h"
+#include "../image.h"
+#include "../mathHelpers.h"
 
 // The convolution toolkit: convolve()/gaussian_blur(), as free functions
 // over any minimal-interface image type. A sibling of fft.h/matrix.h/

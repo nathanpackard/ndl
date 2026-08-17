@@ -7,7 +7,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/optical_flow.h>
+#include <ndl/processing/optical_flow.h>
 
 #include "testHelpers.h"
 

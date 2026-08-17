@@ -6,9 +6,9 @@
 #include <limits>
 #include <cstddef>
 #include <type_traits>
-#include "image/border_mode.h"
-#include "image/detail.h"
-#include "image.h"
+#include "../image/border_mode.h"
+#include "../image/detail.h"
+#include "../image.h"
 #include "convolution.h"
 #include "matrix/core.h"
 #include "matrix/decomposition.h"

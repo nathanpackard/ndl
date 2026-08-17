@@ -1,9 +1,9 @@
 #include <ndl/image.h>
 #include <ndl/imageIO.h>
-#include <ndl/morphology.h>
-#include <ndl/convolution.h>
-#include <ndl/distance_transform.h>
-#include <ndl/visualize.h>
+#include <ndl/processing/morphology.h>
+#include <ndl/processing/convolution.h>
+#include <ndl/processing/distance_transform.h>
+#include <ndl/processing/visualize.h>
 #include <iostream>
 #include <sstream>
 #include <filesystem>

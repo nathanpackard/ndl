@@ -5,8 +5,8 @@
 #include <optional>
 #include <cmath>
 #include <type_traits>
-#include "image.h"
-#include "image/border_mode.h"
+#include "../image.h"
+#include "../image/border_mode.h"
 #include "interpolation.h"
 #include "summed_area_table.h"
 #include "matrix/core.h"

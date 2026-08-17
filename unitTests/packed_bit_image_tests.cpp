@@ -6,7 +6,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/morphology.h>
+#include <ndl/processing/morphology.h>
 
 #include "testHelpers.h"
 

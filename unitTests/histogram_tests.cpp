@@ -5,7 +5,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/histogram.h>
+#include <ndl/processing/histogram.h>
 
 #include "testHelpers.h"
 

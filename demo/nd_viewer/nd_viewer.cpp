@@ -1,6 +1,6 @@
 #include <ndl/image.h>
-#include <ndl/viewer.h>
-#include <ndl/distance_transform.h>
+#include <ndl/viewer/viewer.h>
+#include <ndl/processing/distance_transform.h>
 #include <iostream>
 #include <filesystem>
 #include <cstdint>

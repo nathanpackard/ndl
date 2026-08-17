@@ -9,7 +9,7 @@
 #include <utility>
 
 #include <ndl/image.h>
-#include <ndl/viewer.h>
+#include <ndl/viewer/viewer.h>
 
 #include "testHelpers.h"
 

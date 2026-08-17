@@ -4,7 +4,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/convolution.h>
+#include <ndl/processing/convolution.h>
 
 #include "testHelpers.h"
 

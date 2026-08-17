@@ -4,9 +4,9 @@
 #include <vector>
 #include <cstddef>
 #include <type_traits>
-#include "image/border_mode.h"
-#include "image/detail.h"
-#include "image.h"
+#include "../image/border_mode.h"
+#include "../image/detail.h"
+#include "../image.h"
 
 // The interpolation toolkit: Nearest/Linear/Quadratic/Cubic interpolator
 // tags plus sample() -- a free function over any minimal-interface image

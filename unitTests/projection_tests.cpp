@@ -6,8 +6,8 @@
 #include <random>
 
 #include <ndl/image.h>
-#include <ndl/matrix.h>
-#include <ndl/projection.h>
+#include <ndl/processing/matrix.h>
+#include <ndl/processing/projection.h>
 
 #include "testHelpers.h"
 

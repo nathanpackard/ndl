@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <type_traits>
-#include "image/border_mode.h"
-#include "image/detail.h"
+#include "../image/border_mode.h"
+#include "../image/detail.h"
 #include "histogram.h"
 
 // The morphology/thresholding toolkit: erode()/dilate()/median_filter()/

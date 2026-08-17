@@ -9,7 +9,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <type_traits>
-#include "image.h"
+#include "../image.h"
 #include "visualize.h"
 
 // The histogram toolkit: Histogram<VDIM>, histogram_equalize(), and

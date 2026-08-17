@@ -6,7 +6,7 @@
 #include <array>
 
 #include <ndl/image.h>
-#include <ndl/visualize.h>
+#include <ndl/processing/visualize.h>
 
 #include "testHelpers.h"
 

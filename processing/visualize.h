@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <type_traits>
 #include <utility>
-#include "image.h"
+#include "../image.h"
 
 // The visualization toolkit: bar_chart()/heatmap(), as free functions over
 // any minimal-interface image type. A sibling of fft.h/matrix.h/

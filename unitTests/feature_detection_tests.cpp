@@ -6,7 +6,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/feature_detection.h>
+#include <ndl/processing/feature_detection.h>
 
 #include "testHelpers.h"
 

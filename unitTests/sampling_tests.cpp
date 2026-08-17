@@ -6,8 +6,8 @@
 #include <algorithm>
 
 #include <ndl/image.h>
-#include <ndl/matrix.h>
-#include <ndl/sampling.h>
+#include <ndl/processing/matrix.h>
+#include <ndl/processing/sampling.h>
 
 #include "testHelpers.h"
 

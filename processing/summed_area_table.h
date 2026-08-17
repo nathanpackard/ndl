@@ -6,7 +6,7 @@
 #include <type_traits>
 #include <cmath>
 #include <algorithm>
-#include "image.h"
+#include "../image.h"
 
 // The summed-area-table toolkit: summed_area_table()/rectangle_sum(), as
 // free functions over any minimal-interface image type. A sibling of

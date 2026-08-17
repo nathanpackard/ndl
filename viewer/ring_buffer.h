@@ -6,7 +6,7 @@
 #include <numeric>
 #include <algorithm>
 #include <stdexcept>
-#include "image.h"
+#include "../image.h"
 
 // RingBufferImage<T,DIM>: a fixed-capacity sliding window along one caller-
 // chosen axis (the "ring axis" -- typically time), for real-time sources

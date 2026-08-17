@@ -6,8 +6,8 @@
 #include <utility>
 #include <complex>
 #include <type_traits>
-#include "image/border_mode.h"
-#include "image.h"
+#include "../image/border_mode.h"
+#include "../image.h"
 #include "convolution.h"
 #include "summed_area_table.h"
 

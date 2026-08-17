@@ -80,7 +80,7 @@
 #include "mp4/minih264e.h"
 
 #include "../image.h"
-#include "../viewer.h"
+#include "../viewer/viewer.h"
 #include <array>
 #include <string>
 #include <vector>

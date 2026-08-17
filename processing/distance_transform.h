@@ -5,7 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <type_traits>
-#include "image.h"
+#include "../image.h"
 
 // The distance transform toolkit: distance_transform_squared()/
 // distance_transform(), as free functions over any minimal-interface image

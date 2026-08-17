@@ -5,7 +5,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/matrix.h>
+#include <ndl/processing/matrix.h>
 
 #include "testHelpers.h"
 

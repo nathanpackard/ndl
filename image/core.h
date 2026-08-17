@@ -762,8 +762,8 @@ namespace ndl
 		// those are toolkits built on top of it, the same way fftn()/ifftn()
 		// (fft.h) are: free functions taking an Image (or any other
 		// minimal-interface image type, e.g. PackedBitImage) as a plain
-		// argument. #include <ndl/convolution.h> for the first two,
-		// <ndl/morphology.h> for the rest -- neither is pulled in by
+		// argument. #include <ndl/processing/convolution.h> for the first two,
+		// <ndl/processing/morphology.h> for the rest -- neither is pulled in by
 		// #include <ndl/image.h> alone.
 
 		/// Every N-dimensional coordinate this view covers, in row-major order.

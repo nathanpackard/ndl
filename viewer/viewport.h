@@ -11,9 +11,9 @@
 #include <tuple>
 #include <cstdint>
 
-#include "image.h"
-#include "convolution.h"
-#include "net/json.h"
+#include "../image.h"
+#include "../processing/convolution.h"
+#include "../net/json.h"
 
 // The "generic viewport interface" the live-streaming redesign is built
 // around: instead of a server blasting whole frames and letting the

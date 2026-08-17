@@ -9,8 +9,8 @@
 #include <stdexcept>
 
 #include <ndl/image.h>
-#include <ndl/convolution.h>
-#include <ndl/fft.h>
+#include <ndl/processing/convolution.h>
+#include <ndl/processing/fft.h>
 
 #include "testHelpers.h"
 

@@ -12,7 +12,7 @@
 #include <mutex>
 #include <thread>
 #include <numeric>
-#include "image.h"
+#include "../image.h"
 #include "interpolation.h"
 #include "summed_area_table.h"
 #include "matrix/core.h"

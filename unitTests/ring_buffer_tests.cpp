@@ -6,7 +6,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/ring_buffer.h>
+#include <ndl/viewer/ring_buffer.h>
 
 #include "testHelpers.h"
 

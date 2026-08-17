@@ -7,8 +7,8 @@
 #include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/convolution.h>
-#include <ndl/morphology.h>
+#include <ndl/processing/convolution.h>
+#include <ndl/processing/morphology.h>
 #include <ndl/imageIO.h>
 
 #include "testHelpers.h"

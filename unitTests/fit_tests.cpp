@@ -4,7 +4,7 @@
 #include <cmath>
 #include <vector>
 
-#include <ndl/fit.h>
+#include <ndl/processing/fit.h>
 
 #include "testHelpers.h"
 

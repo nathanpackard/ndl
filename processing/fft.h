@@ -52,8 +52,8 @@ Retrieved from: http://en.literateprograms.org/Cooley-Tukey_FFT_algorithm_(C)?ol
 #include <cassert>
 #include <stdexcept>
 #include <string>
-#include "mathHelpers.h"
-#include "image.h"
+#include "../mathHelpers.h"
+#include "../image.h"
 
 namespace ndl
 {

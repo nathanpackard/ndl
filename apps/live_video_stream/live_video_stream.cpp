@@ -29,8 +29,8 @@
 // live_video_stream.html in a browser (see that file's own top comment)
 // and connect to ws://localhost:<port>.
 #include <ndl/imageIO/video_io.h>
-#include <ndl/ring_buffer.h>
-#include <ndl/viewport.h>
+#include <ndl/viewer/ring_buffer.h>
+#include <ndl/viewer/viewport.h>
 #include <ndl/net/websocket_server.h>
 #include <ndl/net/json.h>
 

@@ -7,7 +7,7 @@
 #include <iostream>
 
 #include <ndl/image.h>
-#include <ndl/summed_area_table.h>
+#include <ndl/processing/summed_area_table.h>
 
 #include "testHelpers.h"
 

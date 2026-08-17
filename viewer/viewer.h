@@ -5,7 +5,7 @@
 #include <ostream>
 #include <string>
 #include <type_traits>
-#include "image.h"
+#include "../image.h"
 
 // Primitives for viewing an Image<T,DIM> as a grid of synchronized 2D
 // slices -- one per pair of axes, each fixed along every other axis at a

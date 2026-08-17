@@ -1,8 +1,8 @@
 #include <ndl/image.h>
 #include <ndl/imageIO.h>
-#include <ndl/convolution.h>
-#include <ndl/summed_area_table.h>
-#include <ndl/visualize.h>
+#include <ndl/processing/convolution.h>
+#include <ndl/processing/summed_area_table.h>
+#include <ndl/processing/visualize.h>
 #include <iostream>
 #include <sstream>
 #include <filesystem>

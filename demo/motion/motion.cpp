@@ -1,9 +1,9 @@
 #include <ndl/image.h>
 #include <ndl/imageIO.h>
-#include <ndl/convolution.h>
-#include <ndl/optical_flow.h>
-#include <ndl/feature_detection.h>
-#include <ndl/visualize.h>
+#include <ndl/processing/convolution.h>
+#include <ndl/processing/optical_flow.h>
+#include <ndl/processing/feature_detection.h>
+#include <ndl/processing/visualize.h>
 #include <iostream>
 #include <sstream>
 #include <filesystem>

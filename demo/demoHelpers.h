@@ -1,7 +1,7 @@
 #pragma once
 #include <ndl/image.h>
 #include <ndl/imageIO.h>
-#include <ndl/viewer.h>
+#include <ndl/viewer/viewer.h>
 #include <iostream>
 #include <fstream>
 #include <string>

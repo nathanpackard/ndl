@@ -1,9 +1,9 @@
 #include <ndl/image.h>
 #include <ndl/imageIO.h>
-#include <ndl/matrix.h>
-#include <ndl/projection.h>
-#include <ndl/morphology.h>
-#include <ndl/viewer.h>
+#include <ndl/processing/matrix.h>
+#include <ndl/processing/projection.h>
+#include <ndl/processing/morphology.h>
+#include <ndl/viewer/viewer.h>
 #include <iostream>
 #include <sstream>
 #include <filesystem>

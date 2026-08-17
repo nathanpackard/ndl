@@ -5,7 +5,7 @@
 // producing a degenerate 1-wide result. This file exists purely to confirm
 // that restriction stays in place; it is never meant to successfully
 // compile.
-#include <ndl/viewer.h>
+#include <ndl/viewer/viewer.h>
 using namespace ndl;
 int main()
 {
