@@ -10,6 +10,8 @@
 #include <stdexcept>
 #include <tuple>
 #include <cstdint>
+#include <execution>
+#include <numeric>
 
 #include "../image.h"
 #include "../processing/convolution.h"
@@ -348,14 +350,35 @@ namespace ndl
 		double rdLen = std::sqrt(rayDir[0] * rayDir[0] + rayDir[1] * rayDir[1] + rayDir[2] * rayDir[2]);
 		if (rdLen > 0) { rayDir[0] /= rdLen; rayDir[1] /= rdLen; rayDir[2] /= rdLen; }
 
-		// Reused across every ray/step below rather than reallocated each
-		// time -- same reasoning as renderSlice()'s own channelValues.
-		std::vector<double> channelValues(colorAxis >= 0 ? (std::size_t)extent[colorAxis] : 0);
-		double reducedRaw[3];
-
-		std::size_t p = 0;
-		for (int py = 0; py < outputHeight; py++)
+		// One task per output ROW, run in parallel: every ray is
+		// independent of every other ray (each only ever reads `source`/
+		// `R`/`base` and writes its own disjoint slice of result.pixels),
+		// the same "chunks are already independent, no merge step"
+		// reasoning fftn()'s own per-fiber std::execution::par usage
+		// documents -- rows rather than individual pixels purely to keep
+		// the parallel task count modest (outputHeight, not
+		// outputWidth*outputHeight) without losing any real parallelism
+		// (a single ray's own up-to-96-step march is already far more
+		// work than the scheduling overhead of one task). channelValues/
+		// reducedRaw move from a single buffer shared (and reused, not
+		// reallocated) across the whole image to one PER ROW TASK instead
+		// -- still only outputHeight allocations total, cheap next to the
+		// per-pixel ray-march cost each row goes on to do, but now safe
+		// for concurrent rows to mutate their own copy independently.
+		// Every validation that could throw (axisA/B/C, etc.) already
+		// happened above, sequentially, before this loop starts --
+		// required, not just tidy: an exception escaping a
+		// std::execution::par callable can't propagate to the caller at
+		// all (the standard mandates std::terminate() instead), the exact
+		// reason fftn() validates its own per-axis extent before entering
+		// its own parallel for_each rather than inside it.
+		std::vector<int> rowIndices(outputHeight);
+		std::iota(rowIndices.begin(), rowIndices.end(), 0);
+		std::for_each(std::execution::par, rowIndices.begin(), rowIndices.end(), [&](int py)
 		{
+			std::vector<double> channelValues(colorAxis >= 0 ? (std::size_t)extent[colorAxis] : 0);
+			double reducedRaw[3];
+
 			// vsY: -1 at screen-top, +1 at screen-bottom -- the SAME
 			// "vScreen" convention (already flipped relative to raw clip
 			// space) web/ndlviewer.js's own navigateFromEvent()/
@@ -363,8 +386,9 @@ namespace ndl
 			// `rotation` matrix that works correctly there means the same
 			// thing here.
 			double vsY = ((py + 0.5) / outputHeight) * 2.0 - 1.0;
-			for (int px = 0; px < outputWidth; px++, p++)
+			for (int px = 0; px < outputWidth; px++)
 			{
+				std::size_t p = (std::size_t)py * outputWidth + px;
 				double vsX = ((px + 0.5) / outputWidth) * 2.0 - 1.0;
 				std::array<double, 3> rayOrigin = R * std::array<double, 3>{ vsX, vsY, 0.0 };
 				std::array<double, 3> pos = {
@@ -422,7 +446,7 @@ namespace ndl
 					result.pixels[p] = (uint8_t)clampInt((int)std::lround(accumR * 255), 0, 255);
 				}
 			}
-		}
+		});
 		return result;
 	}
 
