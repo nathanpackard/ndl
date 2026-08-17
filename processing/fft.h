@@ -653,6 +653,106 @@ namespace ndl
 			for (auto it = output.begin(); it != output.end(); ++it, ++cIt) *it = cIt->real();
 		}
 
+		// A purely ADDITIVE alternative output representation, alongside
+		// (not instead of) fftn()'s own std::complex<Real> output above --
+		// real and imaginary parts as two positions along a new, extra
+		// CHANNEL axis instead of packed into one complex value per
+		// element, the same "channel is just another axis" convention
+		// this library already uses for RGB (see e.g. viewer.h's own
+		// options.colorAxis) -- so a complex spectrum can be piped through
+		// viewport.h's own channelReduction machinery ("magnitude"/
+		// "phase" modes) and viewed the same way a color image already
+		// is, with no special-casing for complex data anywhere in that
+		// pipeline. std::complex stays fully supported everywhere it
+		// already was; this is a second, equally-valid way to get the
+		// same result out, not a migration -- internally, it just calls
+		// the existing complex-output fftn() into a temporary buffer and
+		// copies real/imag into the requested channel axis, rather than
+		// reimplementing the transform itself.
+		/// Forward FFT with real/imag as a trailing channel axis (extent 2) instead of std::complex<Real> --
+		/// purely additive alongside fftn()'s own complex-output overload above; see this function's own comment.
+		/// @tparam Real       Floating-point element type (float or double).
+		/// @tparam DIM        Number of dimensions of the REAL-valued input (the output has DIM+1).
+		/// @tparam MaxPo2Size Largest power-of-two padded transform size any single non-power-of-two axis may need; see fftn().
+		/// @param  input       Real-valued source image.
+		/// @param  output      Destination; must already exist with `channelAxis` set to extent 2 and every other
+		///                     axis matching `input`'s own extent, in the same relative order.
+		/// @param  channelAxis Which of `output`'s DIM+1 axes holds [real, imag] (index 0 = real, 1 = imag). Defaults
+		///                     to 0, matching this library's own "channel fastest" convention (e.g. {3,width,height} for RGB).
+		/// @throws std::invalid_argument if `output`'s own extent doesn't match `input`'s (with `channelAxis` inserted, extent 2), or under the same conditions as fftn().
+		/// @ingroup fft
+		template<class Real, int DIM, int MaxPo2Size = 8192>
+		void fftn_channels(const Image<Real, DIM>& input, Image<Real, DIM + 1>& output, int channelAxis = 0)
+		{
+			auto inExtent = input.extent();
+			auto outExtent = output.extent();
+			if (channelAxis < 0 || channelAxis > DIM || outExtent[channelAxis] != 2)
+				throw std::invalid_argument("fftn_channels(): channelAxis out of range, or output's own extent along it isn't 2");
+			for (int k = 0, j = 0; k < DIM + 1; k++)
+			{
+				if (k == channelAxis) continue;
+				if (outExtent[k] != inExtent[j]) throw std::invalid_argument("fftn_channels(): output's non-channel axes must match input's extent, in the same relative order");
+				j++;
+			}
+
+			OwnedImage<std::complex<Real>, DIM> complexOut(inExtent);
+			fftn<Real, DIM, MaxPo2Size>(input, complexOut);
+			for (const auto& inCoord : complexOut.coordinates())
+			{
+				std::array<int, DIM + 1> outCoordReal{}, outCoordImag{};
+				for (int k = 0, j = 0; k < DIM + 1; k++)
+				{
+					if (k == channelAxis) { outCoordReal[k] = 0; outCoordImag[k] = 1; }
+					else { outCoordReal[k] = inCoord[j]; outCoordImag[k] = inCoord[j]; j++; }
+				}
+				std::complex<Real> c = complexOut.at(inCoord);
+				output.at(outCoordReal) = c.real();
+				output.at(outCoordImag) = c.imag();
+			}
+		}
+
+		// The exact inverse of fftn_channels() above: reads real/imag back
+		// out of the channel axis, reassembles them into std::complex, and
+		// reuses the existing complex-input ifftn() overload -- same
+		// "reuse, don't reimplement" relationship fftn_channels() itself has.
+		/// Inverse of fftn_channels(): reconstructs a real-valued image from a channel-axis [real,imag] representation.
+		/// @tparam Real       Floating-point element type (float or double).
+		/// @tparam DIM        Number of dimensions of the REAL-valued output (the input has DIM+1).
+		/// @tparam MaxPo2Size Largest power-of-two padded transform size any single non-power-of-two axis may need; see fftn().
+		/// @param  input       Source; `channelAxis` must have extent 2 ([real, imag]).
+		/// @param  output      Destination for the reconstructed real-valued image; must already exist with the
+		///                     same extent as `input`'s own non-channel axes, in the same relative order.
+		/// @param  channelAxis Which of `input`'s DIM+1 axes holds [real, imag]. Defaults to 0.
+		/// @throws std::invalid_argument if `input`'s own extent along `channelAxis` isn't 2, or the axes otherwise mismatch, or under the same conditions as fftn().
+		/// @ingroup fft
+		template<class Real, int DIM, int MaxPo2Size = 8192>
+		void ifftn_channels(const Image<Real, DIM + 1>& input, Image<Real, DIM>& output, int channelAxis = 0)
+		{
+			auto inExtent = input.extent();
+			auto outExtent = output.extent();
+			if (channelAxis < 0 || channelAxis > DIM || inExtent[channelAxis] != 2)
+				throw std::invalid_argument("ifftn_channels(): channelAxis out of range, or input's own extent along it isn't 2");
+			for (int k = 0, j = 0; k < DIM + 1; k++)
+			{
+				if (k == channelAxis) continue;
+				if (inExtent[k] != outExtent[j]) throw std::invalid_argument("ifftn_channels(): input's non-channel axes must match output's extent, in the same relative order");
+				j++;
+			}
+
+			OwnedImage<std::complex<Real>, DIM> complexIn(outExtent);
+			for (const auto& outCoord : complexIn.coordinates())
+			{
+				std::array<int, DIM + 1> inCoordReal{}, inCoordImag{};
+				for (int k = 0, j = 0; k < DIM + 1; k++)
+				{
+					if (k == channelAxis) { inCoordReal[k] = 0; inCoordImag[k] = 1; }
+					else { inCoordReal[k] = outCoord[j]; inCoordImag[k] = outCoord[j]; j++; }
+				}
+				complexIn.at(outCoord) = std::complex<Real>(input.at(inCoordReal), input.at(inCoordImag));
+			}
+			ifftn<Real, DIM, MaxPo2Size>(complexIn, output);
+		}
+
 		// Moves the zero-frequency (DC) component from index 0 of each axis
 		// to that axis' own middle (extent/2), wrapping the rest around it --
 		// the standard rearrangement (numpy calls it fftshift) for

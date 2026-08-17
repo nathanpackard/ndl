@@ -6,6 +6,8 @@
 #include <chrono>
 #include <atomic>
 #include <cstring>
+#include <fstream>
+#include <filesystem>
 
 #include <ndl/net/sha1.h>
 #include <ndl/net/websocket_server.h>
@@ -178,6 +180,107 @@ TEST(WebSocketServer, LoopbackHandshakeAndMessageRoundTrip) {
 	std::vector<uint8_t> received;
 	bool binaryRoundTrip = connectedClient >= 0 && client.recvBinary(received) && received == payload;
 	passfail << "server->client sendBinary() delivers the exact bytes sent: " << (binaryRoundTrip ? "Pass" : "Fail") << std::endl;
+
+	if (connectedClient >= 0) server.sendText(connectedClient, "{\"type\":\"valueResult\",\"value\":42}");
+	std::vector<uint8_t> receivedTextBytes;
+	// recvBinary() just reads whatever frame's payload comes next
+	// (opcode-agnostic), so it works for a text frame too.
+	bool textRoundTrip = connectedClient >= 0 && client.recvBinary(receivedTextBytes)
+		&& std::string(receivedTextBytes.begin(), receivedTextBytes.end()) == "{\"type\":\"valueResult\",\"value\":42}";
+	passfail << "server->client sendText() delivers the exact text sent: " << (textRoundTrip ? "Pass" : "Fail") << std::endl;
+
+	server.stop();
+	reportPassFail(passfail);
+}
+
+namespace
+{
+	// A minimal raw-HTTP GET client, just enough to test
+	// serveStaticFile() -- no WS handshake, no framing, just "connect,
+	// send a GET request line, read the whole response."
+	struct HttpGetResult { bool connected = false; std::string response; };
+
+	HttpGetResult httpGet(int port, const std::string& path)
+	{
+		HttpGetResult result;
+		int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+		if (fd < 0) return result;
+		sockaddr_in addr{};
+		addr.sin_family = AF_INET;
+		addr.sin_port = htons((uint16_t)port);
+		inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+		if (::connect(fd, (sockaddr*)&addr, sizeof(addr)) != 0) { ::close(fd); return result; }
+		result.connected = true;
+
+		std::string request = "GET " + path + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+		::send(fd, request.data(), request.size(), 0);
+
+		char buf[4096];
+		ssize_t n;
+		while ((n = ::recv(fd, buf, sizeof(buf), 0)) > 0) result.response.append(buf, (std::size_t)n);
+		::close(fd);
+		return result;
+	}
+}
+
+TEST(WebSocketServer, StaticFileServingSuccessAnd404) {
+	std::stringstream passfail;
+	std::cout << std::endl << "WEBSOCKET SERVER -- STATIC FILE SERVING" << std::endl;
+
+	std::string dir = std::string(NDL_TEST_OUTPUT_DIR);
+	std::filesystem::create_directories(dir);
+	std::string filePath = dir + "/ws_static_test.html";
+	{
+		std::ofstream f(filePath);
+		f << "<html><body>hello</body></html>";
+	}
+
+	const int port = 47822;
+	WebSocketServer server(port, [](WebSocketServer::ClientId, const std::string&) {}, nullptr, nullptr, dir);
+
+	HttpGetResult ok = httpGet(port, "/ws_static_test.html");
+	bool okStatus = ok.connected && ok.response.find("HTTP/1.1 200") == 0;
+	passfail << "GET of an existing file returns HTTP 200: " << (okStatus ? "Pass" : "Fail") << std::endl;
+	bool okContentType = ok.response.find("Content-Type: text/html") != std::string::npos;
+	passfail << "response includes the correct Content-Type for .html: " << (okContentType ? "Pass" : "Fail") << std::endl;
+	bool okBody = ok.response.find("<html><body>hello</body></html>") != std::string::npos;
+	passfail << "response body matches the file's own exact contents: " << (okBody ? "Pass" : "Fail") << std::endl;
+
+	HttpGetResult missing = httpGet(port, "/does_not_exist.html");
+	bool missingStatus = missing.connected && missing.response.find("HTTP/1.1 404") == 0;
+	passfail << "GET of a missing file returns HTTP 404: " << (missingStatus ? "Pass" : "Fail") << std::endl;
+
+	HttpGetResult traversal = httpGet(port, "/../../../etc/passwd");
+	bool traversalRejected = traversal.connected && traversal.response.find("HTTP/1.1 403") == 0;
+	passfail << "a path containing \"..\" is rejected with HTTP 403 rather than resolved: " << (traversalRejected ? "Pass" : "Fail") << std::endl;
+
+	server.stop();
+	reportPassFail(passfail);
+}
+
+TEST(WebSocketServer, StaticFileServingCoexistsWithWebSocketUpgrade) {
+	std::stringstream passfail;
+	std::cout << std::endl << "WEBSOCKET SERVER -- STATIC SERVING + WS UPGRADE ON THE SAME SERVER" << std::endl;
+
+	std::string dir = std::string(NDL_TEST_OUTPUT_DIR);
+	std::filesystem::create_directories(dir);
+	{ std::ofstream f(dir + "/index.html"); f << "index page"; }
+
+	const int port = 47823;
+	std::atomic<bool> gotMessage{ false };
+	WebSocketServer server(port, [&](WebSocketServer::ClientId, const std::string&) { gotMessage = true; }, nullptr, nullptr, dir);
+
+	// "/" maps to index.html.
+	HttpGetResult indexResult = httpGet(port, "/");
+	bool indexOk = indexResult.connected && indexResult.response.find("HTTP/1.1 200") == 0 && indexResult.response.find("index page") != std::string::npos;
+	passfail << "GET / serves index.html on a server that ALSO has a staticRoot configured: " << (indexOk ? "Pass" : "Fail") << std::endl;
+
+	// The very same server still handles a real WS upgrade + message correctly.
+	TestClient wsClient;
+	bool wsConnected = wsClient.connect(port);
+	bool wsSent = wsConnected && wsClient.sendText("{\"type\":\"ping\"}");
+	for (int i = 0; i < 200 && !gotMessage; i++) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+	passfail << "the same server instance still completes a real WS handshake and delivers a message: " << ((wsConnected && wsSent && gotMessage) ? "Pass" : "Fail") << std::endl;
 
 	server.stop();
 	reportPassFail(passfail);

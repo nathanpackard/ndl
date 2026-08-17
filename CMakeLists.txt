@@ -130,6 +130,7 @@ endif()
 
 if(NDL_BUILD_APPS)
     add_subdirectory(apps/live_video_stream)
+    add_subdirectory(apps/bouncing_donut)
 
     if(NDL_BUILD_TESTS)
         # apps/ programs are interactive client/server processes, not
@@ -147,6 +148,13 @@ if(NDL_BUILD_APPS)
         set_tests_properties(app_live_video_stream PROPERTIES
             LABELS "smoke" TIMEOUT 30
             ENVIRONMENT "NDL_LIVE_VIDEO_STREAM_SELFTEST=1")
+
+        # Same self-test-mode smoke-test pattern as live_video_stream above
+        # (NDL_BOUNCING_DONUT_SELFTEST -- see that app's own comment).
+        add_test(NAME app_bouncing_donut COMMAND bouncing_donut WORKING_DIRECTORY $<TARGET_FILE_DIR:bouncing_donut>)
+        set_tests_properties(app_bouncing_donut PROPERTIES
+            LABELS "smoke" TIMEOUT 30
+            ENVIRONMENT "NDL_BOUNCING_DONUT_SELFTEST=1")
     endif()
 endif()
 
@@ -244,7 +252,20 @@ if(NDL_BUILD_DOCS)
                     COMMENT "Generating live_video_stream's app doc page (source only -- the app itself is never run)"
                     VERBATIM
                 )
-                add_custom_target(app_docs DEPENDS ${_app_page_file})
+                set(_donut_page_file ${NDL_GENERATED_DOCS_DIR}/bouncing_donut_app.md)
+                add_custom_command(
+                    OUTPUT ${_donut_page_file}
+                    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/docs/generate_app_doc.py
+                            ${CMAKE_CURRENT_SOURCE_DIR}/apps/bouncing_donut/bouncing_donut.cpp
+                            bouncing_donut_app "Bouncing Donut App"
+                            "./bouncing_donut [port]"
+                            bouncing_donut
+                            ${NDL_GENERATED_DOCS_DIR}
+                    DEPENDS bouncing_donut ${CMAKE_CURRENT_SOURCE_DIR}/apps/bouncing_donut/bouncing_donut.cpp ${CMAKE_CURRENT_SOURCE_DIR}/docs/generate_app_doc.py
+                    COMMENT "Generating bouncing_donut's app doc page (source only -- the app itself is never run)"
+                    VERBATIM
+                )
+                add_custom_target(app_docs DEPENDS ${_app_page_file} ${_donut_page_file})
                 add_dependencies(docs app_docs)
             else()
                 message(STATUS "ndl: Python3 interpreter not found -- 'docs' will skip regenerating the app doc pages (any previously generated ones are still used)")

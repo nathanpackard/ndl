@@ -22,17 +22,17 @@
 // server and a browser connecting to it over time) -- see this project's
 // own apps/ vs demo/ documentation for the full rationale.
 //
-// Usage: live_video_stream [videoPath] [port] -- videoPath defaults to
-// unitTests/data/waves.mp4, port defaults to 8901; the file's length
-// doesn't matter (see VideoStreamReader's own comment), so this works
-// the same for a multi-hour recording as a multi-second clip. Open
-// live_video_stream.html in a browser (see that file's own top comment)
-// and connect to ws://localhost:<port>.
+// Usage: live_video_stream [--video <path>] [--port <port>] [--help] --
+// videoPath defaults to unitTests/data/waves.mp4, port defaults to 8901;
+// the file's length doesn't matter (see VideoStreamReader's own comment),
+// so this works the same for a multi-hour recording as a multi-second
+// clip. Prints the URL to open in a browser once it's listening.
 #include <ndl/imageIO/video_io.h>
 #include <ndl/viewer/ring_buffer.h>
 #include <ndl/viewer/viewport.h>
 #include <ndl/net/websocket_server.h>
 #include <ndl/net/json.h>
+#include "../appHelpers.h"
 
 #include <iostream>
 #include <string>
@@ -111,32 +111,62 @@ int main(int argc, char** argv)
 {
 	std::signal(SIGINT, handleSigint);
 
-	// Usage: live_video_stream [videoPath] [port]. videoPath defaults to
-	// the same waves.mp4 clip demo/color_video already uses, purely so
-	// this app (and its self-test mode) still runs with zero arguments;
-	// any real use should pass its own file -- readFrame()'s own
-	// incremental design (imageIO/video_io.h) means the file's length
-	// doesn't matter, a multi-hour recording streams with exactly the
-	// same bounded memory footprint as a multi-second clip, since nothing
-	// here ever holds more than one frame plus the ring buffer's own
-	// fixed-size window at once.
-	std::string path = argc > 1 ? argv[1] : std::string(NDL_TEST_DATA_DIR) + "/waves.mp4";
-	int port = argc > 2 ? std::atoi(argv[2]) : 8901;
+	// videoPath defaults to the same waves.mp4 clip demo/color_video
+	// already uses, purely so this app (and its self-test mode) still
+	// runs with zero arguments; any real use should pass its own file via
+	// --video -- readFrame()'s own incremental design (imageIO/
+	// video_io.h) means the file's length doesn't matter, a multi-hour
+	// recording streams with exactly the same bounded memory footprint as
+	// a multi-second clip, since nothing here ever holds more than one
+	// frame plus the ring buffer's own fixed-size window at once.
+	apps::CliParser cli("live_video_stream",
+		"Streams a local video file as a stand-in for a real-time sensor, over a hand-rolled\n"
+		"WebSocket, with the client's own current view (crop, resolution, window/level) driving\n"
+		"what the server actually renders. See this file's own top comment for the full design.");
+	cli.addOption("video", "<path>", "video file to stream", std::string(NDL_TEST_DATA_DIR) + "/waves.mp4");
+	cli.addOption("port", "<port>", "TCP port to listen on", "8901");
+	cli.parse(argc, argv);
+
+	std::string path = cli.get("video");
+	int port = cli.getInt("port");
 	const double targetFps = 10.0;
 	const int windowSeconds = 5;
 
 	image_io::VideoStreamReader reader(path, /*targetWidth*/ 400, /*targetHeight*/ 0, targetFps);
 	std::cout << "live_video_stream: " << path << " (" << reader.width() << "x" << reader.height()
-		<< " @ " << reader.fps() << "fps) -- listening on ws://localhost:" << port << std::endl;
+		<< " @ " << reader.fps() << "fps)" << std::endl;
 
 	int capacity = std::max(1, (int)(reader.fps() * windowSeconds));
 	RingBufferImage<uint8_t, 4> ring({ 3, reader.width(), reader.height(), capacity }, RING_AXIS);
 
 	RendererRegistry<RingBufferImage<uint8_t, 4>> registry;
 	registry.registerOp("slice", [](const RingBufferImage<uint8_t, 4>& src, const JsonValue& p) { return renderSlice(src, p); });
+	registry.registerOp("volume", [](const RingBufferImage<uint8_t, 4>& src, const JsonValue& p) { return renderVolume(src, p); });
 
 	std::mutex clientsMutex;
 	std::map<WebSocketServer::ClientId, ClientViewports> clientViewports;
+
+	// Protects `ring` itself from a genuine cross-thread race: the main
+	// loop below is the only thing that ever WRITES to it
+	// (readFrame()+commitWrite()), but queryValue() (Component 11) now
+	// also READS it directly from onMessage's own thread (a WebSocketServer
+	// per-client reader thread, not the main thread) -- without this,
+	// that read could race a concurrent write to the exact same physical
+	// ring slot. The render loop's own reads of `ring` further down don't
+	// need this lock: they only ever happen on the SAME (main) thread as
+	// the writes, sequentially, and a read racing another read (this
+	// thread's render() vs. the other thread's queryValue()) is never
+	// unsafe on its own.
+	std::mutex ringMutex;
+
+	// Assigned right after the WebSocketServer below is actually
+	// constructed -- onMessage's own closure needs to call sendText() on
+	// it (for queryValue's own reply), but the server object doesn't
+	// exist yet at the point onMessage itself is defined (it's an
+	// argument to the very constructor call that creates it); a plain
+	// `[&]` reference capture can't reach a name that isn't in scope yet
+	// either way, so this pointer is what's actually captured instead.
+	WebSocketServer* serverPtr = nullptr;
 
 	auto onMessage = [&](WebSocketServer::ClientId client, const std::string& text) {
 		JsonValue msg;
@@ -146,6 +176,33 @@ int main(int argc, char** argv)
 		std::string type = msg.stringOr("type", "");
 		std::string id = msg.stringOr("id", "");
 		if (id.empty()) return;
+
+		if (type == "queryValue")
+		{
+			// Native-value hover: doesn't touch any Viewport at all (no
+			// windowing, no channel reduction -- see queryValue()'s own
+			// comment in viewer/viewport.h), so this doesn't need the
+			// clientsMutex lock every other message type below takes to
+			// touch clientViewports.
+			try
+			{
+				double value;
+				{
+					std::lock_guard<std::mutex> ringLock(ringMutex);
+					value = queryValue(ring, msg);
+				}
+				JsonValue response = JsonValue::makeObject();
+				response["type"] = "valueResult";
+				response["id"] = id;
+				response["value"] = value;
+				if (serverPtr) serverPtr->sendText(client, response.toString());
+			}
+			catch (const std::exception& e)
+			{
+				std::cerr << "live_video_stream: queryValue failed for client " << client << ": " << e.what() << std::endl;
+			}
+			return;
+		}
 
 		std::lock_guard<std::mutex> lock(clientsMutex);
 		auto& cv = clientViewports[client];
@@ -178,7 +235,9 @@ int main(int argc, char** argv)
 		std::cout << "live_video_stream: client " << client << " disconnected" << std::endl;
 	};
 
-	WebSocketServer server(port, onMessage, onConnect, onDisconnect);
+	WebSocketServer server(port, onMessage, onConnect, onDisconnect, NDL_REPO_ROOT_DIR);
+	serverPtr = &server;
+	std::cout << "live_video_stream: open http://localhost:" << port << "/apps/live_video_stream/live_video_stream.html" << std::endl;
 
 	std::thread selfTestWatchdog;
 	if (selfTestMode())
@@ -223,7 +282,13 @@ int main(int argc, char** argv)
 	auto nextFrameTime = std::chrono::steady_clock::now();
 	while (g_running)
 	{
-		if (!reader.readFrame(ring.nextWriteSlot()))
+		bool gotFrame;
+		{
+			std::lock_guard<std::mutex> ringLock(ringMutex);
+			gotFrame = reader.readFrame(ring.nextWriteSlot());
+			if (gotFrame) ring.commitWrite();
+		}
+		if (!gotFrame)
 		{
 			// Loops the finite demo file to simulate a continuous live
 			// source -- move-assigning a freshly-opened reader rather
@@ -232,7 +297,6 @@ int main(int argc, char** argv)
 			reader = image_io::VideoStreamReader(path, reader.width(), reader.height(), reader.fps());
 			continue;
 		}
-		ring.commitWrite();
 
 		{
 			std::lock_guard<std::mutex> lock(clientsMutex);

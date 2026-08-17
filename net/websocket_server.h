@@ -11,6 +11,8 @@
 #include <stdexcept>
 #include <cstring>
 #include <cstdint>
+#include <fstream>
+#include <sstream>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -107,6 +109,35 @@ namespace ndl
 				return true;
 			}
 
+			// Pulls just the path out of an HTTP request line ("GET /foo/bar.html HTTP/1.1"),
+			// dropping any query string -- not a general URL parser, just enough for the
+			// static-file-serving fallback below.
+			inline std::string requestPath(const std::string& request)
+			{
+				std::size_t firstSpace = request.find(' ');
+				std::size_t secondSpace = firstSpace == std::string::npos ? std::string::npos : request.find(' ', firstSpace + 1);
+				if (firstSpace == std::string::npos || secondSpace == std::string::npos) return "";
+				std::string path = request.substr(firstSpace + 1, secondSpace - firstSpace - 1);
+				std::size_t q = path.find('?');
+				if (q != std::string::npos) path = path.substr(0, q);
+				return path;
+			}
+
+			inline bool endsWith(const std::string& s, const std::string& suffix)
+			{
+				return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+			}
+
+			inline std::string mimeTypeFor(const std::string& path)
+			{
+				if (endsWith(path, ".html")) return "text/html; charset=utf-8";
+				if (endsWith(path, ".js")) return "text/javascript; charset=utf-8";
+				if (endsWith(path, ".css")) return "text/css; charset=utf-8";
+				if (endsWith(path, ".json")) return "application/json";
+				if (endsWith(path, ".png")) return "image/png";
+				return "application/octet-stream";
+			}
+
 			inline bool sendAll(int fd, const uint8_t* data, std::size_t len)
 			{
 				std::size_t sent = 0;
@@ -162,9 +193,14 @@ namespace ndl
 			using DisconnectHandler = std::function<void(ClientId)>;
 
 			/// Starts listening on `port` immediately (the accept loop runs on its own background thread).
+			/// @param staticRoot Optional. When non-empty, a plain (non-WebSocket-upgrade) GET request is
+			///                   served a static file from under this directory instead of the connection
+			///                   being closed -- see performHandshake()'s own comment. Empty (the default)
+			///                   disables this entirely: a plain GET just gets the connection closed, the
+			///                   original WS-only behavior.
 			/// @throws std::runtime_error if the listening socket can't be created/bound/listened on.
-			explicit WebSocketServer(int port, MessageHandler onMessage, ConnectHandler onConnect = nullptr, DisconnectHandler onDisconnect = nullptr) :
-				onMessage_(std::move(onMessage)), onConnect_(std::move(onConnect)), onDisconnect_(std::move(onDisconnect))
+			explicit WebSocketServer(int port, MessageHandler onMessage, ConnectHandler onConnect = nullptr, DisconnectHandler onDisconnect = nullptr, std::string staticRoot = "") :
+				onMessage_(std::move(onMessage)), onConnect_(std::move(onConnect)), onDisconnect_(std::move(onDisconnect)), staticRoot_(std::move(staticRoot))
 			{
 				listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
 				if (listenFd_ < 0) throw std::runtime_error("WebSocketServer: socket() failed");
@@ -202,6 +238,17 @@ namespace ndl
 				if (!c) return;
 				std::lock_guard<std::mutex> lock(c->writeMutex);
 				auto frame = detail_ws::encodeFrame(0x2, data, len);
+				detail_ws::sendAll(c->fd, frame.data(), frame.size());
+			}
+
+			/// Same as sendBinary(), but as a text WS frame (opcode 0x1) -- for small JSON control responses
+			/// (e.g. viewport.h's own queryValue()'s "valueResult" reply) rather than rendered pixel data.
+			void sendText(ClientId client, const std::string& text)
+			{
+				auto c = lookupClient(client);
+				if (!c) return;
+				std::lock_guard<std::mutex> lock(c->writeMutex);
+				auto frame = detail_ws::encodeFrame(0x1, (const uint8_t*)text.data(), text.size());
 				detail_ws::sendAll(c->fd, frame.data(), frame.size());
 			}
 
@@ -271,6 +318,62 @@ namespace ndl
 				}
 			}
 
+			// A plain (non-upgrade) GET is served a static file under
+			// staticRoot_ instead of just being closed -- see the
+			// WebSocketServer constructor's own comment on why (one port
+			// serves both a page and the live protocol, so the app can
+			// print a single openable URL). "/" maps to "/index.html";
+			// any path containing ".." is rejected outright (403) rather
+			// than resolved, the simplest possible guard against escaping
+			// staticRoot_ -- this is a small dev-tool file server, not a
+			// hardened one, but that one check costs nothing and closes
+			// the obvious hole. Always closes the connection afterward
+			// (Connection: close) -- this is a one-request-per-connection
+			// server, no HTTP/1.1 keep-alive, simplest thing that still
+			// works correctly for a browser loading one page's own few
+			// resources (each gets its own short-lived connection).
+			void serveStaticFile(int fd, const std::string& request)
+			{
+				std::string path = detail_ws::requestPath(request);
+				if (path.empty() || path == "/") path = "/index.html";
+
+				std::string body;
+				int status; std::string statusText, contentType = "text/plain";
+				if (path.find("..") != std::string::npos)
+				{
+					status = 403; statusText = "Forbidden"; body = "403 Forbidden";
+				}
+				else
+				{
+					std::ifstream file(staticRoot_ + path, std::ios::binary);
+					if (!file)
+					{
+						status = 404; statusText = "Not Found"; body = "404 Not Found: " + path;
+					}
+					else
+					{
+						std::ostringstream contents;
+						contents << file.rdbuf();
+						body = contents.str();
+						status = 200; statusText = "OK"; contentType = detail_ws::mimeTypeFor(path);
+					}
+				}
+
+				std::string headers = "HTTP/1.1 " + std::to_string(status) + " " + statusText + "\r\n"
+					"Content-Type: " + contentType + "\r\n"
+					"Content-Length: " + std::to_string(body.size()) + "\r\n"
+					"Connection: close\r\n\r\n";
+				detail_ws::sendAll(fd, (const uint8_t*)headers.data(), headers.size());
+				detail_ws::sendAll(fd, (const uint8_t*)body.data(), body.size());
+			}
+
+			// Returns true only when the connection actually upgraded to a
+			// WebSocket (the caller should proceed to the WS frame loop);
+			// false covers BOTH "this was a plain GET, already fully
+			// answered by serveStaticFile() (or staticRoot_ isn't
+			// configured at all)" and any genuine parse failure -- either
+			// way, the caller just closes the connection next, which is
+			// correct for both cases.
 			bool performHandshake(int fd)
 			{
 				// Reads byte-by-byte until the blank line ending the HTTP
@@ -288,15 +391,18 @@ namespace ndl
 					if (request.size() >= 4 && request.compare(request.size() - 4, 4, "\r\n\r\n") == 0) break;
 				}
 				std::string key;
-				if (!detail_ws::findHeaderValue(request, "Sec-WebSocket-Key", key)) return false;
-
-				std::string accept = detail_ws::computeAcceptKey(key);
-				std::string response =
-					"HTTP/1.1 101 Switching Protocols\r\n"
-					"Upgrade: websocket\r\n"
-					"Connection: Upgrade\r\n"
-					"Sec-WebSocket-Accept: " + accept + "\r\n\r\n";
-				return detail_ws::sendAll(fd, (const uint8_t*)response.data(), response.size());
+				if (detail_ws::findHeaderValue(request, "Sec-WebSocket-Key", key))
+				{
+					std::string accept = detail_ws::computeAcceptKey(key);
+					std::string response =
+						"HTTP/1.1 101 Switching Protocols\r\n"
+						"Upgrade: websocket\r\n"
+						"Connection: Upgrade\r\n"
+						"Sec-WebSocket-Accept: " + accept + "\r\n\r\n";
+					return detail_ws::sendAll(fd, (const uint8_t*)response.data(), response.size());
+				}
+				if (!staticRoot_.empty()) serveStaticFile(fd, request);
+				return false;
 			}
 
 			void clientLoop(int fd)
@@ -384,6 +490,7 @@ namespace ndl
 			MessageHandler onMessage_;
 			ConnectHandler onConnect_;
 			DisconnectHandler onDisconnect_;
+			std::string staticRoot_;
 		};
 	}
 }

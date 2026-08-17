@@ -335,3 +335,77 @@ TEST(FFT, FFTShift) {
 	EXPECT_EQ(ownedOut1(4), 1.0);
 }
 
+TEST(FFT, FftnChannelsMatchesComplexOutputExactly) {
+	// fftn_channels() is purely a repacking of fftn()'s own std::complex
+	// output into a channel axis -- not a different algorithm -- so its
+	// real/imag values should match fftn()'s own .real()/.imag() bit-for-
+	// bit, not just approximately.
+	const int W = 6, H = 5;
+	OwnedImage<double, 2> input({ W, H });
+	for (const auto& c : input.coordinates()) input.at(c) = (double)(c[0] * 3 + c[1] * 7 % 11);
+
+	OwnedImage<std::complex<double>, 2> complexOut({ W, H });
+	fftn(input, complexOut);
+
+	OwnedImage<double, 3> channelsOut({ 2, W, H }); // channelAxis defaults to 0
+	fftn_channels(input, channelsOut);
+
+	for (const auto& c : complexOut.coordinates())
+	{
+		std::complex<double> expected = complexOut.at(c);
+		EXPECT_EQ(channelsOut.at({ 0, c[0], c[1] }), expected.real());
+		EXPECT_EQ(channelsOut.at({ 1, c[0], c[1] }), expected.imag());
+	}
+}
+
+TEST(FFT, IfftnChannelsReconstructsOriginalSignal) {
+	// Round trip through the channel-axis representation only (never
+	// touching std::complex directly) should reconstruct the original
+	// real-valued input, the same correctness bar fftn()/ifftn()'s own
+	// existing round-trip already meets.
+	const int W = 8, H = 6;
+	OwnedImage<double, 2> input({ W, H });
+	for (const auto& c : input.coordinates()) input.at(c) = std::sin(c[0] * 0.7) + std::cos(c[1] * 1.3);
+
+	OwnedImage<double, 3> channelsOut({ 2, W, H });
+	fftn_channels(input, channelsOut);
+
+	OwnedImage<double, 2> reconstructed({ W, H });
+	ifftn_channels(channelsOut, reconstructed);
+
+	double worst = 0;
+	for (const auto& c : input.coordinates()) worst = std::max(worst, std::abs(reconstructed.at(c) - input.at(c)));
+	EXPECT_LT(worst, 1e-9);
+}
+
+TEST(FFT, FftnChannelsRespectsCustomChannelAxis) {
+	// channelAxis need not be 0 -- here it's the LAST axis instead,
+	// confirming the axis-insertion logic (not just its default position)
+	// is correct.
+	const int W = 4, H = 3;
+	OwnedImage<double, 2> input({ W, H });
+	for (const auto& c : input.coordinates()) input.at(c) = (double)(c[0] + c[1] * 10);
+
+	OwnedImage<std::complex<double>, 2> complexOut({ W, H });
+	fftn(input, complexOut);
+
+	OwnedImage<double, 3> channelsOut({ W, H, 2 });
+	fftn_channels(input, channelsOut, /*channelAxis*/ 2);
+
+	for (const auto& c : complexOut.coordinates())
+	{
+		std::complex<double> expected = complexOut.at(c);
+		EXPECT_EQ(channelsOut.at({ c[0], c[1], 0 }), expected.real());
+		EXPECT_EQ(channelsOut.at({ c[0], c[1], 1 }), expected.imag());
+	}
+}
+
+TEST(FFT, FftnChannelsValidatesOutputShape) {
+	OwnedImage<double, 2> input({ 4, 4 });
+	OwnedImage<double, 3> wrongChannelExtent({ 3, 4, 4 }); // channel axis should be extent 2, not 3
+	EXPECT_THROW(fftn_channels(input, wrongChannelExtent), std::invalid_argument);
+
+	OwnedImage<double, 3> mismatchedSpatial({ 2, 5, 4 }); // 5 != input's own 4
+	EXPECT_THROW(fftn_channels(input, mismatchedSpatial), std::invalid_argument);
+}
+

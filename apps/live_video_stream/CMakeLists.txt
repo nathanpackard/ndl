@@ -29,6 +29,12 @@ target_link_libraries(live_video_stream PRIVATE ndl::ndl ndl_video_codec Threads
 
 # Same NDL_TEST_DATA_DIR pattern every demo uses -- this app streams
 # unitTests/data/waves.mp4, the same clip demo/color_video already loads.
+# NDL_REPO_ROOT_DIR is this app's own WebSocketServer staticRoot -- the
+# repo root (not just this app's own directory) specifically so its served
+# HTML page can reference web/ndlviewer.js by a plain relative path
+# (../../web/ndlviewer.js) without needing to copy that shared file into
+# every app that wants it.
 target_compile_definitions(live_video_stream PRIVATE
     NDL_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../unitTests/data"
+    NDL_REPO_ROOT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../.."
 )
