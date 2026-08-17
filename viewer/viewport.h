@@ -15,6 +15,7 @@
 #include "../processing/convolution.h"
 #include "../processing/interpolation.h"
 #include "../processing/matrix/core.h"
+#include "../processing/channels.h"
 #include "../net/json.h"
 
 // The "generic viewport interface" the live-streaming redesign is built
@@ -61,92 +62,24 @@ namespace ndl
 		inline int clampInt(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 		inline double clampD(double v, double lo, double hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-		// Builds a real ndl::Matrix<double,3> (processing/matrix/core.h) --
-		// reused here rather than hand-rolling matrix-vector math a second
-		// time, both to not duplicate logic ndl already has and, as
-		// importantly, so this code actually exercises Matrix itself (the
-		// same "eat our own dogfood" reasoning every other toolkit in this
-		// library already follows for Image).
-		//
-		// The one real wrinkle: `flat` is COLUMN-major -- the wire
-		// convention web/ndlviewer.js's own rotationMatrix()/
-		// mat3Multiply() use (so a `rotation` param built there means the
-		// same thing here), whereas ndl::Matrix stores ROW-major
-		// (`operator()(i,j)` is `data_[i*N+j]`). Populating
-		// `m(row,col) = flat[col*3+row]` maps the column-major flat array
-		// onto the mathematically IDENTICAL matrix in Matrix's own
-		// row-major representation, so `m * v` (Matrix::operator*, an
-		// ordinary row-major dot product) computes exactly the same
-		// result the hand-rolled column-major formula this replaced did
-		// -- confirmed by RenderVolumeRotationChangesWhatTheRaySees's own
-		// rotation-sensitivity test continuing to pass unchanged.
-		inline Matrix<double, 3> matrix3FromColumnMajor(const std::array<double, 9>& flat)
-		{
-			Matrix<double, 3> m;
-			for (int col = 0; col < 3; col++)
-				for (int row = 0; row < 3; row++)
-					m(row, col) = flat[col * 3 + row];
-			return m;
-		}
+		// matrix3FromColumnMajor() used to live here -- promoted to
+		// Matrix<Real,N>::from_column_major() (processing/matrix/core.h)
+		// once it became clear "build a matrix from a column-major flat
+		// array" (the layout OpenGL/WebGL/web/ndlviewer.js's own uniform-
+		// matrix convention uses, vs. Matrix's own row-major storage) is a
+		// general construction concern belonging on Matrix itself, not a
+		// one-off adapter local to this header -- see that method's own
+		// comment for the full rationale (still the exact same mapping,
+		// still confirmed by RenderVolumeRotationChangesWhatTheRaySees's
+		// own rotation-sensitivity test passing unchanged).
 
-		// How many output values (channels) a given channelReduction mode
-		// produces -- needed up front (before any pixel is actually
-		// reduced) so renderSlice()/renderVolume() can size their own
-		// output buffer once, rather than discovering it mid-loop.
-		inline int channelReductionOutputCount(const std::string& mode) { return mode == "rgb" ? 3 : 1; }
-
-		// Reduces `n` raw channel values (read from colorAxis's own extent
-		// positions, in their ORIGINAL native units -- not windowed/
-		// quantized yet) down to either 3 output values (`"rgb"`) or 1
-		// (every other mode), written into `out`. Deliberately does NOT
-		// apply windowMin/windowMax here: that's applied uniformly
-		// afterward by the caller, the exact same [windowMin,windowMax]->
-		// [0,255] pipeline every other value (reduced or not) already goes
-		// through -- so e.g. "phase" mode's own natural [-pi,pi] range is
-		// windowed the same generic way a plain data value's range is, via
-		// whatever windowMin/windowMax the caller's own params specify, no
-		// special-casing needed here for what "the right range" is per mode.
-		// @return The number of values actually written to `out` (1 or 3).
-		// @throws std::invalid_argument for an unknown mode, or a channel
-		//         count `n` a mode can't work with ("rgb" needs exactly 3,
-		//         "phase" needs exactly 2 -- real/imag).
-		inline int reduceChannels(const double* values, int n, const std::string& mode, double* out)
-		{
-			if (mode == "rgb")
-			{
-				if (n != 3) throw std::invalid_argument("reduceChannels(): \"rgb\" mode requires colorAxis to have extent exactly 3, got " + std::to_string(n));
-				out[0] = values[0]; out[1] = values[1]; out[2] = values[2];
-				return 3;
-			}
-			if (mode == "phase")
-			{
-				if (n != 2) throw std::invalid_argument("reduceChannels(): \"phase\" mode requires colorAxis to have extent exactly 2 (real, imag), got " + std::to_string(n));
-				out[0] = std::atan2(values[1], values[0]);
-				return 1;
-			}
-			if (mode == "magnitude")
-			{
-				double sumSq = 0;
-				for (int i = 0; i < n; i++) sumSq += values[i] * values[i];
-				out[0] = std::sqrt(sumSq);
-				return 1;
-			}
-			if (mode == "sum" || mode == "mean")
-			{
-				double s = 0;
-				for (int i = 0; i < n; i++) s += values[i];
-				out[0] = (mode == "mean" && n > 0) ? s / n : s;
-				return 1;
-			}
-			if (mode == "max")
-			{
-				double m = n > 0 ? values[0] : 0.0;
-				for (int i = 1; i < n; i++) if (values[i] > m) m = values[i];
-				out[0] = m;
-				return 1;
-			}
-			throw std::invalid_argument("reduceChannels(): unknown channelReduction mode \"" + mode + "\"");
-		}
+		// channelReductionOutputCount()/reduceChannels() used to live here
+		// (this was their only caller) -- promoted to processing/channels.h
+		// once it became clear the reduction logic itself has nothing to do
+		// with rendering or viewports specifically; #include'd above,
+		// resolved via ordinary enclosing-namespace lookup (both now live
+		// in ndl::, same as everything renderSlice()/renderVolume() below
+		// still calls unqualified).
 	}
 
 	// The one v1 op. params (a net::JsonValue object):
@@ -159,7 +92,7 @@ namespace ndl
 	//                   of squares, any count, grayscale -- the natural way to view e.g. a 2-channel
 	//                   real+imag axis), "phase" (atan2(values[1],values[0]), needs exactly 2,
 	//                   grayscale), or "sum"/"mean"/"max" (any count, grayscale). Ignored when
-	//                   colorAxis isn't given. See detail_viewport::reduceChannels()'s own comment.
+	//                   colorAxis isn't given. See processing/channels.h's own reduceChannels() comment.
 	//   cropMin/cropMax (optional, each a 2-element array [alongAxisI, alongAxisJ]) -- the region to
 	//                   extract, in source coordinates; defaults to the axis's own full extent.
 	//                   Clamped to the source's own CURRENT extent (which can shrink/grow for a live
@@ -314,7 +247,8 @@ namespace ndl
 	//   axisA, axisB, axisC (required) -- the 3 axes forming the sub-volume, must be distinct.
 	//   rotation (optional, a 9-number flat array) -- a column-major 3x3 matrix, the SAME
 	//             convention web/ndlviewer.js's own mat3Multiply()/rotationMatrix() use (see
-	//             detail_viewport::matrix3FromColumnMajor()'s own comment) -- defaults to identity.
+	//             Matrix<Real,N>::from_column_major()'s own comment, processing/matrix/core.h)
+	//             -- defaults to identity.
 	//   alphaScale (optional, default 0.5) -- matches VOLUME_FRAGMENT_SRC's own uAlphaScale and
 	//             DEFAULT_ALPHA_SCALE.
 	//   colorAxis (optional) -- same convention as renderSlice(): reads every value along this axis
@@ -357,13 +291,14 @@ namespace ndl
 			throw std::invalid_argument("renderVolume(): axisA/axisB/axisC out of range or not distinct");
 		int colorAxis = (params.has("colorAxis") && !params["colorAxis"].isNull()) ? params["colorAxis"].asInt() : -1;
 
-		std::array<double, 9> rotationFlat = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
-		if (params.has("rotation"))
-		{
-			const auto& r = params["rotation"].asArray();
-			for (std::size_t i = 0; i < 9 && i < r.size(); i++) rotationFlat[i] = r[i].asNumber();
-		}
-		Matrix<double, 3> R = matrix3FromColumnMajor(rotationFlat);
+		// "rotation" (optional, a 9-number flat column-major array -- see
+		// this function's own comment) defaults to the identity's own flat
+		// values via net::JsonValue::numbersOr() (net/json.h), then reads
+		// as a real Matrix<double,3> via from_column_major() (processing/
+		// matrix/core.h) -- see that method's own comment for the layout
+		// mapping.
+		std::array<double, 9> identityFlat = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+		Matrix<double, 3> R = Matrix<double, 3>::from_column_major(params.numbersOr("rotation", identityFlat).data());
 
 		double alphaScale = params.numberOr("alphaScale", 0.5);
 		double windowMin = params.numberOr("windowMin", 0.0);

@@ -735,24 +735,45 @@
 	// Each line's on-screen length still varies with the current rotation
 	// (an axis pointing toward/away from the viewer draws short), the same
 	// foreshortening-shows-orientation idea as the crosshair.
-	var GIZMO_MARGIN = 28, GIZMO_RADIUS = 20;
+	//
+	// Every constant below is a FRACTION of the canvas's own current size,
+	// not a fixed pixel count: this canvas isn't always drawn at the same
+	// NATIVE resolution its own CSS display size implies -- a live
+	// "volume"-op page can request a smaller/larger render (e.g.
+	// apps/bouncing_donut.html's own Size slider, see Component 8's own
+	// on-demand-resolution design) while its CSS box stays fixed, so a
+	// FIXED-pixel gizmo would end up a wildly different ON-SCREEN size
+	// depending on whatever resolution happened to be requested (tiny at a
+	// high native resolution, comically oversized once upscaled from a low
+	// one) -- a real bug this project's own bouncing_donut.html hit as
+	// soon as its Size slider existed. Sizing every constant off the
+	// canvas's own CURRENT pixel dimensions instead keeps the gizmo's own
+	// ON-SCREEN proportions constant regardless of what native resolution
+	// it's actually drawn at. The fractions themselves (0.0875/0.0625/...)
+	// are simply the OLD fixed pixel values (28/20/...) divided by 320,
+	// the panel size this gizmo was originally tuned to look right at --
+	// so a 320x320 canvas renders pixel-identical to before this fix.
 	function drawAxisGizmo(ctx, R, axisColors, axisIndices) {
-		var anchorX = GIZMO_MARGIN, anchorY = ctx.canvas.height - GIZMO_MARGIN;
-		ctx.font = 'bold 11px monospace';
+		var size = Math.min(ctx.canvas.width, ctx.canvas.height);
+		var margin = size * 0.0875, radius = size * 0.0625, labelGap = size * 0.03125;
+		var fontPx = Math.max(8, Math.round(size * 0.034375));
+		var haloWidth = Math.max(1.5, size * 0.009375), lineWidth = Math.max(0.5, size * 0.003125);
+		var anchorX = margin, anchorY = ctx.canvas.height - margin;
+		ctx.font = 'bold ' + fontPx + 'px monospace';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
 		for (var k = 0; k < 3; k++) {
 			var local = [0, 0, 0]; local[k] = 1;
 			var view = mat3TransposeMultiplyVec3(R, local);
-			var tipX = anchorX + view[0] * GIZMO_RADIUS, tipY = anchorY + view[1] * GIZMO_RADIUS;
-			[['#000000', 3], [axisColors[k], 1]].forEach(function (pass) {
+			var tipX = anchorX + view[0] * radius, tipY = anchorY + view[1] * radius;
+			[['#000000', haloWidth], [axisColors[k], lineWidth]].forEach(function (pass) {
 				ctx.strokeStyle = pass[0];
 				ctx.lineWidth = pass[1];
 				ctx.beginPath(); ctx.moveTo(anchorX, anchorY); ctx.lineTo(tipX, tipY); ctx.stroke();
 			});
-			var labelX = anchorX + view[0] * (GIZMO_RADIUS + 10), labelY = anchorY + view[1] * (GIZMO_RADIUS + 10);
+			var labelX = anchorX + view[0] * (radius + labelGap), labelY = anchorY + view[1] * (radius + labelGap);
 			var labelText = String(axisIndices[k]);
-			ctx.lineWidth = 3;
+			ctx.lineWidth = haloWidth;
 			ctx.strokeStyle = '#000000';
 			ctx.strokeText(labelText, labelX, labelY);
 			ctx.fillStyle = axisColors[k];
@@ -1319,6 +1340,14 @@
 		this.rotation = rotation;
 		this.redraw();
 	};
+	// A live "volume"-op viewport's own opacity scale (VOLUME_FRAGMENT_SRC's
+	// own uAlphaScale, viewer/viewport.h's own `alphaScale` param) -- same
+	// simple direct-setter shape as setRotation above, for the same reason
+	// (not a linked/shared property).
+	Viewport.prototype.setAlphaScale = function (alphaScale) {
+		this.alphaScale = alphaScale;
+		this.redraw();
+	};
 	// A no-op when this Viewport has no renderer (`null`, e.g. a purely
 	// state-holding "hub" Viewport with no rendering surface of its own --
 	// see create()'s own `cursorState` for exactly this use, a Viewport
@@ -1534,9 +1563,13 @@
 			if (vp && vp.renderer && vp.renderer.onValueResult) vp.renderer.onValueResult(vp, msg);
 		}
 	};
-	/// Sends a queryValue request for `coord` (a full N-D array) against `viewportId` -- see viewer/viewport.h's own queryValue() comment for why this returns the RAW, unwindowed value, not a rendered pixel.
+	/// Sends a queryValue request for `coord` (a full N-D array) against `viewportId` -- see viewer/viewport.h's own queryValue() comment for why this returns the RAW, unwindowed value, not a rendered pixel. Replies via RemoteRenderer.onValueResult -> viewport.onValueResult(value).
 	RemoteConnection.prototype.queryValue = function (viewportId, coord) {
 		this.send({ type: 'queryValue', id: viewportId, coord: coord });
+	};
+	/// Like queryValue() but for several full N-D coordinates at once (e.g. the same spatial position with only the channel axis varying, one entry per RGB channel) -- one round trip instead of one per coordinate. Replies via RemoteRenderer.onValueResult -> viewport.onValuesResult(values), an array in the same order as `coords`.
+	RemoteConnection.prototype.queryValues = function (viewportId, coords) {
+		this.send({ type: 'queryValue', id: viewportId, coords: coords });
 	};
 
 	// Per-viewport renderer half: builds the wire `params` object from
@@ -1589,15 +1622,40 @@
 			viewport.nativeHeight = frame.height;
 			if (!viewport.cropMin) { viewport.cropMin = [0, 0]; viewport.cropMax = [frame.width, frame.height]; }
 		}
+		// viewport.fps: an exponentially-smoothed frames-per-second
+		// estimate from consecutive frame ARRIVAL times -- maintained here
+		// (not left to each page to hand-roll) since every RemoteRenderer-
+		// backed page wants the same thing, "how fast is this viewport
+		// actually updating." A plain instantaneous 1000/dt would jitter
+		// wildly frame to frame (network/render timing noise); the 0.8/0.2
+		// blend favors stability while still tracking real, sustained
+		// changes (e.g. dragging an output-size slider should visibly move
+		// this number within roughly a second, not need many seconds to
+		// settle).
+		var now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+		if (viewport._lastFrameTime !== undefined) {
+			var dt = now - viewport._lastFrameTime;
+			if (dt > 0) {
+				var instantFps = 1000 / dt;
+				viewport.fps = viewport.fps === undefined ? instantFps : viewport.fps * 0.8 + instantFps * 0.2;
+			}
+		}
+		viewport._lastFrameTime = now;
 		drawFrameToCanvas(viewport.surface, frame);
 		if (viewport.onFrame) viewport.onFrame(frame);
 	};
 	// Called by RemoteConnection whenever a `valueResult` JSON reply
 	// arrives -- the native-value-hover query client (Component 11's own
-	// client half). `viewport.onValueResult` (optional) is how a page
-	// itself displays it (its own readout box).
+	// client half). Two shapes, matching RemoteConnection.queryValue()/
+	// queryValues()'s own request pair: a single `msg.value` (from a
+	// `"coord"` request) dispatches to `viewport.onValueResult`; an array
+	// `msg.values` (from a `"coords"` request -- e.g. one entry per RGB
+	// channel at the same spatial position) dispatches to
+	// `viewport.onValuesResult` instead. Both optional -- how a page
+	// itself displays the result (its own readout box).
 	RemoteRenderer.prototype.onValueResult = function (viewport, msg) {
-		if (viewport.onValueResult) viewport.onValueResult(msg.value);
+		if (msg.values !== undefined) { if (viewport.onValuesResult) viewport.onValuesResult(msg.values); }
+		else if (viewport.onValueResult) viewport.onValueResult(msg.value);
 	};
 
 	// A single slider factory shared by every Controls.* factory below AND
@@ -1735,6 +1793,20 @@
 				target.setRotation(currentRotation());
 			}
 		};
+	};
+	// A single slider driving a "volume"-op Viewport's own opacity
+	// (Viewport.prototype.setAlphaScale, VOLUME_FRAGMENT_SRC's own
+	// uAlphaScale) -- the live-viewport counterpart to the static viewer's
+	// own "Alpha" slider (create(), below).
+	Controls.createAlphaControl = function (container, target, initialPct) {
+		initialPct = initialPct === undefined ? 50 : initialPct;
+		var ctl = makeSlider('Alpha', 0, 100, 1, initialPct, 0, '%', function (pct, setValue) {
+			setValue(pct);
+			target.setAlphaScale(pct / 100);
+		});
+		container.appendChild(ctl.row);
+		target.setAlphaScale(initialPct / 100);
+		return ctl;
 	};
 
 	// CSS-grid placement strategy: explicit per-track sizes (not a single
@@ -2850,6 +2922,16 @@
 		RemoteConnection: RemoteConnection,
 		Controls: Controls,
 		GridLayout: GridLayout,
-		FreeformLayout: FreeformLayout
+		FreeformLayout: FreeformLayout,
+		// The small fixed-position X/Y/Z orientation gizmo VolumePanel's
+		// own drawCrosshair() (static viewer) draws in its corner --
+		// exposed directly since it's already fully generic (just a 2D
+		// context, a flat column-major rotation matrix, and per-axis
+		// colors/labels, no VolumePanel-specific state), so a live
+		// "volume"-op page (apps/bouncing_donut.html) can draw the same
+		// rotating orientation indicator against its own Viewport.rotation
+		// without re-deriving the same trig/projection a second time.
+		drawAxisGizmo: drawAxisGizmo,
+		DEFAULT_PALETTE: DEFAULT_PALETTE
 	};
 })(typeof window !== 'undefined' ? window : this);

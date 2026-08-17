@@ -24,12 +24,19 @@ OUTPUT_DIRECTORY       = @CMAKE_CURRENT_BINARY_DIR@/docs
 # third-party codec implementations: png, jpeg, bitmap, dicom, gif, avi,
 # NRRD, analyzelib), which aren't this library's own public API surface.
 # README.md is included so USE_MDFILE_AS_MAINPAGE below can make it the
-# generated site's front page. docs/tutorials.md is the hand-written
-# \subpage index; docs/generated (built by the `tutorials` CMake target,
-# see CMakeLists.txt) holds the actual per-demo tutorial content, generated
-# fresh from each demo's real output on every docs build -- it doesn't
-# exist until that target has run at least once, which is fine: INPUT may
-# name a not-yet-existing path, Doxygen just finds nothing there until it does.
+# generated site's front page. docs/tutorials.md and docs/apps.md are the
+# hand-written \subpage indexes -- two SEPARATE top-level Doxygen pages
+# (own {#tutorials}/{#apps} anchors), not one page with an "Apps" section
+# inside it: a \subpage's sidebar placement follows page parent/child
+# relationships, not markdown heading structure within one page's own
+# body, so a "##Apps" heading buried inside tutorials.md's own text
+# rendered its links as more Tutorials children, not a separate section --
+# splitting the file is what actually fixes that. docs/generated (built by
+# the `tutorials`/`app_docs` CMake targets, see CMakeLists.txt) holds the
+# actual per-demo tutorial content and per-app doc pages, generated fresh
+# on every docs build -- it doesn't exist until those targets have run at
+# least once, which is fine: INPUT may name a not-yet-existing path,
+# Doxygen just finds nothing there until it does.
 INPUT                   = @CMAKE_CURRENT_SOURCE_DIR@/README.md \
                            @CMAKE_CURRENT_SOURCE_DIR@/image.h \
                            @CMAKE_CURRENT_SOURCE_DIR@/image \
@@ -41,6 +48,7 @@ INPUT                   = @CMAKE_CURRENT_SOURCE_DIR@/README.md \
                            @CMAKE_CURRENT_SOURCE_DIR@/mathHelpers.h \
                            @CMAKE_CURRENT_SOURCE_DIR@/docs/groups.dox \
                            @CMAKE_CURRENT_SOURCE_DIR@/docs/tutorials.md \
+                           @CMAKE_CURRENT_SOURCE_DIR@/docs/apps.md \
                            @CMAKE_CURRENT_BINARY_DIR@/docs/generated
 USE_MDFILE_AS_MAINPAGE  = @CMAKE_CURRENT_SOURCE_DIR@/README.md
 RECURSIVE                = YES

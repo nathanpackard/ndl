@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <array>
 #include <map>
 #include <stdexcept>
 #include <sstream>
@@ -99,6 +100,21 @@ namespace ndl
 			std::string stringOr(const std::string& key, const std::string& fallback) const
 			{
 				return has(key) && object_.at(key).isString() ? object_.at(key).asString() : fallback;
+			}
+			/// obj[key] as a fixed-size array of N numbers, else `fallback` -- for an optional flat-array param
+			/// (e.g. viewer/viewport.h's own `rotation`, a 9-number flat matrix). Starts from a COPY of
+			/// `fallback` (not zero-filled) and overwrites only as many leading entries as the JSON array
+			/// actually has, bounded by both N and the array's own length -- so a missing key, a short array,
+			/// or a too-long one are all handled the same forgiving way: whatever isn't present just keeps its
+			/// fallback value, nothing throws or reads/writes out of bounds.
+			template<std::size_t N>
+			std::array<double, N> numbersOr(const std::string& key, const std::array<double, N>& fallback) const
+			{
+				std::array<double, N> result = fallback;
+				if (!has(key) || !object_.at(key).isArray()) return result;
+				const auto& arr = object_.at(key).asArray();
+				for (std::size_t i = 0; i < N && i < arr.size(); i++) result[i] = arr[i].asNumber();
+				return result;
 			}
 
 			/// Serializes back to compact JSON text.

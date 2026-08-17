@@ -20,13 +20,10 @@ library actually does.
 - \subpage nd_viewer_tutorial -- pairwise_slice()/for_each_axis_pair() (viewer.h): viewing a genuinely 4D (space + time) volume as a synchronized grid of every pairwise-axis 2D plane, with the actual interactive WebGL viewer (ndlviewer.js) embedded live in the page.
 - \subpage color_video_tutorial -- load_video_owned() (imageIO/video_io.h): loading a real .mp4 file and viewing it two ways in the same pairwise-slice viewer -- channel as a generic higher-dimensional axis (grayscale) vs. true RGB compositing via the viewer's new options.colorAxis.
 
-Apps {#apps}
-====
-
-Unlike the tutorials above, an app (`apps/`) is a live client/server program -- it keeps
-running until stopped, so there's no "captured output" to embed into a static page the way
-a demo's is. Each app page below still documents the full source and its own explanation
-(see `docs/generate_app_doc.py`), just with build/run instructions in place of an embedded
-result.
-
-- \subpage live_video_stream_app -- ring_buffer.h/viewport.h/net/websocket_server.h/net/json.h: streaming a local video file (or, eventually, any real-time sensor) into a browser over a hand-rolled WebSocket, where the CLIENT's current view (crop region, resolution, window/level) drives what the server actually renders -- the same "client's view is a request" model Google Earth/Neuroglancer use, applied to a live feed.
+See \ref apps "Apps" for the live client/server programs (`apps/`) -- a separate top-level
+page (not \subpage'd from here, deliberately: \subpage always makes the target a CHILD in
+the sidebar tree regardless of where it's referenced from, even a plain prose sentence like
+this one, which is exactly what put "Apps" one level too deep under "Tutorials" before this
+comment existed -- \ref is a plain cross-reference link, with no tree-ownership side effect),
+not more tutorials: unlike everything above, an app keeps running until stopped, so there's
+no "captured output" to embed the way a demo's is.

@@ -66,6 +66,16 @@
 /// 2-component vector), magnitude itself has no such restriction and works
 /// for any component count and spatial dimensionality.
 
+/// @defgroup channels Channels
+/// reduceChannels()/channelReductionOutputCount() (processing/channels.h) -- collapse N
+/// per-position channel values (RGB, or a trailing real+imag complex-as-channel-axis pair --
+/// see FFT, below) down to 1 (grayscale) or 3 (true color) output values via a small named
+/// set of modes ("rgb"/"magnitude"/"phase"/"sum"/"mean"/"max"). Independent of any image or
+/// viewport machinery -- operates on a plain array of doubles -- so it's reused by both
+/// viewer/viewport.h's own renderSlice()/renderVolume() (their own channelReduction param)
+/// and the static browser viewer's own compositing (web/ndlviewer.js), rather than either one
+/// hand-rolling the same reduction logic a second time.
+
 /// @defgroup histogram Histogram
 /// Histogram<VDIM>, histogram_equalize(), and histogram_image() (histogram.h) --
 /// bins the joint distribution of VDIM co-occurring scalar values (VDIM==1 is the

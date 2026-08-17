@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Turns an apps/ program's source into a Doxygen markdown documentation
-page -- the app's own explanation and full source, plus concrete build/run
-instructions, WITHOUT ever executing it.
+"""Turns an apps/ program's own top-comment into a Doxygen markdown
+documentation page -- what it does, why it's useful, and how to run it --
+plus concrete build/run instructions, WITHOUT ever executing it or
+embedding its full source (a reader who wants the implementation can just
+open the file at the path this page names; this page's own job is
+explaining the app, not duplicating it).
 
 This is deliberately a separate, much smaller script from
 generate_tutorial.py, not a mode flag on it: that one turns a demo's
@@ -61,7 +64,6 @@ def main():
     source_path = Path(source_file)
     source_lines = source_path.read_text().splitlines(keepends=True)
     prose = extract_top_comment(source_lines)
-    full_source = ''.join(source_lines)
 
     out = []
     out.append(f'{page_title} {{#{page_label}}}')
@@ -85,10 +87,6 @@ def main():
     out.append('```')
     out.append('')
     out.append(f'Source: `{source_path.name}`')
-    out.append('')
-    out.append(f'```cpp')
-    out.append(full_source.rstrip('\n'))
-    out.append('```')
     out.append('')
 
     Path(generated_docs_dir).mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <string>
+#include <array>
 #include <sstream>
 #include <iostream>
 
@@ -34,6 +35,35 @@ TEST(Json, ParsesARealViewportControlMessage) {
 
 	bool stringValueOk = params["timeIndex"].asString() == "latest";
 	passfail << "a string-typed param value (\"latest\") parses correctly: " << (stringValueOk ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
+TEST(Json, NumbersOrHandlesPresentMissingAndShortArrays) {
+	std::stringstream passfail;
+	std::cout << std::endl << "JSON -- numbersOr()" << std::endl;
+
+	std::array<double, 3> fallback = { 1, 2, 3 };
+
+	// Present, exact length -- every entry overwritten.
+	JsonValue full = parseJson(R"({"rotation":[9,8,7]})");
+	auto r1 = full.numbersOr("rotation", fallback);
+	bool exactLen = r1[0] == 9 && r1[1] == 8 && r1[2] == 7;
+	passfail << "present, exact-length array overwrites every entry: " << (exactLen ? "Pass" : "Fail") << std::endl;
+
+	// Missing key -- fallback returned unchanged.
+	JsonValue empty = parseJson(R"({})");
+	auto r2 = empty.numbersOr("rotation", fallback);
+	bool missingOk = r2 == fallback;
+	passfail << "missing key returns the fallback unchanged: " << (missingOk ? "Pass" : "Fail") << std::endl;
+
+	// Short array -- only the leading entries overwritten, the rest keep
+	// their own fallback value (viewer/viewport.h's own renderVolume()
+	// relies on exactly this for a partial "rotation" array).
+	JsonValue partial = parseJson(R"({"rotation":[42]})");
+	auto r3 = partial.numbersOr("rotation", fallback);
+	bool partialOk = r3[0] == 42 && r3[1] == 2 && r3[2] == 3;
+	passfail << "short array overwrites only its own leading entries: " << (partialOk ? "Pass" : "Fail") << std::endl;
 
 	reportPassFail(passfail);
 }

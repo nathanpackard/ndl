@@ -4,6 +4,10 @@
 #include <map>
 #include <iostream>
 #include <cstdlib>
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <thread>
 
 // A small, genuinely reusable CLI framework for apps/ programs -- named
 // flags (`--flag value`) plus boolean flags and an auto-generated
@@ -147,5 +151,45 @@ namespace ndl
 			std::vector<detail_apps::CliOption> options_;
 			std::map<std::string, std::string> values_;
 		};
+
+		namespace detail_apps
+		{
+			// std::signal() takes a plain function pointer, not a capturing
+			// lambda/std::function, so a SIGINT handler needs somewhere
+			// static to reach the flag it should clear -- one at a time is
+			// all any apps/ program here ever needs (each only calls
+			// installSigintHandler() once, from its own main()).
+			inline std::atomic<bool>* g_runningFlag = nullptr;
+			inline void handleSigintFlag(int) { if (g_runningFlag) *g_runningFlag = false; }
+		}
+
+		// Installs a SIGINT handler that clears `running` -- the same
+		// "Ctrl-C stops the main loop" wiring every apps/ live-streaming
+		// program needs (see e.g. apps/live_video_stream.cpp's own main()).
+		inline void installSigintHandler(std::atomic<bool>& running)
+		{
+			detail_apps::g_runningFlag = &running;
+			std::signal(SIGINT, detail_apps::handleSigintFlag);
+		}
+
+		/// True if `envVar` is set in the environment.
+		inline bool selfTestMode(const char* envVar) { return std::getenv(envVar) != nullptr; }
+
+		// Every apps/ live-streaming program is SUPPOSED to run forever
+		// until stopped -- unlike demo/'s own run-to-completion programs,
+		// which ctest smoke-tests with the ordinary "run it, expect exit
+		// 0" pattern. Rather than have ctest juggle external process
+		// signaling (timeout/kill, with its own portability and exit-code
+		// subtleties), self-test mode makes the process behave like an
+		// ordinary demo for exactly this purpose: it still does everything
+		// a real run does (opens its source, starts the WebSocket server,
+		// streams a few samples), it just also stops itself after a short,
+		// fixed duration.
+		/// Returns a thread that, if selfTestMode(envVar), sleeps `ms` then clears `running` -- join it (if joinable()) before returning from main(). A default-constructed (not joinable) thread otherwise.
+		inline std::thread selfTestWatchdog(const char* envVar, std::atomic<bool>& running, int ms = 800)
+		{
+			if (!selfTestMode(envVar)) return std::thread();
+			return std::thread([&running, ms] { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); running = false; });
+		}
 	}
 }

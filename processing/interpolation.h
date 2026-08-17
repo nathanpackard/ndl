@@ -95,36 +95,6 @@ namespace ndl
 
 	namespace detail
 	{
-		// Every combination of per-axis tap index in [0, width) -- width^DIM
-		// combinations total, walked via the same little-endian odometer
-		// increment summed_area_table.h's own fiber-origin helper uses.
-		// width is at most 4 and DIM is a handful at most, so materializing
-		// the whole list up front is simpler than a lazy generator and not a
-		// real cost.
-		template<int DIM>
-		std::vector<std::array<int, DIM>> interpolationTapCombinations(int width)
-		{
-			std::size_t count = 1;
-			for (int d = 0; d < DIM; d++) count *= (std::size_t)width;
-
-			std::vector<std::array<int, DIM>> combos;
-			combos.reserve(count);
-			std::array<int, DIM> idx{};
-			for (std::size_t i = 0; i < count; i++)
-			{
-				combos.push_back(idx);
-				for (int d = 0; d < DIM; d++)
-				{
-					if (++idx[d] < width) break;
-					idx[d] = 0;
-				}
-			}
-			return combos;
-		}
-	}
-
-	namespace detail
-	{
 		// Shared setup for sample()/scatter_add() below: the per-axis tap
 		// base index and 1D weights -- factored out so the two stay
 		// exactly in sync (scatter_add() is meant to be the exact adjoint
@@ -146,25 +116,50 @@ namespace ndl
 		// Shared tap-walk for sample()/scatter_add() below: visits every
 		// nonzero-weight tap combination (skipping the zero-weight ones --
 		// e.g. a Nearest tap, or a B-spline tap right at its support
-		// boundary -- the same way both functions already did before this
-		// was factored out), resolves each one's border-handled source
-		// coordinate, and calls `fn(coord, weight)`. Not just a style
-		// dedup: sample()/scatter_add() being true adjoints depends on
-		// them walking literally the same taps with the same weights in
-		// the same order, which sharing this one loop guarantees
-		// structurally rather than relying on two hand-maintained copies
-		// staying in sync.
+		// boundary, or an axis pinned at an exact-integer position with
+		// nothing to interpolate -- renderVolume()'s own call through
+		// sample() over all of a live source's axes, most fixed at an
+		// exact index, is exactly this case), resolves each one's
+		// border-handled source coordinate, and calls `fn(coord, weight)`.
+		// Not just a style dedup: sample()/scatter_add() being true
+		// adjoints depends on them walking literally the same taps with
+		// the same weights in the same order, which sharing this one loop
+		// guarantees structurally rather than relying on two hand-
+		// maintained copies staying in sync.
+		//
+		// Walks the width^IDIM combinations via the same little-endian
+		// odometer increment summed_area_table.h's own fiber-origin helper
+		// uses, entirely on the stack (a fixed-size std::array<int,IDIM>
+		// counter, no std::vector) -- this used to build the whole
+		// combination list into a freshly heap-allocated std::vector
+		// (interpolationTapCombinations(), since removed) before walking
+		// it, which is a real cost, not a hypothetical one: sample() is
+		// called per RAY-MARCH STEP by viewer/viewport.h's own
+		// renderVolume() (up to outputWidth*outputHeight*96 times per
+		// frame), so that was one heap allocation per step -- millions per
+		// frame -- for a value that's fully known from `width`/`IDIM`
+		// alone and never needs to outlive this one function call.
 		template<int IDIM, int width, class Fn>
 		void forEachTap(const std::array<int, IDIM>& base, const std::array<std::array<double, width>, IDIM>& weights1D, const std::array<int, IDIM>& extent, BorderMode border, Fn&& fn)
 		{
 			std::array<int, IDIM> zero{};
-			for (const auto& tapIdx : interpolationTapCombinations<IDIM>(width))
+			std::array<int, IDIM> tapIdx{};
+			std::size_t count = 1;
+			for (int d = 0; d < IDIM; d++) count *= (std::size_t)width;
+			for (std::size_t i = 0; i < count; i++)
 			{
 				double weight = 1.0;
 				for (int axis = 0; axis < IDIM; axis++) weight *= weights1D[axis][tapIdx[axis]];
-				if (weight == 0.0) continue;
-				auto coord = kernelTapCoord(base, tapIdx, zero, extent, border);
-				fn(coord, weight);
+				if (weight != 0.0)
+				{
+					auto coord = kernelTapCoord(base, tapIdx, zero, extent, border);
+					fn(coord, weight);
+				}
+				for (int d = 0; d < IDIM; d++)
+				{
+					if (++tapIdx[d] < width) break;
+					tapIdx[d] = 0;
+				}
 			}
 		}
 	}

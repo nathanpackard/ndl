@@ -29,6 +29,37 @@ TEST(Matrix, MatrixConstruction) {
 	reportPassFail(passfail);
 }
 
+TEST(Matrix, MatrixFromColumnMajor) {
+	std::stringstream passfail;
+
+	std::cout << std::endl << "MATRIX FROM_COLUMN_MAJOR" << std::endl;
+
+	// Reading the SAME flat array once as row-major (the explicit
+	// constructor) and once as column-major (from_column_major()) must
+	// produce two matrices that are exact transposes of each other:
+	// M_col(i,j) = raw[j*N+i] = M_row(j,i) = M_row^T(i,j) -- a clean,
+	// hand-derivation-free correctness check rather than working out
+	// expected element values by hand.
+	double raw[9] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+	Matrix<double, 3> rowMajor(raw);
+	Matrix<double, 3> colMajor = Matrix<double, 3>::from_column_major(raw);
+	bool isTranspose = true;
+	for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) if (colMajor(i, j) != rowMajor(j, i)) isTranspose = false;
+	passfail << "from_column_major(raw) == Matrix(raw).transpose(): " << (isTranspose ? "Pass" : "Fail") << std::endl;
+
+	// A genuinely asymmetric case (viewport.h's own use: a rotation
+	// matrix's wire encoding) sanity-checked directly against a known
+	// column-major identity matrix -- from_column_major() of an identity
+	// array is still the identity, regardless of which layout it's read as.
+	double identityRaw[9] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+	Matrix<double, 3> identityFromCol = Matrix<double, 3>::from_column_major(identityRaw);
+	bool isIdentity2 = true;
+	for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) if (identityFromCol(i, j) != (i == j ? 1.0 : 0.0)) isIdentity2 = false;
+	passfail << "from_column_major() of an identity array is still the identity: " << (isIdentity2 ? "Pass" : "Fail") << std::endl;
+
+	reportPassFail(passfail);
+}
+
 TEST(Matrix, MatrixElementAccess) {
 	std::stringstream passfail;
 

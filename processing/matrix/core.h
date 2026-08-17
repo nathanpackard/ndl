@@ -36,6 +36,27 @@ namespace ndl
 			/// @param values Row-major array of exactly N*N elements, copied in.
 			explicit Matrix(const Real *values){ memcpy(data_, values, N*N*sizeof(Real)); };
 
+			/// Builds a matrix from a COLUMN-major array of N*N values -- the layout convention
+			/// OpenGL/WebGL's own uniform-matrix upload (gl.uniformMatrix3fv et al.) and this
+			/// project's own browser-side code (web/ndlviewer.js's mat3Multiply()/rotationMatrix())
+			/// use, as opposed to this class's own row-major storage/constructor above. A named
+			/// static factory rather than a second same-signature constructor (C++ can't overload
+			/// on layout alone) -- named so a call site reads as "the SAME matrix a column-major
+			/// caller means," not a different matrix: `m(row,col) = values[col*N+row]` maps each
+			/// column-major entry onto the mathematically identical element of this row-major
+			/// storage, so every operator (`*`, `transpose()`, ...) afterward computes exactly what
+			/// the column-major caller's own convention would.
+			/// @param values Column-major array of exactly N*N elements.
+			/// @return A new matrix, mathematically identical to `values` under its own column-major reading.
+			static Matrix<Real,N> from_column_major(const Real *values)
+			{
+				Matrix<Real,N> m;
+				for (int col = 0; col < N; col++)
+					for (int row = 0; row < N; row++)
+						m(row, col) = values[col * N + row];
+				return m;
+			}
+
 			//Methods
 			/// Element-wise equality.
 			/// @param m Matrix to compare against.

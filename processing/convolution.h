@@ -5,10 +5,14 @@
 #include <array>
 #include <limits>
 #include <type_traits>
+#include <algorithm>
+#include <execution>
+#include <numeric>
 #include "../image/border_mode.h"
 #include "../image/detail.h"
 #include "../image.h"
 #include "../mathHelpers.h"
+#include "summed_area_table.h"
 
 // The convolution toolkit: convolve()/gaussian_blur(), as free functions
 // over any minimal-interface image type. A sibling of fft.h/matrix.h/
@@ -17,7 +21,9 @@
 // it in, the same way it doesn't pull in fft.h. (This file does include
 // image.h itself, since gaussian_blur() below needs a real Image<double,DIM>
 // to build its own kernel workspace -- but that's convolution.h depending
-// on image.h, not the other way around.)
+// on image.h, not the other way around. Also pulls in summed_area_table.h,
+// since downsample() below uses its box_blur() as a faster prefilter than
+// gaussian_blur() -- see downsample()'s own comment for why.)
 
 namespace ndl
 {
@@ -67,20 +73,33 @@ namespace ndl
 		}
 	}
 
-	// Gaussian blur: builds a normalized (weights sum to 1) Gaussian kernel
-	// and hands it to convolve() above. Kernel radius follows the standard
-	// 3-sigma rule (_kernelSize in mathHelpers.h), so larger sigma
-	// automatically gets a wider kernel; the same sigma and radius apply
-	// along every dimension. Blurring a color image channel-by-channel (so
-	// colors don't bleed into each other) is a matter of calling this on
-	// each channel's 2D slice rather than the 3D whole -- no special-casing
+	// Gaussian blur: a DIM-dimensional Gaussian factors exactly into DIM
+	// independent 1D Gaussians (one per axis), so rather than convolving
+	// with one full width^DIM kernel, this runs DIM passes of convolve(),
+	// each with a kernel shaped {1,...,width,...,1} (width only along the
+	// current axis) -- the same per-axis-restricted-kernel trick
+	// gradient() below already relies on: convolve()'s own
+	// kernelIncludedTaps() skips every zero-weight tap, and an axis stuck
+	// at extent 1 only ever has one possible (zero-weight-free) position,
+	// so each pass genuinely only visits `width` taps per pixel instead of
+	// width^DIM. Mathematically identical result to the single-kernel
+	// version (a separable filter's whole point), at O(DIM*width) tap
+	// evaluations per pixel instead of O(width^DIM) -- a factor of
+	// width^(DIM-1)/DIM cheaper, e.g. ~24x fewer tap evaluations for a
+	// DIM=3, width=7 kernel. Kernel radius follows the standard 3-sigma
+	// rule (_kernelSize in mathHelpers.h), so larger sigma automatically
+	// gets a wider kernel; the same sigma and radius apply along every
+	// dimension. Blurring a color image channel-by-channel (so colors
+	// don't bleed into each other) is a matter of calling this on each
+	// channel's 2D slice rather than the 3D whole -- no special-casing
 	// needed here, since slice() already shares memory with the original
 	// and convolve() is dimension-agnostic.
 	//
 	// Unlike convolve() above, this genuinely needs a real Image<double,DIM>
-	// to hold the kernel weights it builds -- that's why this file includes
-	// image.h at all.
-	/// Convolves `src` with a normalized Gaussian kernel of the given standard deviation, writing into `dst`.
+	// to hold the kernel weights it builds (and the double-precision
+	// scratch buffers the intermediate passes accumulate into) -- that's
+	// why this file includes image.h at all.
+	/// Convolves `src` with a normalized Gaussian kernel of the given standard deviation, writing into `dst`. Applied as DIM separable 1D passes, not one full DIM-dimensional kernel -- see this function's own top comment.
 	/// @tparam SrcImageT Any minimal-interface image type whose own concrete type also has an Image<double,DIM>-compatible construction path (i.e. any Image<T,DIM>).
 	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); may differ from SrcImageT (e.g. a different concrete container).
 	/// @param  src    Source image.
@@ -94,85 +113,171 @@ namespace ndl
 		using SrcT = typename SrcImageT::value_type;
 		static_assert(std::is_arithmetic_v<SrcT>, "ndl::gaussian_blur() requires a value_type convertible to double -- not valid for e.g. std::complex<T> (it calls convolve() internally)");
 		assert(sigma > 0);
-		auto srcExtent = src.extent();
-		constexpr int DIM = std::tuple_size<decltype(srcExtent)>::value;
+		auto extent = src.extent();
+		constexpr int DIM = std::tuple_size<decltype(extent)>::value;
 
 		int radius = _kernelSize(sigma);
-		std::array<int, DIM> kernelExtent;
-		for (int i = 0; i < DIM; i++) kernelExtent[i] = 2 * radius + 1;
-
-		std::vector<double> kernelData(Image<double, DIM>::size(kernelExtent));
-		Image<double, DIM> kernel(kernelData.data(), kernelExtent);
-
-		double total = 0;
-		for (const auto& coord : kernel.coordinates())
+		int width = 2 * radius + 1;
+		std::vector<double> weights1D(width);
+		double wsum = 0;
+		for (int i = 0; i < width; i++)
 		{
-			double distSq = 0;
-			for (int i = 0; i < DIM; i++)
-			{
-				double d = coord[i] - radius;
-				distSq += d * d;
-			}
-			double w = std::exp(-distSq / (2 * sigma * sigma));
-			kernel.at(coord) = w;
-			total += w;
+			double d = i - radius;
+			weights1D[i] = std::exp(-(d * d) / (2 * sigma * sigma));
+			wsum += weights1D[i];
 		}
-		for (auto it = kernel.begin(); it != kernel.end(); ++it) *it /= total;
+		for (auto& w : weights1D) w /= wsum;
 
-		convolve(src, dst, kernel, border);
+		// Builds the {1,...,width,...,1} kernel for one axis into
+		// caller-owned storage (kept alive by the caller across the
+		// convolve() call that immediately follows, since Image doesn't
+		// own its backing memory).
+		auto buildAxisKernel = [&](int axis, std::vector<double>& kernelData) {
+			std::array<int, DIM> kernelExtent;
+			for (int i = 0; i < DIM; i++) kernelExtent[i] = (i == axis) ? width : 1;
+			Image<double, DIM> kernel(kernelData.data(), kernelExtent);
+			std::array<int, DIM> kCoord{};
+			for (int i = 0; i < width; i++) { kCoord[axis] = i; kernel.at(kCoord) = weights1D[i]; }
+			return kernel;
+		};
+
+		if (DIM == 1)
+		{
+			std::vector<double> kernelData(width);
+			convolve(src, dst, buildAxisKernel(0, kernelData), border);
+			return;
+		}
+
+		// DIM >= 2: axis 0 reads from src into bufA; the last axis writes
+		// straight into dst; any axes in between ping-pong through bufA/
+		// bufB (only ever two scratch buffers needed, regardless of DIM).
+		std::vector<double> bufAData(Image<double, DIM>::size(extent));
+		std::vector<double> bufBData(Image<double, DIM>::size(extent));
+		Image<double, DIM> bufA(bufAData.data(), extent);
+		Image<double, DIM> bufB(bufBData.data(), extent);
+
+		std::vector<double> kernelData0(width);
+		convolve(src, bufA, buildAxisKernel(0, kernelData0), border);
+
+		Image<double, DIM>* cur = &bufA;
+		Image<double, DIM>* other = &bufB;
+		for (int axis = 1; axis < DIM - 1; axis++)
+		{
+			std::vector<double> kernelDataMid(width);
+			convolve(*cur, *other, buildAxisKernel(axis, kernelDataMid), border);
+			std::swap(cur, other);
+		}
+
+		std::vector<double> kernelDataLast(width);
+		convolve(*cur, *other, buildAxisKernel(DIM - 1, kernelDataLast), border);
+
+		// Written through convolve() into a double buffer rather than
+		// straight into dst, then rounded (not truncated) on the way into
+		// DstT here: convolve()'s own per-pixel cast truncates toward zero
+		// (its documented, unchanged behavior -- see its own final line),
+		// which is fine after a SINGLE summation but chains two rounds of
+		// floating-point error across two separable passes -- occasionally
+		// enough to land a value that's mathematically exactly N just
+		// under it (e.g. 76.999999999997), truncating to N-1 instead of
+		// rounding back to N.
+		using DstT = typename DstImageT::value_type;
+		for (const auto& coord : other->coordinates())
+		{
+			double v = other->at(coord);
+			dst.at(coord) = static_cast<DstT>(std::is_integral<DstT>::value ? std::round(v) : v);
+		}
 	}
 
-	// Shrinks src by `factor` along every axis except `channelAxis`: blurs
-	// first via gaussian_blur() (per_channel()'d over channelAxis, so colors
-	// don't bleed into each other) so the pixels a plain strided view() would
-	// otherwise just skip get averaged in instead of aliased into noise, then
-	// a step={1,...,factor,...,1} view() (1 at channelAxis, factor everywhere
-	// else) does the actual decimation -- the standard "blur, then keep every
-	// Nth pixel" resize most image libraries use. Returns a new OwnedImage
-	// rather than writing into a caller-provided dst (unlike every other
-	// function in this file): the output extent is itself a function of
-	// factor, and there's no simpler way to hand that back than computing and
+	// Shrinks src by `factor` along every axis except `channelAxis`, each
+	// output pixel the box average of the `factor`-sized source block it
+	// stands in for -- mip-mapping's own box-per-block prefilter, which is
+	// already the textbook-correct antialiasing filter for decimation (not
+	// an approximation of a nicer one). Built directly on
+	// summed_area_table.h's own box_filter_query() -- "O(1) arbitrary-size
+	// box filtering under a spatially varying footprint" is *literally*
+	// what summed-area tables were invented for (Crow, 1984, "Summed-Area
+	// Tables for Texture Mapping" -- box_filter_query()'s own comment) --
+	// rather than box_blur()+decimate: that two-step first blurs the ENTIRE
+	// source at full resolution (one box average per SOURCE pixel), then
+	// keeps only every `factor`-th one, throwing the rest away -- wasted
+	// work that grows with the source, not the (usually much smaller)
+	// output. Querying box_filter_query() only at the output positions
+	// instead means the per-channel cost is one summed_area_table() build
+	// (O(source size), unavoidable -- every source pixel has to be read at
+	// least once) plus one O(1) query per OUTPUT pixel, not per source
+	// pixel: at a large shrink factor (a live viewport's Size slider
+	// turned down while its crop stays full-frame, say) the output can be
+	// a small fraction of the source's own pixel count, and this now costs
+	// proportionally less -- unlike the old box_blur()+decimate path,
+	// whose cost stayed pinned to the source's size regardless of how
+	// small the requested output was. Returns a new OwnedImage rather than
+	// writing into a caller-provided dst (unlike every other function in
+	// this file): the output extent is itself a function of factor, and
+	// there's no simpler way to hand that back than computing and
 	// returning the already-sized result directly, the same reasoning
 	// OwnedImage::like() and view() themselves already return new objects
 	// rather than filling one in place.
-	/// Shrinks `src` by `factor` along every axis except `channelAxis` (blurring first so the pixels a strided view() would otherwise skip get averaged in, not aliased into noise). Returns a new OwnedImage.
+	//
+	// `border` is kept for interface stability but only Clamp's own
+	// behavior is actually reachable: box_filter_query() itself always
+	// clamps its box to the table's extent (a per-query variable-size
+	// window can't be bounded in advance to build a Wrap/Reflect-padded
+	// copy against -- see its own comment) -- true of every past caller
+	// anyway, since none has ever passed anything but the Clamp default.
+	/// Shrinks `src` by `factor` along every axis except `channelAxis`, each output pixel the box average of the `factor`-sized source block it stands in for (via box_filter_query(), summed_area_table.h). Returns a new OwnedImage.
 	/// @tparam ImageT Any minimal-interface image type whose own concrete type also has an Image<double,DIM>-compatible construction path (i.e. any Image<T,DIM>).
 	/// @param  src         Source image.
-	/// @param  factor      Shrink factor (keep every `factor`-th pixel along every axis except `channelAxis`).
+	/// @param  factor      Shrink factor (each output pixel averages a `factor`-sized source block along every axis except `channelAxis`).
 	/// @param  channelAxis Axis left undecimated (e.g. 0 for a {channel,x,y} color image). Defaults to 0.
-	/// @param  border      How an out-of-bounds neighbor is resolved during the blur pass. Defaults to BorderMode::Clamp.
+	/// @param  border      Unused beyond Clamp (which every box query already performs) -- kept for interface stability. Defaults to BorderMode::Clamp.
 	/// @ingroup convolution
 	template<class ImageT>
 	auto downsample(const ImageT& src, int factor, int channelAxis = 0, BorderMode border = BorderMode::Clamp)
 	{
+		(void)border;
 		using T = typename ImageT::value_type;
 		auto extent = src.extent();
 		constexpr int DIM = std::tuple_size<decltype(extent)>::value;
-		static_assert(std::is_arithmetic_v<T>, "ndl::downsample() requires a value_type convertible to double -- not valid for e.g. std::complex<T> (it calls gaussian_blur() internally)");
+		static_assert(std::is_arithmetic_v<T>, "ndl::downsample() requires a value_type convertible to double -- not valid for e.g. std::complex<T> (it calls summed_area_table()/box_filter_query() internally)");
 		assert(factor > 1);
 
-		auto blurred = OwnedImage<T, DIM>::like(src);
-		per_channel(src, blurred, channelAxis, [&](const auto& s, auto& d) { gaussian_blur(s, d, factor * 0.5, border); });
-
-		// view()'s own step argument only takes a compile-time
-		// std::initializer_list, not a runtime-computed std::array (the
-		// step needs to vary by axis here, dictated by the runtime
-		// `channelAxis` argument) -- so the decimation below is a direct
-		// coordinate-mapping copy instead, picking every `factor`-th
-		// position along every axis except channelAxis. Same element
-		// count view()'s own step semantics would produce for a full-range,
-		// stride-`factor`, start-at-0 selection: floor((extent-1)/factor)+1.
 		std::array<int, DIM> outExtent;
 		for (int i = 0; i < DIM; i++)
 			outExtent[i] = (i == channelAxis) ? extent[i] : (extent[i] - 1) / factor + 1;
-
 		OwnedImage<T, DIM> result(outExtent);
-		for (const auto& outCoord : result.coordinates())
+
+		constexpr int SUBDIM = DIM - 1;
+		double halfWidth = std::max(1, factor / 2);
+
+		// One channel per task, run in parallel: each channel's SAT build
+		// and query pass only ever reads its own src.slice() and writes
+		// its own (disjoint) result.slice() -- a color image's 3 channels
+		// share no memory with each other, so this needs no locking, the
+		// same "chunks are already independent, no merge step" reasoning
+		// as fft.h's own std::execution::par usage (unlike
+		// back_project()'s chunking above, which -- unlike this -- DOES
+		// need a mutex, since every chunk there contributes to the same
+		// shared accumulator).
+		std::vector<int> channelIndices(extent[channelAxis]);
+		std::iota(channelIndices.begin(), channelIndices.end(), 0);
+		std::for_each(std::execution::par, channelIndices.begin(), channelIndices.end(), [&](int c)
 		{
-			std::array<int, DIM> srcCoord;
-			for (int i = 0; i < DIM; i++) srcCoord[i] = (i == channelAxis) ? outCoord[i] : outCoord[i] * factor;
-			result.at(outCoord) = blurred.at(srcCoord);
-		}
+			Image<T, SUBDIM> srcChannel = src.slice(channelAxis, c);
+			Image<T, SUBDIM> dstChannel = result.slice(channelAxis, c);
+
+			auto chExtent = srcChannel.extent();
+			std::vector<double> tableData(Image<double, SUBDIM>::size(chExtent));
+			Image<double, SUBDIM> table(tableData.data(), chExtent);
+			summed_area_table(srcChannel, table);
+
+			for (const auto& outCoord : dstChannel.coordinates())
+			{
+				std::array<double, SUBDIM> center, hw;
+				for (int i = 0; i < SUBDIM; i++) { center[i] = outCoord[i] * factor; hw[i] = halfWidth; }
+				double avg = box_filter_query(table, center, hw);
+				dstChannel.at(outCoord) = static_cast<T>(std::is_integral<T>::value ? std::round(avg) : avg);
+			}
+		});
 		return result;
 	}
 
