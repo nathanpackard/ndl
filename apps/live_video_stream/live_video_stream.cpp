@@ -216,8 +216,26 @@ int main(int argc, char** argv)
 		}
 		else if (type == "updateViewport")
 		{
+			// Merge onto the existing params rather than replacing them
+			// outright -- Viewport::setParams()'s own doc comment says the
+			// CALLER is responsible for this (an updateViewport message is
+			// meant to be a partial patch, e.g. live_video_stream.html's
+			// own pan/zoom sending just {cropMin,cropMax}), but nothing
+			// here actually did it: a bare setParams(msg["params"]) wiped
+			// out every other key (axisI, colorAxis, outputWidth, ...) the
+			// very first time a client panned or zoomed, breaking that
+			// viewport's every subsequent render ("missing key axisI")
+			// until a fresh createViewport. Shallow merge only (one level
+			// of object keys) -- the only nested object either app's own
+			// params ever carries is "fixed", which no updateViewport
+			// message here ever partially patches on its own.
 			auto it = cv.viewports.find(id);
-			if (it != cv.viewports.end() && msg.has("params")) it->second->setParams(msg["params"]);
+			if (it != cv.viewports.end() && msg.has("params"))
+			{
+				JsonValue merged = it->second->params();
+				for (const auto& kv : msg["params"].asObject()) merged[kv.first] = kv.second;
+				it->second->setParams(merged);
+			}
 		}
 		else if (type == "closeViewport")
 		{

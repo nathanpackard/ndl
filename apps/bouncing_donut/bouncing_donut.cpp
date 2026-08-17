@@ -238,8 +238,20 @@ int main(int argc, char** argv)
 		}
 		else if (type == "updateViewport")
 		{
+			// Merge onto the existing params rather than replacing them
+			// outright -- same bug/fix as live_video_stream.cpp's own
+			// identical code (see that file's own comment here): a bare
+			// setParams(msg["params"]) wiped out axisA/axisB/axisC and
+			// every other key the first time the rotation slider sent its
+			// own {rotation:[...]}-only update, breaking every subsequent
+			// render for that viewport.
 			auto it = cv.viewports.find(id);
-			if (it != cv.viewports.end() && msg.has("params")) it->second->setParams(msg["params"]);
+			if (it != cv.viewports.end() && msg.has("params"))
+			{
+				JsonValue merged = it->second->params();
+				for (const auto& kv : msg["params"].asObject()) merged[kv.first] = kv.second;
+				it->second->setParams(merged);
+			}
 		}
 		else if (type == "closeViewport")
 		{
