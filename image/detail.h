@@ -56,6 +56,70 @@ namespace ndl
 		template<class ImageT, int DIM>
 		inline constexpr bool satisfies_minimal_interface_v = satisfies_minimal_interface<ImageT, DIM>::value;
 
+		// Detects "ImageT exposes .stride(), AND at(coord) returns a
+		// genuine T& (not a proxy, e.g. PackedBitImage's packed-bit
+		// reference)" -- i.e. ImageT's storage is genuinely linear/
+		// strided, so &at(origin) + i*stride()[axis] is a CORRECT way to
+		// reach the element at origin with axis advanced by i, for every
+		// i in range. True for Image<T,DIM> and everything derived from
+		// it (OwnedImage, every view()/slice()/swap_axes() result).
+		//
+		// Used as a static_assert requirement (not a fast/slow dispatch
+		// switch -- an earlier version of this file tried that and
+		// measured no actual speed difference between the two paths at
+		// -O3: Image::at()'s stride dot-product has a compile-time-
+		// constant trip count, so the compiler already inlines and
+		// strength-reduces it down to the same code a raw pointer walk
+		// would produce. What the dot-product form genuinely can't do is
+		// be walked with a raw pointer at all when storage ISN'T linear
+		// -- PackedBitImage's individual bits aren't addressable, and
+		// RingBufferImage deliberately doesn't expose stride() since its
+		// own physicalOffset() wraps one axis modulo the ring's capacity,
+		// not a constant stride) -- so per-axis algorithms that only ever
+		// make sense against a real materialized image anyway
+		// (summed_area_table(), fftn(), distance_transform_squared() --
+		// none of which have a coherent meaning run directly against
+		// packed bits or a live ring buffer without first snapshotting
+		// into a real Image) require it outright via this trait, rather
+		// than carrying a second, slower, generic implementation for a
+		// combination that was never actually going to be used. A
+		// PackedBitImage's own role is disk-storage compactness, not
+		// in-memory processing -- convert to a bool/int Image first (a
+		// deliberate, visible step) if one of these needs to run against
+		// bit-packed data.
+		template<class ImageT, int DIM, class = void>
+		struct has_stride_access : std::false_type {};
+		template<class ImageT, int DIM>
+		struct has_stride_access<ImageT, DIM, std::void_t<
+			std::enable_if_t<std::is_convertible_v<decltype(std::declval<const ImageT&>().stride()), std::array<int, DIM>>>,
+			std::enable_if_t<std::is_lvalue_reference_v<decltype(std::declval<ImageT&>().at(std::declval<std::array<int, DIM>>()))>>
+		>> : std::true_type {};
+		template<class ImageT, int DIM>
+		inline constexpr bool has_stride_access_v = has_stride_access<ImageT, DIM>::value;
+
+		// The shared "get a pointer to walk one fiber" primitive every
+		// per-axis algorithm in this library (summed_area_table()'s
+		// prefix-sum pass, fftn()'s per-axis transform,
+		// distance_transform_squared()'s per-axis envelope) needs, pushed
+		// up here once instead of each re-deriving "&image.at(origin)" +
+		// "image.stride()[axis]" on its own. Requires
+		// has_stride_access_v<ImageT, DIM> (a static_assert at the call
+		// site, not here, so the failure names the actual algorithm that
+		// needed it). The caller walks the fiber via `cursor.ptr[i *
+		// cursor.stride]` for i in 0..n-1, or increments `cursor.ptr` by
+		// `cursor.stride` directly.
+		template<class ImageT, std::size_t DIM>
+		struct FiberCursor
+		{
+			typename ImageT::value_type* ptr;
+			std::ptrdiff_t stride;
+		};
+		template<class ImageT, std::size_t DIM>
+		FiberCursor<ImageT, DIM> fiberCursor(ImageT& image, int axis, const std::array<int, DIM>& origin)
+		{
+			return { &image.at(origin), (std::ptrdiff_t)image.stride()[axis] };
+		}
+
 		// Shared coordinate-list generator: every DIM-dimensional "visit
 		// every position" walk (Image::coordinates(), PackedBitImage::
 		// coordinates(), below) is this same recursion, so it lives once

@@ -163,10 +163,40 @@ namespace ndl
 		std::string channelReduction = params.has("channelReduction") ? params["channelReduction"].asString() : "rgb";
 		int channels = colorAxis >= 0 ? channelReductionOutputCount(channelReduction) : 1;
 		std::vector<uint8_t> cropPixels((std::size_t)cropW * cropH * channels);
-		std::vector<double> channelValues(colorAxis >= 0 ? (std::size_t)extent[colorAxis] : 0);
-		double reduced[3];
-		std::size_t p = 0;
-		for (int y = 0; y < cropH; y++)
+
+		// A bad channelReduction (wrong channel count for "rgb"/"phase", or
+		// an unrecognized mode name) has to be caught HERE, sequentially,
+		// rather than left to the first reduceChannels() call inside the
+		// parallel loop below to throw it: an exception escaping a
+		// std::execution::par callable can't propagate to the caller at
+		// all (the standard mandates std::terminate() instead -- the same
+		// reasoning fftn() documents for its own per-axis validation).
+		// Reuses reduceChannels() itself (on a throwaway buffer) rather
+		// than re-deriving its own validation rules here a second time --
+		// the real per-pixel calls below are guaranteed not to throw once
+		// this one hasn't.
+		if (colorAxis >= 0)
+		{
+			std::vector<double> validationBuf((std::size_t)extent[colorAxis], 0.0);
+			double validationOut[3];
+			reduceChannels(validationBuf.data(), (int)validationBuf.size(), channelReduction, validationOut);
+		}
+
+		// One task per crop ROW, run in parallel -- every row reads a
+		// disjoint set of source coordinates and writes a disjoint slice
+		// of cropPixels, the same "independent chunks, no merge step"
+		// shape as renderVolume()'s own per-row parallelization above (see
+		// that loop's own comment for the full reasoning). channelValues/
+		// reduced move to one buffer PER ROW TASK (cropH allocations
+		// total) rather than one shared buffer reused across the whole
+		// crop, for the same reason.
+		std::vector<int> rowIndices(cropH);
+		std::iota(rowIndices.begin(), rowIndices.end(), 0);
+		std::for_each(std::execution::par, rowIndices.begin(), rowIndices.end(), [&](int y)
+		{
+			std::vector<double> channelValues(colorAxis >= 0 ? (std::size_t)extent[colorAxis] : 0);
+			double reduced[3];
+			std::size_t p = (std::size_t)y * cropW * channels;
 			for (int x = 0; x < cropW; x++)
 			{
 				std::array<int, DIM> coord = base;
@@ -189,6 +219,7 @@ namespace ndl
 					cropPixels[p++] = range > 0 ? (uint8_t)clampInt((int)std::lround(((v - windowMin) / range) * 255), 0, 255) : 0;
 				}
 			}
+		});
 
 		int outputWidth = params.has("outputWidth") ? params["outputWidth"].asInt() : cropW;
 		int outputHeight = params.has("outputHeight") ? params["outputHeight"].asInt() : cropH;
@@ -342,6 +373,16 @@ namespace ndl
 		RenderedFrame result;
 		result.width = outputWidth; result.height = outputHeight; result.channels = channels;
 		result.pixels.assign((std::size_t)outputWidth * outputHeight * channels, 0);
+
+		// Same reasoning as renderSlice()'s own pre-loop validation call
+		// just above: a bad channelReduction has to throw HERE, before the
+		// parallel per-row loop below, not from inside it.
+		if (colorAxis >= 0)
+		{
+			std::vector<double> validationBuf((std::size_t)extent[colorAxis], 0.0);
+			double validationOut[3];
+			reduceChannels(validationBuf.data(), (int)validationBuf.size(), channelReduction, validationOut);
+		}
 
 		const int STEPS = 96;
 		const double ALPHA_DENSITY = 12.0;

@@ -5,6 +5,8 @@
 #include <array>
 #include <cstddef>
 #include <type_traits>
+#include <algorithm>
+#include <execution>
 #include "../image.h"
 
 // The distance transform toolkit: distance_transform_squared()/
@@ -128,8 +130,8 @@ namespace ndl
 	// kDistanceTransformInfinity, unmodified by any axis pass, rather than
 	// a crash or a misleadingly small number.
 	/// Exact squared Euclidean distance transform: dst(coord) = squared distance from coord to the nearest position on the opposite side of the foreground/background boundary (see DistanceSide).
-	/// @tparam SrcImageT Any minimal-interface image type whose value_type is contextually convertible to bool (nonzero/true = foreground).
-	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT) whose value_type is floating-point, to hold a squared distance.
+	/// @tparam SrcImageT A genuinely linear/strided image type (Image<T,DIM> and everything derived from it); its value_type must be contextually convertible to bool (nonzero/true = foreground). NOT PackedBitImage or a live RingBufferImage -- snapshot into a real Image first if you need a distance transform from either.
+	/// @tparam DstImageT Same requirement as SrcImageT (same DIM); its value_type must be floating-point, to hold a squared distance.
 	/// @param  src       Source image.
 	/// @param  dst       Destination; must already exist with `src`'s own extent.
 	/// @param  side      Which side to measure distance TO -- ToBackground (default) or ToForeground; see DistanceSide's own comment.
@@ -141,10 +143,11 @@ namespace ndl
 		using DstT = typename DstImageT::value_type;
 		static_assert(std::is_arithmetic_v<SrcT>, "ndl::distance_transform_squared() requires a source value_type contextually convertible to bool -- not valid for e.g. std::complex<T>");
 		static_assert(std::is_floating_point_v<DstT>, "ndl::distance_transform_squared() requires a floating-point destination value_type, to hold a squared distance");
-		assert(dst.extent() == src.extent());
-
 		auto extent = src.extent();
 		constexpr int DIM = std::tuple_size<decltype(extent)>::value;
+		static_assert(detail::has_stride_access_v<SrcImageT, DIM> && detail::has_stride_access_v<DstImageT, DIM>,
+			"ndl::distance_transform_squared() requires genuinely linear/strided image types (Image<T,DIM> and everything derived from it) -- not PackedBitImage or a live RingBufferImage. Snapshot into a real Image first if you need a distance transform from either.");
+		assert(dst.extent() == src.extent());
 
 		bool seedIsForeground = (side == DistanceSide::ToForeground);
 		for (const auto& coord : src.coordinates())
@@ -153,19 +156,32 @@ namespace ndl
 			dst.at(coord) = static_cast<DstT>((isForeground == seedIsForeground) ? 0.0 : detail::kDistanceTransformInfinity);
 		}
 
-		std::vector<double> fiber, transformed;
+		// Fibers along a given axis are independent of each other (each is
+		// its own private lowerEnvelope1DSquared() call, touching no
+		// coordinate any other fiber touches), so the loop over fibers
+		// runs concurrently via std::execution::par -- the same "loop of
+		// parallel passes, sequential across axes" shape fftn()'s/
+		// summed_area_table()'s own per-axis parallel for_each already
+		// use (see fftn()'s own comment for the full reasoning). fiber/
+		// transformed move to one pair of buffers PER FIBER TASK, for the
+		// same reason renderVolume()'s/renderSlice()'s own per-row
+		// buffers do -- a single shared buffer mutated by every fiber
+		// isn't safe once fibers run concurrently. Gather/scatter walk
+		// dst via detail::fiberCursor() (image/detail.h), the same shared
+		// raw-pointer-stepping primitive summed_area_table()/fftn() use.
 		for (int axis = 0; axis < DIM; axis++)
 		{
 			int n = extent[axis];
-			fiber.resize(n);
-			transformed.resize(n);
-			for (const auto& origin : detail::fiberOrigins<DIM>(extent, axis))
+			auto origins = detail::fiberOrigins<DIM>(extent, axis);
+			std::for_each(std::execution::par, origins.begin(), origins.end(), [&](const std::array<int, DIM>& origin)
 			{
-				std::array<int, DIM> coord = origin;
-				for (int i = 0; i < n; i++) { coord[axis] = i; fiber[i] = static_cast<double>(dst.at(coord)); }
+				thread_local std::vector<double> fiber, transformed;
+				if ((int)fiber.size() != n) { fiber.resize(n); transformed.resize(n); }
+				auto cursor = detail::fiberCursor(dst, axis, origin);
+				for (int i = 0; i < n; i++) fiber[i] = static_cast<double>(cursor.ptr[i * cursor.stride]);
 				detail::lowerEnvelope1DSquared(fiber, transformed);
-				for (int i = 0; i < n; i++) { coord[axis] = i; dst.at(coord) = static_cast<DstT>(transformed[i]); }
-			}
+				for (int i = 0; i < n; i++) cursor.ptr[i * cursor.stride] = static_cast<DstT>(transformed[i]);
+			});
 		}
 	}
 

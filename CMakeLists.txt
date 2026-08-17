@@ -70,6 +70,31 @@ else()
     message(STATUS "ndl: TBB not found -- std::execution::par (used by fft.h) will run single-threaded (still correct, just not parallel)")
 endif()
 
+# Optional: -march=native lets the compiler use whatever instruction set
+# extensions THIS machine's own CPU actually has (AVX2/FMA, etc.) instead
+# of the conservative generic-x86-64 baseline (SSE2 only) CMake otherwise
+# targets by default -- the difference specifically matters for the tight,
+# already-parallel per-pixel loops this library leans on for live
+# rendering (renderSlice()'s extraction/windowing, renderVolume()'s ray
+# march, box_filter_query()'s SAT queries), which are exactly the kind of
+# straight-line floating-point loops a compiler can auto-vectorize given
+# permission to. Off by default would be the safer choice for a library
+# meant to be built once and run on other machines; on by default here
+# because this repo's own apps/demos are built and run on the same
+# machine, and NDL_NATIVE_ARCH=OFF is one flag away for anyone who ever
+# needs to build a binary meant to run somewhere else.
+option(NDL_NATIVE_ARCH "Compile for this machine's own CPU (-march=native) -- faster locally, but the resulting binary may not run on a different machine" OFF)
+if(NDL_NATIVE_ARCH AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-march=native" NDL_HAS_MARCH_NATIVE)
+    if(NDL_HAS_MARCH_NATIVE)
+        target_compile_options(ndl INTERFACE -march=native)
+        message(STATUS "ndl: NDL_NATIVE_ARCH on -- compiling with -march=native")
+    else()
+        message(STATUS "ndl: NDL_NATIVE_ARCH on but compiler doesn't accept -march=native -- skipped")
+    endif()
+endif()
+
 option(NDL_BUILD_TESTS "Build the ndl unit test suite" ON)
 option(NDL_BUILD_DEMOS "Build the ndl demo programs" ON)
 option(NDL_BUILD_APPS "Build the ndl apps (interactive client/server programs, e.g. live_video_stream -- unlike demo/, these can't be captured into a static tutorial page)" ON)

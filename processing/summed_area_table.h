@@ -6,6 +6,7 @@
 #include <type_traits>
 #include <cmath>
 #include <algorithm>
+#include <execution>
 #include "../image.h"
 
 // The summed-area-table toolkit: summed_area_table()/rectangle_sum(), as
@@ -38,8 +39,8 @@ namespace ndl
 	// OwnedImage<double,DIM> or OwnedImage<std::int64_t,DIM>) so summing a
 	// large region doesn't overflow src's own element type.
 	/// Builds a summed-area table: dst(coord) = sum of every src value from the origin to coord, inclusive.
-	/// @tparam SrcImageT Any minimal-interface image type; its value_type must be arithmetic.
-	/// @tparam DstImageT Any minimal-interface image type (same DIM as SrcImageT); its value_type must be arithmetic and wide enough to hold the total sum without overflow.
+	/// @tparam SrcImageT A genuinely linear/strided image type (Image<T,DIM> and everything derived from it -- OwnedImage, views, slices); its value_type must be arithmetic. NOT PackedBitImage or a live RingBufferImage -- neither has a coherent meaning for a summed-area table anyway; snapshot into a real Image first if you need one from either.
+	/// @tparam DstImageT Same requirement as SrcImageT (same DIM); its value_type must be arithmetic and wide enough to hold the total sum without overflow.
 	/// @param  src       Source image.
 	/// @param  dst       Destination; must already exist with `src`'s own extent.
 	/// @ingroup summed_area_table
@@ -50,28 +51,42 @@ namespace ndl
 		using DstT = typename DstImageT::value_type;
 		static_assert(std::is_arithmetic_v<SrcT>, "ndl::summed_area_table() requires an arithmetic source value_type -- not valid for e.g. std::complex<T>");
 		static_assert(std::is_arithmetic_v<DstT>, "ndl::summed_area_table() requires an arithmetic destination value_type -- not valid for e.g. std::complex<T>");
-		assert(dst.extent() == src.extent());
-
 		auto extent = src.extent();
 		constexpr int DIM = std::tuple_size<decltype(extent)>::value;
+		static_assert(detail::has_stride_access_v<SrcImageT, DIM> && detail::has_stride_access_v<DstImageT, DIM>,
+			"ndl::summed_area_table() requires genuinely linear/strided image types (Image<T,DIM> and everything derived from it) -- not PackedBitImage or a live RingBufferImage. Snapshot into a real Image first if you need a summed-area table from either.");
+		assert(dst.extent() == src.extent());
 
 		for (const auto& coord : src.coordinates())
 			dst.at(coord) = static_cast<DstT>(src.at(coord));
 
+		// Fibers along a given axis are independent of each other (each is
+		// its own private running sum, touching no coordinate any other
+		// fiber touches), so the loop over fibers runs concurrently via
+		// std::execution::par -- the exact same "loop of parallel passes,
+		// sequential across axes" shape fftn()'s own per-axis parallel
+		// for_each already uses (see that function's own comment); axis
+		// k+1's fibers read values axis k's pass wrote, so passes across
+		// different axes still have to stay sequential. Walked via
+		// detail::fiberCursor() (image/detail.h) -- a raw pointer stepped
+		// by dst.stride()[axis] -- rather than at(coord): not actually
+		// faster (measured -- see has_stride_access's own comment), but
+		// this is the one shape genuinely available for a type this
+		// static_assert already requires to have it.
 		for (int axis = 0; axis < DIM; axis++)
 		{
 			int n = extent[axis];
-			for (const auto& origin : detail::fiberOrigins<DIM>(extent, axis))
+			auto origins = detail::fiberOrigins<DIM>(extent, axis);
+			std::for_each(std::execution::par, origins.begin(), origins.end(), [&](const std::array<int, DIM>& origin)
 			{
-				std::array<int, DIM> coord = origin;
+				auto cursor = detail::fiberCursor(dst, axis, origin);
 				DstT running = DstT(0);
 				for (int i = 0; i < n; i++)
 				{
-					coord[axis] = i;
-					running = static_cast<DstT>(running + dst.at(coord));
-					dst.at(coord) = running;
+					running = static_cast<DstT>(running + cursor.ptr[i * cursor.stride]);
+					cursor.ptr[i * cursor.stride] = running;
 				}
-			}
+			});
 		}
 	}
 

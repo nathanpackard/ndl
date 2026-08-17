@@ -573,8 +573,13 @@ namespace ndl
 					thread_local std::vector<std::complex<Real>> fiber, transformed;
 					if (fiber.size() != (std::size_t)n) { fiber.resize(n); transformed.resize(n); }
 
-					std::array<int, DIM> coord = origin;
-					for (int i = 0; i < n; i++) { coord[axis] = i; fiber[i] = output.at(coord); }
+					// Gather/scatter walk output via detail::fiberCursor()
+					// (image/detail.h) -- a raw pointer stepped by
+					// output.stride()[axis] -- the same shared primitive
+					// summed_area_table()/distance_transform_squared() use
+					// for their own per-axis fiber walks.
+					auto cursor = ndl::detail::fiberCursor(output, axis, origin);
+					for (int i = 0; i < n; i++) fiber[i] = cursor.ptr[i * cursor.stride];
 
 					if (po2)
 					{
@@ -587,7 +592,7 @@ namespace ndl
 						else bluesteinEngine.fft(n, fiber.data(), transformed.data());
 					}
 
-					for (int i = 0; i < n; i++) { coord[axis] = i; output.at(coord) = transformed[i]; }
+					for (int i = 0; i < n; i++) cursor.ptr[i * cursor.stride] = transformed[i];
 				});
 			}
 		}
