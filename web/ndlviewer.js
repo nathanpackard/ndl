@@ -1179,6 +1179,609 @@
 		return perAxisPx;
 	}
 
+	// ---- Component 8: a small, composable client framework shared by BOTH
+	// this file's own static (.ndlv-upload) viewer and the live-streaming
+	// apps (apps/live_video_stream, apps/bouncing_donut) -- see this
+	// project's own plan document for the full design discussion. Five
+	// independent pieces:
+	//   - Viewport: wraps one rendering surface (here, a Panel -- see its
+	//     own comment above), owns its own cursor/window-level state,
+	//     delegates actual pixel production to a renderer object (below,
+	//     LocalRenderer; a live page instead uses a RemoteRenderer that
+	//     speaks the createViewport/updateViewport wire protocol
+	//     viewer/viewport.h's own Viewport/RendererRegistry implement --
+	//     see apps/live_video_stream.html's own top comment).
+	//   - LinkGroup: ties N Viewports' chosen properties together by
+	//     subscribing to each member's own paramsChanged and rebroadcasting
+	//     to the others -- this file's own pairwise-slice grid is simply
+	//     "every panel's Viewport in one LinkGroup, linked on cursor and
+	//     window," not a special case.
+	//   - LocalRenderer: the renderer half for THIS file's own case -- a
+	//     synchronous wrapper around the existing extractSliceU8()/
+	//     extractSliceRGB() + Panel.uploadSlice()/drawCrosshair(), i.e. the
+	//     exact same pixel-producing code create() always used, just called
+	//     through the Viewport/renderer interface instead of a bespoke
+	//     redrawPanel() closure -- so this reimplementation produces
+	//     BYTE-IDENTICAL output to before, not just visually similar output.
+	//   - Controls: standalone factory functions whose `target` argument is
+	//     anything exposing {getCursor,setCursor,getWindow,setWindow,on} --
+	//     a bare Viewport or a LinkGroup are interchangeable here, so a
+	//     control never needs to know which one it's actually driving.
+	//   - GridLayout/FreeformLayout: pluggable placement strategies. Both
+	//     expose the same "a plain DOM container callers can append into or
+	//     nest under another layout's own cell" contract, so a layout item
+	//     slot accepts a bare element, a Viewport's own surface, or another
+	//     nested Layout with no special-casing.
+	// create() (below) is reimplemented on top of these for its own 2D
+	// pairwise grid -- functionally identical output (see this project's
+	// own before/after regression verification), now composed from
+	// Viewport+LocalRenderer+LinkGroup+GridLayout instead of one bespoke
+	// closure-heavy function. The existing WebGL 3D volume panel is
+	// deliberately NOT torn into this abstraction (see VolumePanel()'s own
+	// top comment) -- it stays exactly as it always was, just reading the
+	// shared cursor/window from the new LinkGroup instead of a bare closure
+	// variable, so it keeps working in lockstep with the flat panels
+	// without being rewritten itself. ----
+
+	// One independently addressable view: its own cursor (a full N-D
+	// array -- axisI/axisJ's own entries double as "where this viewport's
+	// crosshair currently is," every other entry is what a 2D slice
+	// renderer holds fixed, exactly viewer/viewport.h's own renderSlice()
+	// "fixed" convention) and its own window (min/max intensity mapping).
+	// `surface` is renderer-specific (a Panel instance for LocalRenderer;
+	// a live page's own canvas element for a RemoteRenderer) -- Viewport
+	// itself never touches it directly, only ever hands it to `renderer`.
+	// The extra fields below (id/cropMin/cropMax/axisA-C/colorAxis/
+	// channelReduction/outputWidth/outputHeight/rotation/alphaScale/fixed)
+	// are all optional and unused by LocalRenderer/create()'s own static
+	// grid (which only ever reads axisI/axisJ/cursor/windowMin/windowMax,
+	// see LocalRenderer.prototype.render above) -- they exist purely for
+	// RemoteRenderer (below), whose live "slice"/"volume"-op viewports
+	// need cropMin/cropMax (a pan/zoom REGION, not a single cursor point --
+	// genuinely different from the static grid's shared-cursor model, see
+	// this section's own top comment) plus whatever else that op's own
+	// wire params need. A plain, generic bag of optional fields rather
+	// than two separate Viewport subclasses: RemoteRenderer's own
+	// _paramsFor() (below) just forwards whichever of these happen to be
+	// set, so one Viewport class serves both renderer kinds without either
+	// caring about the other's fields.
+	function Viewport(surface, renderer, options) {
+		options = options || {};
+		this.surface = surface;
+		this.renderer = renderer;
+		this.id = options.id;
+		this.axisI = options.axisI;
+		this.axisJ = options.axisJ;
+		this.cursor = (options.cursor || []).slice();
+		this.windowMin = options.windowMin;
+		this.windowMax = options.windowMax;
+		this.cropMin = options.cropMin || null;
+		this.cropMax = options.cropMax || null;
+		this.axisA = options.axisA;
+		this.axisB = options.axisB;
+		this.axisC = options.axisC;
+		this.colorAxis = options.colorAxis;
+		this.channelReduction = options.channelReduction;
+		this.outputWidth = options.outputWidth;
+		this.outputHeight = options.outputHeight;
+		this.rotation = options.rotation;
+		this.alphaScale = options.alphaScale;
+		this.fixed = options.fixed;
+		this._listeners = {};
+	}
+	Viewport.prototype.on = function (event, fn) {
+		(this._listeners[event] = this._listeners[event] || []).push(fn);
+	};
+	Viewport.prototype._emit = function (event, detail) {
+		(this._listeners[event] || []).forEach(function (fn) { fn(detail); });
+	};
+	Viewport.prototype.getCursor = function () { return this.cursor; };
+	// `opts.silent` skips the paramsChanged emit -- used by LinkGroup's own
+	// rebroadcast so applying an already-linked change to every OTHER
+	// member doesn't itself trigger another round of rebroadcasting.
+	// Always copies (never aliases) the passed-in array, so two Viewports
+	// (or a Viewport and whatever external caller passed the array in) can
+	// never end up silently sharing -- and one mutating in place
+	// corrupting -- the same backing array.
+	Viewport.prototype.setCursor = function (fullCursor, opts) {
+		this.cursor = fullCursor.slice();
+		this.redraw();
+		if (!opts || !opts.silent) this._emit('paramsChanged', { type: 'cursor' });
+	};
+	Viewport.prototype.getWindow = function () { return { min: this.windowMin, max: this.windowMax }; };
+	Viewport.prototype.setWindow = function (min, max, opts) {
+		this.windowMin = min; this.windowMax = max;
+		this.redraw();
+		if (!opts || !opts.silent) this._emit('paramsChanged', { type: 'window' });
+	};
+	// The pan/zoom REGION a live "slice"-op viewport currently shows along
+	// its own axisI/axisJ -- see this constructor's own top comment on why
+	// this is a separate, linkable property from `cursor` (the static
+	// grid's own single-point model) rather than reusing it. Linkable via
+	// a LinkGroup constructed with `{crop: true}` -- e.g.
+	// apps/live_video_stream.html's own "Link pan/zoom" checkbox.
+	Viewport.prototype.getCrop = function () { return { min: this.cropMin, max: this.cropMax }; };
+	Viewport.prototype.setCrop = function (cropMin, cropMax, opts) {
+		this.cropMin = cropMin; this.cropMax = cropMax;
+		this.redraw();
+		if (!opts || !opts.silent) this._emit('paramsChanged', { type: 'crop' });
+	};
+	// A live "volume"-op viewport's own rotation (a 9-number flat
+	// column-major matrix, viewer/viewport.h's own renderVolume() wire
+	// convention -- see Controls.createRotationControl's own comment).
+	// Deliberately NOT linkable/emitting paramsChanged: neither app this
+	// framework currently drives (apps/bouncing_donut.html has exactly one
+	// viewport; apps/live_video_stream.html never uses the "volume" op at
+	// all) ever needs two volume viewports' rotations kept in sync, so
+	// this stays a plain direct setter+redraw, the same simple shape
+	// bouncing_donut.html's own pre-migration rotation sliders already had.
+	Viewport.prototype.setRotation = function (rotation) {
+		this.rotation = rotation;
+		this.redraw();
+	};
+	// A no-op when this Viewport has no renderer (`null`, e.g. a purely
+	// state-holding "hub" Viewport with no rendering surface of its own --
+	// see create()'s own `cursorState` for exactly this use, a Viewport
+	// that exists only to be a LinkGroup's own source-of-truth member
+	// before any real, surface-backed Viewport exists yet to hold that
+	// role instead).
+	Viewport.prototype.redraw = function () { if (this.renderer) this.renderer.render(this); };
+
+	// Ties N Viewports' chosen properties together: whenever any ONE
+	// member emits a linked property's paramsChanged, every OTHER member
+	// is updated to match (silently, so it doesn't re-emit and cause a
+	// second round) -- see this section's own top comment. `linked` is
+	// e.g. `{cursor: true, window: true}` (both, what the pairwise-slice
+	// grid uses -- one shared N-D cursor and one shared intensity window
+	// across every panel) -- either can be omitted/false to link only the
+	// other. `_propagating` guards against re-entrant rebroadcast loops
+	// (member A's change rebroadcasts to B, which -- without this guard --
+	// would itself try to rebroadcast back to A and everyone else again).
+	function LinkGroup(members, linked) {
+		this.members = [];
+		this.linked = linked || {};
+		this._propagating = false;
+		var self = this;
+		(members || []).forEach(function (m) { self.addMember(m); });
+	}
+	// Adds one more member to an already-constructed group -- needed
+	// because not every member necessarily exists yet at the moment a
+	// group is first formed (create()'s own case: the shared cursor/
+	// window state needs to exist before the toolbar's Level/Window
+	// sliders are built, which happens before any actual panel -- and
+	// therefore any actual per-panel Viewport -- exists to join the
+	// group). The newly added member is expected to already carry
+	// up-to-date values (create() always constructs one from the group's
+	// own current getCursor()/getWindow() right before adding it) --
+	// addMember() itself doesn't force a sync, matching setParams()'s own
+	// "the caller is responsible" philosophy elsewhere in this project.
+	LinkGroup.prototype.addMember = function (member) {
+		this.members.push(member);
+		var self = this;
+		member.on('paramsChanged', function (detail) {
+			if (self._propagating) return;
+			if (detail.type === 'cursor' && !self.linked.cursor) return;
+			if (detail.type === 'window' && !self.linked.window) return;
+			if (detail.type === 'crop' && !self.linked.crop) return;
+			self._propagating = true;
+			self.members.forEach(function (other) {
+				if (other === member) return;
+				if (detail.type === 'cursor') other.setCursor(member.cursor, { silent: true });
+				else if (detail.type === 'window') other.setWindow(member.windowMin, member.windowMax, { silent: true });
+				else if (detail.type === 'crop') other.setCrop(member.cropMin, member.cropMax, { silent: true });
+			});
+			self._propagating = false;
+		});
+	};
+	// Duck-typed the same {getCursor,setCursor,getWindow,setWindow,
+	// getCrop,setCrop,on} interface a bare Viewport exposes (see this
+	// section's own top comment) -- routed through members[0], whose own
+	// paramsChanged (see the constructor above) then rebroadcasts to every
+	// other member, so a single call here updates the whole group in one
+	// pass, exactly like this file's old, single shared `cursor`/`range`
+	// closure variables did before this reimplementation.
+	LinkGroup.prototype.getCursor = function () { return this.members[0].getCursor(); };
+	LinkGroup.prototype.setCursor = function (fullCursor) { this.members[0].setCursor(fullCursor); };
+	LinkGroup.prototype.getWindow = function () { return this.members[0].getWindow(); };
+	LinkGroup.prototype.setWindow = function (min, max) { this.members[0].setWindow(min, max); };
+	LinkGroup.prototype.getCrop = function () { return this.members[0].getCrop(); };
+	LinkGroup.prototype.setCrop = function (cropMin, cropMax) { this.members[0].setCrop(cropMin, cropMax); };
+	LinkGroup.prototype.on = function (event, fn) { this.members[0].on(event, fn); };
+
+	// The renderer half for THIS file's own (static, fully-local) case: a
+	// thin wrapper around the SAME extractSliceU8()/extractSliceRGB() +
+	// Panel.uploadSlice()/uploadSliceRGB()/drawCrosshair() this file always
+	// used -- see this section's own top comment on why reusing rather
+	// than re-deriving equivalent logic is what makes the reimplemented
+	// create() produce byte-identical output. `colorAxis` is a fixed,
+	// whole-viewer-instance setting (matches VolumePanel's own isColor,
+	// same reasoning), not per-render state.
+	function LocalRenderer(volume, strides, colorAxis) {
+		this.volume = volume;
+		this.strides = strides;
+		this.colorAxis = colorAxis;
+	}
+	LocalRenderer.prototype.render = function (viewport) {
+		var volume = this.volume, strides = this.strides, panel = viewport.surface;
+		if (this.colorAxis >= 0 && viewport.axisI !== this.colorAxis && viewport.axisJ !== this.colorAxis) {
+			var rgb = extractSliceRGB(volume, strides, viewport.axisI, viewport.axisJ, this.colorAxis, viewport.cursor, viewport.windowMin, viewport.windowMax);
+			panel.uploadSliceRGB(rgb, volume.extent[viewport.axisI], volume.extent[viewport.axisJ]);
+		} else {
+			var pixels = extractSliceU8(volume, strides, viewport.axisI, viewport.axisJ, viewport.cursor, viewport.windowMin, viewport.windowMax);
+			panel.uploadSlice(pixels, volume.extent[viewport.axisI], volume.extent[viewport.axisJ]);
+		}
+		panel.drawCrosshair(volume.extent[viewport.axisI], volume.extent[viewport.axisJ], viewport.cursor[viewport.axisI], viewport.cursor[viewport.axisJ]);
+	};
+
+	// ---- RemoteRenderer: the live-streaming counterpart to LocalRenderer
+	// above -- speaks the createViewport/updateViewport/closeViewport/
+	// queryValue wire protocol viewer/viewport.h's own Viewport/
+	// RendererRegistry and net/websocket_server.h implement server-side
+	// (see apps/live_video_stream.cpp and apps/bouncing_donut.cpp), rather
+	// than rendering pixels itself -- the server does that, and hands back
+	// ordinary binary frames over the SAME shared WebSocket every viewport
+	// on the page multiplexes over (RemoteConnection, below), keyed by
+	// each Viewport's own `id`. A Viewport doesn't need to know or care
+	// which renderer kind it holds; only RemoteRenderer's own render()
+	// differs in KIND from LocalRenderer's (a network send instead of a
+	// synchronous draw -- the actual pixels arrive asynchronously, via
+	// RemoteConnection's own onFrame dispatch below, whenever the server
+	// gets around to it). ----
+
+	// Wire format for one rendered viewport update (a single binary WS
+	// frame) -- see apps/live_video_stream.cpp's own encodeWireFrame()
+	// comment for the authoritative byte layout:
+	//   byte 0    id length (uint8)
+	//   N bytes   id string
+	//   8 bytes   globalIndex (uint64 LE)
+	//   4 bytes   width (uint32 LE)
+	//   4 bytes   height (uint32 LE)
+	//   1 byte    channels (1=grayscale, 3=RGB)
+	//   remaining raw pixel bytes
+	function decodeWireFrame(buf) {
+		var view = new DataView(buf);
+		var idLen = view.getUint8(0);
+		var id = new TextDecoder('utf-8').decode(new Uint8Array(buf, 1, idLen));
+		var off = 1 + idLen;
+		var globalIndex = Number(view.getBigUint64(off, true));
+		var width = view.getUint32(off + 8, true);
+		var height = view.getUint32(off + 12, true);
+		var channels = view.getUint8(off + 16);
+		var pixels = new Uint8Array(buf, off + 17);
+		return { id: id, globalIndex: globalIndex, width: width, height: height, channels: channels, pixels: pixels };
+	}
+	// Draws one decoded wire frame directly onto a plain `<canvas>` (a live
+	// viewport's own `surface` -- unlike LocalRenderer's Panel-based
+	// surface, there's no separate overlay/frame canvas here: a live
+	// viewport has no crosshair to draw, since there's no shared N-D
+	// cursor concept in the live/pan-zoom model -- see Viewport's own
+	// constructor comment on why cropMin/cropMax is a different thing).
+	function drawFrameToCanvas(canvas, frame) {
+		if (canvas.width !== frame.width || canvas.height !== frame.height) { canvas.width = frame.width; canvas.height = frame.height; }
+		var ctx = canvas.getContext('2d');
+		var imgData = ctx.createImageData(frame.width, frame.height);
+		var data = imgData.data, pixels = frame.pixels;
+		if (frame.channels === 3) {
+			for (var i = 0, p = 0; p < data.length; i += 3, p += 4) { data[p] = pixels[i]; data[p + 1] = pixels[i + 1]; data[p + 2] = pixels[i + 2]; data[p + 3] = 255; }
+		} else {
+			for (var i2 = 0, p2 = 0; p2 < data.length; i2++, p2 += 4) { var v = pixels[i2]; data[p2] = v; data[p2 + 1] = v; data[p2 + 2] = v; data[p2 + 3] = 255; }
+		}
+		ctx.putImageData(imgData, 0, 0);
+	}
+
+	// One shared, multiplexed WebSocket connection for every Viewport on a
+	// live page -- avoids a separate TCP/handshake per viewport, matching
+	// this project's own wire-protocol design (see viewer/viewport.h's own
+	// top comment). Viewports register themselves (by id) so an incoming
+	// binary frame or `valueResult` JSON message can be routed to the
+	// right one.
+	//
+	// `_pending`: messages sent before the socket finishes connecting are
+	// queued here and flushed once it opens, rather than silently dropped
+	// -- this is the actual fix for a real bug this project's own apps hit
+	// during development (apps/live_video_stream.html's very first
+	// createViewport() call ran synchronously right after `new
+	// WebSocket(...)`, before the socket reached OPEN, and a bare
+	// `if (ws.readyState===OPEN) ws.send(...)` guard silently ate it) --
+	// making the connection itself queue-and-flush means no caller of
+	// send() ever needs to know or care whether the handshake has finished
+	// yet, closing off that whole class of bug rather than just patching
+	// the one call site that happened to hit it first.
+	function RemoteConnection(url) {
+		this.url = url;
+		this.viewports = {};
+		this.ws = null;
+		this._pending = [];
+		this._statusListeners = [];
+		this._connect();
+	}
+	RemoteConnection.prototype._connect = function () {
+		var self = this;
+		this.ws = new WebSocket(this.url);
+		this.ws.binaryType = 'arraybuffer';
+		this.ws.onopen = function () {
+			self._setStatus('connected to ' + self.url);
+			var pending = self._pending;
+			self._pending = [];
+			pending.forEach(function (text) { self.ws.send(text); });
+		};
+		this.ws.onclose = function () { self._setStatus('disconnected'); };
+		this.ws.onerror = function () { self._setStatus('connection error'); };
+		this.ws.onmessage = function (evt) {
+			if (typeof evt.data === 'string') self._handleJson(JSON.parse(evt.data));
+			else self._handleBinary(evt.data);
+		};
+	};
+	/// Registers a callback for human-readable connection-state text (e.g. to drive a status line in the page).
+	RemoteConnection.prototype.onStatus = function (fn) { this._statusListeners.push(fn); };
+	RemoteConnection.prototype._setStatus = function (text) { this._statusListeners.forEach(function (fn) { fn(text); }); };
+	/// Sends one JSON control message -- queues it (see this section's own top comment) if the socket isn't OPEN yet.
+	RemoteConnection.prototype.send = function (obj) {
+		var text = JSON.stringify(obj);
+		if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(text);
+		else this._pending.push(text);
+	};
+	RemoteConnection.prototype.registerViewport = function (viewport) { this.viewports[viewport.id] = viewport; };
+	RemoteConnection.prototype.unregisterViewport = function (viewport) { delete this.viewports[viewport.id]; };
+	RemoteConnection.prototype._handleBinary = function (buf) {
+		var frame = decodeWireFrame(buf);
+		var vp = this.viewports[frame.id];
+		if (vp && vp.renderer && vp.renderer.onFrame) vp.renderer.onFrame(vp, frame);
+	};
+	RemoteConnection.prototype._handleJson = function (msg) {
+		if (msg.type === 'valueResult') {
+			var vp = this.viewports[msg.id];
+			if (vp && vp.renderer && vp.renderer.onValueResult) vp.renderer.onValueResult(vp, msg);
+		}
+	};
+	/// Sends a queryValue request for `coord` (a full N-D array) against `viewportId` -- see viewer/viewport.h's own queryValue() comment for why this returns the RAW, unwindowed value, not a rendered pixel.
+	RemoteConnection.prototype.queryValue = function (viewportId, coord) {
+		this.send({ type: 'queryValue', id: viewportId, coord: coord });
+	};
+
+	// Per-viewport renderer half: builds the wire `params` object from
+	// whatever fields happen to be set on the Viewport (see its own
+	// constructor comment -- axisI/axisJ/axisA-C/colorAxis/
+	// channelReduction/outputWidth/outputHeight/windowMin/windowMax/
+	// rotation/alphaScale/cropMin/cropMax/fixed), rather than one fixed
+	// shape per op: the server-side RendererRegistry (viewer/viewport.h)
+	// already validates which keys a given op actually needs, so this
+	// stays generic over "slice" and "volume" alike instead of needing a
+	// separate RemoteRenderer subclass per op.
+	function RemoteRenderer(connection, op) {
+		this.connection = connection;
+		this.op = op;
+	}
+	RemoteRenderer.prototype._paramsFor = function (viewport) {
+		var p = {};
+		['axisI', 'axisJ', 'axisA', 'axisB', 'axisC', 'colorAxis', 'channelReduction', 'outputWidth', 'outputHeight', 'windowMin', 'windowMax', 'rotation', 'alphaScale'].forEach(function (k) {
+			if (viewport[k] !== undefined && viewport[k] !== null) p[k] = viewport[k];
+		});
+		if (viewport.cropMin) p.cropMin = viewport.cropMin;
+		if (viewport.cropMax) p.cropMax = viewport.cropMax;
+		if (viewport.fixed) p.fixed = viewport.fixed;
+		return p;
+	};
+	/// Registers `viewport` with the shared connection and sends its initial createViewport -- call once, right after constructing the Viewport.
+	RemoteRenderer.prototype.create = function (viewport) {
+		this.connection.registerViewport(viewport);
+		this.connection.send({ type: 'createViewport', id: viewport.id, op: this.op, params: this._paramsFor(viewport) });
+	};
+	/// Viewport.prototype.redraw()'s own call into this renderer -- for a live viewport this MEANS "tell the server our latest params," not "draw now" (the actual pixels arrive later, asynchronously, via onFrame below).
+	RemoteRenderer.prototype.render = function (viewport) {
+		this.connection.send({ type: 'updateViewport', id: viewport.id, params: this._paramsFor(viewport) });
+	};
+	RemoteRenderer.prototype.close = function (viewport) {
+		this.connection.send({ type: 'closeViewport', id: viewport.id });
+		this.connection.unregisterViewport(viewport);
+	};
+	// Called by RemoteConnection whenever a binary frame arrives for this
+	// viewport's own id. Seeds cropMin/cropMax to the source's full native
+	// extent on the FIRST frame only (the server's own default when no
+	// crop has been requested yet -- see viewer/viewport.h's own
+	// renderSlice() comment), draws the frame, and lets the page itself
+	// react (`viewport.onFrame`, optional) for anything renderer-agnostic
+	// code here shouldn't need to know about (a page's own readout, e.g.).
+	RemoteRenderer.prototype.onFrame = function (viewport, frame) {
+		viewport.lastGlobalIndex = frame.globalIndex;
+		if (!viewport.nativeWidth) {
+			viewport.nativeWidth = frame.width;
+			viewport.nativeHeight = frame.height;
+			if (!viewport.cropMin) { viewport.cropMin = [0, 0]; viewport.cropMax = [frame.width, frame.height]; }
+		}
+		drawFrameToCanvas(viewport.surface, frame);
+		if (viewport.onFrame) viewport.onFrame(frame);
+	};
+	// Called by RemoteConnection whenever a `valueResult` JSON reply
+	// arrives -- the native-value-hover query client (Component 11's own
+	// client half). `viewport.onValueResult` (optional) is how a page
+	// itself displays it (its own readout box).
+	RemoteRenderer.prototype.onValueResult = function (viewport, msg) {
+		if (viewport.onValueResult) viewport.onValueResult(msg.value);
+	};
+
+	// A single slider factory shared by every Controls.* factory below AND
+	// (unchanged) create()'s own volume-panel rotation/alpha sliders --
+	// hoisted to module scope (it never referenced anything from create()'s
+	// own closure besides the already-module-level formatValue()) rather
+	// than duplicated, for the exact same "reuse, don't re-derive" reason
+	// LocalRenderer above reuses extractSliceU8()/extractSliceRGB(). See
+	// this function's own original comment (preserved verbatim) for the
+	// full rationale on window/level formatting, fixed-width labels, and
+	// setLabel()'s own two call patterns.
+	function makeSlider(labelText, min, max, step, initial, decimals, unitSuffix, onInput, labelColor) {
+		var row = document.createElement('span');
+		row.style.whiteSpace = 'nowrap';
+		var swatch = null;
+		if (labelColor) {
+			swatch = document.createElement('span');
+			swatch.style.display = 'inline-block';
+			swatch.style.width = '0.7em';
+			swatch.style.height = '0.7em';
+			swatch.style.marginRight = '0.3em';
+			swatch.style.verticalAlign = 'middle';
+			swatch.style.background = labelColor;
+			row.appendChild(swatch);
+		}
+		var label = document.createElement('span');
+		label.textContent = labelText + ': ';
+		row.appendChild(label);
+		var slider = document.createElement('input');
+		slider.type = 'range';
+		slider.min = String(min);
+		slider.max = String(max);
+		slider.step = String(step || 'any');
+		slider.value = String(initial);
+		slider.style.verticalAlign = 'middle';
+		row.appendChild(slider);
+		var valueLabel = document.createElement('span');
+		valueLabel.style.marginLeft = '0.4em';
+		valueLabel.style.display = 'inline-block';
+		valueLabel.style.fontFamily = 'monospace';
+		var widestChars = Math.max(formatValue(min, decimals, true).length, formatValue(max, decimals, true).length) + (unitSuffix ? unitSuffix.length : 0);
+		valueLabel.style.width = (widestChars + 0.5) + 'ch';
+		row.appendChild(valueLabel);
+		function setValue(v) { slider.value = String(v); valueLabel.textContent = formatValue(v, decimals, true) + (unitSuffix || ''); }
+		setValue(initial);
+		function setLabel(text, color) {
+			label.textContent = text + ': ';
+			if (swatch && color) swatch.style.background = color;
+		}
+		slider.addEventListener('input', function () { onInput(parseFloat(slider.value), setValue); });
+		return { row: row, slider: slider, setValue: setValue, setLabel: setLabel };
+	}
+
+	// Standalone control factories -- `target` is anything exposing
+	// {getCursor,setCursor,getWindow,setWindow,on} (see this section's own
+	// top comment): a bare Viewport or a LinkGroup work identically here.
+	var Controls = {};
+	// Level/Window sliders (see this file's own top comment on the medical-
+	// imaging level/window <-> min/max convention) -- `dataRange`/`decimals`
+	// are the volume's own fixed properties (slider bounds, display
+	// formatting), not part of `target`'s own state. Appends both slider
+	// rows directly to `container`. Subscribes to target's own
+	// paramsChanged so the sliders' own displayed position stays in sync
+	// with a window change that happened some OTHER way (a reset button,
+	// or -- once a LinkGroup is involved -- another linked member).
+	Controls.createWindowLevelControl = function (container, target, dataRange, decimals) {
+		var windowSpan = (dataRange.max - dataRange.min) || 1;
+		var w0 = target.getWindow();
+		var levelCtl = makeSlider('Level', dataRange.min, dataRange.max, windowSpan / 500, (w0.min + w0.max) / 2, decimals, '', function (level) {
+			var cur = target.getWindow(), width = cur.max - cur.min;
+			target.setWindow(level - width / 2, level + width / 2);
+		});
+		var windowCtl = makeSlider('Window', windowSpan / 500, windowSpan, windowSpan / 500, w0.max - w0.min, decimals, '', function (winWidth) {
+			var cur = target.getWindow(), level = (cur.min + cur.max) / 2;
+			target.setWindow(level - winWidth / 2, level + winWidth / 2);
+		});
+		function sync() {
+			var w = target.getWindow();
+			levelCtl.setValue((w.min + w.max) / 2);
+			windowCtl.setValue(w.max - w.min);
+		}
+		target.on('paramsChanged', function (detail) { if (detail.type === 'window') sync(); });
+		container.appendChild(levelCtl.row);
+		container.appendChild(windowCtl.row);
+		return { levelCtl: levelCtl, windowCtl: windowCtl, refresh: sync };
+	};
+	// A plain labeled button wired to an arbitrary callback -- shared shape
+	// for every reset button (cursor/window/rotation/alpha all use this
+	// same small factory, whatever they actually reset).
+	Controls.createButton = function (container, label, onClick) {
+		var btn = document.createElement('button');
+		btn.type = 'button';
+		btn.textContent = label;
+		btn.addEventListener('click', onClick);
+		container.appendChild(btn);
+		return btn;
+	};
+	// Three angle sliders (X/Y/Z, in degrees) driving a live "volume"-op
+	// Viewport's own rotation -- the client-side half of Component 9/16's
+	// comparison: builds the SAME column-major 3x3 matrix convention (see
+	// detail_viewport::matrix3FromColumnMajor()'s own comment in
+	// viewer/viewport.h) via the SAME mat3RotationX/Y/Z + mat3Multiply
+	// helpers (module scope, above) the static viewer's own VolumePanel
+	// rotation controls already use, and in the SAME combination order
+	// (`mat3Multiply(Rz, mat3Multiply(Ry, Rx))`, matching
+	// VolumePanel.prototype.rotationMatrix()) -- so a given (x,y,z) degree
+	// triple means the identical rotation whether it ends up ray-marched
+	// on the GPU (static) or the CPU (live), the actual point of keeping
+	// the two conventions byte-for-byte identical rather than just
+	// "similar." `target` is a Viewport (not a LinkGroup -- see
+	// Viewport.prototype.setRotation's own comment on why rotation isn't
+	// a linked property here).
+	Controls.createRotationControl = function (container, target, initialDeg) {
+		initialDeg = initialDeg || { x: 0, y: 0, z: 0 };
+		var angles = { x: initialDeg.x, y: initialDeg.y, z: initialDeg.z };
+		function currentRotation() {
+			return mat3Multiply(mat3RotationZ(angles.z * Math.PI / 180), mat3Multiply(mat3RotationY(angles.y * Math.PI / 180), mat3RotationX(angles.x * Math.PI / 180)));
+		}
+		function makeAxisSlider(axisLabel, key) {
+			var ctl = makeSlider(axisLabel, -180, 180, 1, angles[key], 0, '°', function (deg, setValue) {
+				angles[key] = deg;
+				setValue(deg);
+				target.setRotation(currentRotation());
+			});
+			container.appendChild(ctl.row);
+			return ctl;
+		}
+		var ctls = { x: makeAxisSlider('X', 'x'), y: makeAxisSlider('Y', 'y'), z: makeAxisSlider('Z', 'z') };
+		target.setRotation(currentRotation());
+		return {
+			ctls: ctls,
+			reset: function () {
+				angles.x = angles.y = angles.z = 0;
+				ctls.x.setValue(0); ctls.y.setValue(0); ctls.z.setValue(0);
+				target.setRotation(currentRotation());
+			}
+		};
+	};
+
+	// CSS-grid placement strategy: explicit per-track sizes (not a single
+	// gridAutoColumns/Rows), matching this file's own pairwise-slice grid
+	// (column c is one axis's own pixel width, row r is another's own
+	// height -- see create()'s own grid-track comment). `container` is an
+	// existing DOM element this turns into the grid itself (its own
+	// gridTemplateColumns/Rows are set here); items place themselves into
+	// it via place() or -- for a Panel/VolumePanel whose own constructor
+	// already sets its own wrap's gridColumn/gridRow (both do, given their
+	// own di+2/dj-style coordinates up front) -- via a plain
+	// container.appendChild(), either is fine since GridLayout doesn't
+	// require every child to have been placed through it.
+	function GridLayout(container, options) {
+		options = options || {};
+		container.style.display = 'inline-grid';
+		container.style.gap = options.gap || '4px';
+		if (options.columns) container.style.gridTemplateColumns = options.columns.join(' ');
+		if (options.rows) container.style.gridTemplateRows = options.rows.join(' ');
+		this.container = container;
+	}
+	// Places `element` (a plain DOM node, a Viewport's own `.surface.wrap`,
+	// or another nested Layout's own `.container`, see this section's own
+	// top comment on nestability) at 1-indexed grid position (col,row) and
+	// appends it.
+	GridLayout.prototype.place = function (element, col, row) {
+		element.style.gridColumn = String(col);
+		element.style.gridRow = String(row);
+		this.container.appendChild(element);
+	};
+	GridLayout.prototype.mount = function (parent) { parent.appendChild(this.container); };
+
+	// Freeform placement strategy: no shared grid, each item explicitly
+	// positioned/sized (or simply appended and left to the container's own
+	// CSS/flow) -- the pluggable alternative GridLayout's own comment
+	// promises, for a layout that isn't naturally a grid at all (e.g. a
+	// live page's own "however many independent viewports the user has
+	// added" panel row -- see apps/live_video_stream.html).
+	function FreeformLayout(container) {
+		this.container = container;
+	}
+	FreeformLayout.prototype.add = function (element, style) {
+		if (style) for (var k in style) if (Object.prototype.hasOwnProperty.call(style, k)) element.style[k] = style[k];
+		this.container.appendChild(element);
+	};
+	FreeformLayout.prototype.mount = function (parent) { parent.appendChild(this.container); };
+
 	// Creates the full pairwise-view grid inside `container` for the parsed
 	// volume in `arrayBuffer`, wires up click/drag-to-navigate, and returns
 	// a small handle ({cursor, setCursor(), destroy()}) for programmatic
@@ -1215,14 +1818,26 @@
 		// panel's opacity mapping -- see the window-slider wiring below and
 		// VOLUME_FRAGMENT_SRC's own comment on why one control drives both.
 		var dataRange = computeMinMax(volume.data);
-		var range = { min: dataRange.min, max: dataRange.max };
 		var perAxisPx = computePerAxisPixelSizes(volume.extent, volume.spacing, volume.unit, maxPanelPx, minPanelPx);
 		var valueIsFloat = isFloatingDtype(volume.data);
 		var valueDecimals = valueDecimalPlaces(dataRange.max - dataRange.min);
 
-		var cursor = new Array(volume.dim);
-		for (var k = 0; k < volume.dim; k++) cursor[k] = Math.floor(volume.extent[k] / 2);
-		var defaultCursor = cursor.slice();
+		var initialCursor = new Array(volume.dim);
+		for (var k = 0; k < volume.dim; k++) initialCursor[k] = Math.floor(volume.extent[k] / 2);
+		var defaultCursor = initialCursor.slice();
+		// The shared N-D cursor + shared intensity window, as a LinkGroup
+		// (Component 8 -- see this file's own top comment above) --
+		// `cursorState` is a purely state-holding Viewport (no surface, no
+		// renderer: see Viewport.prototype.redraw's own null-guard) that
+		// exists before any real, Panel-backed Viewport does, since the
+		// toolbar's Level/Window sliders (built next) need a `target` to
+		// read/drive immediately. Every flat panel's own Viewport (built
+		// further down, once each Panel exists) joins this SAME group via
+		// linkGroup.addMember() -- "the static grid's shared cursor/
+		// window-level is just a LinkGroup containing every panel, linked
+		// on everything," per this project's own plan document, exactly.
+		var cursorState = new Viewport(null, null, { cursor: initialCursor, windowMin: dataRange.min, windowMax: dataRange.max });
+		var linkGroup = new LinkGroup([cursorState], { cursor: true, window: true });
 
 		// Axis limits (see axisLimitLabel()'s own comment), precomputed
 		// once per axis here since a given axis's own limits are the same
@@ -1296,113 +1911,20 @@
 		controls.style.gap = '4px 14px';
 		container.appendChild(controls);
 
-		// A single slider factory shared by window/level, rotation, and
-		// alpha -- every slider gets a label and a live value readout (with
-		// an optional unit suffix, e.g. "37°"). Formatting is centralized
-		// HERE (via `decimals`, always passed to formatValue() with
-		// isFloat=true) rather than left to each caller: a slider's own
-		// dragged POSITION is always a continuous float needing rounded
-		// display, regardless of whether the underlying VOLUME happens to
-		// be an integer dtype -- conflating the two (formatting a window/
-		// level value using the volume's own isFloatingDtype()) was exactly
-		// the bug that let raw float noise like "125.03999999999999"
-		// through for an integer-dtype volume, where formatValue() would
-		// otherwise correctly round it. The value label also gets a FIXED
-		// width, sized to the widest string this exact slider can ever
-		// produce (its own min/max through the same formatting, plus the
-		// unit suffix) -- without that, a label growing from "8" to
-		// "125.4" mid-drag visibly reflows every control after it in the
-		// same toolbar row.
-		// labelColor (optional): a small square swatch drawn before the text,
-		// for sliders whose label is also an AXIS identity (the rotation
-		// sliders, see makeRotationSlider()) rather than plain text like
-		// "Level"/"Window" -- the same color that axis's crosshair lines and
-		// frame-ring arcs use everywhere else, so the swatch is what visually
-		// ties "this slider" to "that axis" rather than the reader having to
-		// infer it from the X/Y/Z letter alone. setLabel() lets a caller
-		// update both the text and the swatch color later -- needed because
-		// which real axis a rotation slider's role (X/Y/Z) maps to can change
-		// at runtime (the DIM>3 axis picker), unlike every other slider's
-		// label, which is fixed for the viewer's whole lifetime.
-		function makeSlider(labelText, min, max, step, initial, decimals, unitSuffix, onInput, labelColor) {
-			var row = document.createElement('span');
-			row.style.whiteSpace = 'nowrap';
-			var swatch = null;
-			if (labelColor) {
-				swatch = document.createElement('span');
-				swatch.style.display = 'inline-block';
-				swatch.style.width = '0.7em';
-				swatch.style.height = '0.7em';
-				swatch.style.marginRight = '0.3em';
-				swatch.style.verticalAlign = 'middle';
-				swatch.style.background = labelColor;
-				row.appendChild(swatch);
-			}
-			var label = document.createElement('span');
-			label.textContent = labelText + ': ';
-			row.appendChild(label);
-			var slider = document.createElement('input');
-			slider.type = 'range';
-			slider.min = String(min);
-			slider.max = String(max);
-			slider.step = String(step || 'any');
-			slider.value = String(initial);
-			slider.style.verticalAlign = 'middle';
-			row.appendChild(slider);
-			var valueLabel = document.createElement('span');
-			valueLabel.style.marginLeft = '0.4em';
-			valueLabel.style.display = 'inline-block';
-			valueLabel.style.fontFamily = 'monospace';
-			var widestChars = Math.max(formatValue(min, decimals, true).length, formatValue(max, decimals, true).length) + (unitSuffix ? unitSuffix.length : 0);
-			valueLabel.style.width = (widestChars + 0.5) + 'ch';
-			row.appendChild(valueLabel);
-			// Sets BOTH the displayed label text and the slider's own DOM
-			// value/thumb position -- not just the label. The two call
-			// patterns this needs to serve: from the slider's own oninput
-			// handler below, where slider.value is already correct (this is
-			// a no-op re-assignment, harmless) and only the label actually
-			// needed updating; and from a programmatic reset (resetVolume(),
-			// resetWindowLevel()) that changes the underlying value WITHOUT
-			// the user dragging anything, where the thumb has to visually
-			// follow or it's left pointing at a stale position while the
-			// label (and the actual rendered data) have already moved on.
-			function setValue(v) { slider.value = String(v); valueLabel.textContent = formatValue(v, decimals, true) + (unitSuffix || ''); }
-			setValue(initial);
-			function setLabel(text, color) {
-				label.textContent = text + ': ';
-				if (swatch && color) swatch.style.background = color;
-			}
-			slider.addEventListener('input', function () { onInput(parseFloat(slider.value), setValue); });
-			return { row: row, slider: slider, setValue: setValue, setLabel: setLabel };
-		}
-
 		// Window/level, not min/max: LEVEL is the center of the visible
 		// range, WINDOW is its width -- the standard medical-imaging
 		// convention (equivalent to min/max, just a different two numbers
 		// describing the same interval: min=level-window/2,
 		// max=level+window/2) since centering-and-widening is usually the
 		// more natural way to explore a window, not independently dragging
-		// two endpoints. `range.min`/`range.max` stay the actual source of
-		// truth passed to extractSliceU8()/extractVolumeBlock() either way.
-		var windowSpan = (dataRange.max - dataRange.min) || 1;
-		var levelCtl = makeSlider('Level', dataRange.min, dataRange.max, windowSpan / 500, (range.min + range.max) / 2, valueDecimals, '', function (level) {
-			var w = range.max - range.min;
-			range.min = level - w / 2; range.max = level + w / 2;
-			refreshWindow();
-		});
-		var windowCtl = makeSlider('Window', windowSpan / 500, windowSpan, windowSpan / 500, range.max - range.min, valueDecimals, '', function (w) {
-			var level = (range.min + range.max) / 2;
-			range.min = level - w / 2; range.max = level + w / 2;
-			refreshWindow();
-		});
-		function refreshWindow() {
-			levelCtl.setValue((range.min + range.max) / 2);
-			windowCtl.setValue(range.max - range.min);
-			redrawAll();
-			updateVolumeTexture();
-		}
-		controls.appendChild(levelCtl.row);
-		controls.appendChild(windowCtl.row);
+		// two endpoints. Built via Controls.createWindowLevelControl()
+		// (Component 8, module scope, above) targeting `linkGroup` directly
+		// -- the exact same makeSlider()-based DOM (also hoisted to module
+		// scope, reused verbatim, not re-derived) this file always built
+		// here, so this reimplementation produces byte-identical markup,
+		// just wired through the shared framework instead of a bespoke
+		// `range`/`refreshWindow()` closure pair.
+		Controls.createWindowLevelControl(controls, linkGroup, dataRange, valueDecimals);
 
 		var resetSlicesButton = document.createElement('button');
 		resetSlicesButton.type = 'button';
@@ -1423,8 +1945,7 @@
 		resetWindowLevelButton.addEventListener('click', resetWindowLevel);
 		controls.appendChild(resetWindowLevelButton);
 		function resetWindowLevel() {
-			range.min = dataRange.min; range.max = dataRange.max;
-			refreshWindow();
+			linkGroup.setWindow(dataRange.min, dataRange.max);
 		}
 
 		var fullscreenButton = document.createElement('button');
@@ -1611,9 +2132,6 @@
 		var displayAxes = [];
 		for (var da = 0; da < volume.dim; da++) if (da !== colorAxis) displayAxes.push(da);
 
-		var grid = document.createElement('div');
-		grid.style.display = 'inline-grid';
-		grid.style.gap = '4px';
 		// Explicit per-track sizes (not a single gridAutoColumns/Rows) --
 		// column c (1-indexed) is displayAxes[c-1]'s own width, row r is
 		// displayAxes[r]'s own height. Column 1 and the LAST row are each an
@@ -1623,16 +2141,35 @@
 		// shifts one to the right (di+2, not di+1) to make room, while rows
 		// are unaffected (the label row is APPENDED after every real row,
 		// not prepended).
+		var grid = document.createElement('div');
 		var OUTER_LABEL_TRACK_PX = 18;
 		var colSizes = [OUTER_LABEL_TRACK_PX + 'px'];
 		for (var c = 0; c < displayAxes.length - 1; c++) colSizes.push(perAxisPx[displayAxes[c]] + 'px');
 		var rowSizes = [];
 		for (var r = 1; r < displayAxes.length; r++) rowSizes.push(perAxisPx[displayAxes[r]] + 'px');
 		rowSizes.push(OUTER_LABEL_TRACK_PX + 'px');
-		grid.style.gridTemplateColumns = colSizes.join(' ');
-		grid.style.gridTemplateRows = rowSizes.join(' ');
-		mainRow.appendChild(grid);
+		// GridLayout (Component 8, module scope) -- centralizes exactly the
+		// track-size/display/gap assignment this file always did inline
+		// here; every panel below still self-places into it (Panel()'s own
+		// constructor already sets its own wrap's gridColumn/gridRow from
+		// the di+2/dj coordinates passed in, so a plain grid.appendChild()
+		// is enough -- see GridLayout.prototype.place's own comment on why
+		// not every child needs to go through place() itself).
+		var gridLayout = new GridLayout(grid, { columns: colSizes, rows: rowSizes });
+		gridLayout.mount(mainRow);
 
+		// Every flat panel: a Panel (the actual canvas/frame/crosshair
+		// surface, unchanged) wrapped in a Viewport (Component 8) targeting
+		// a single shared LocalRenderer -- see this section's own top
+		// comment on why LocalRenderer's render() is exactly the same
+		// extractSliceU8()/extractSliceRGB() + upload/crosshair code this
+		// file always used. Each Viewport joins `linkGroup` (constructed
+		// above, alongside the toolbar's own Level/Window control) so a
+		// change to any ONE of them -- cursor OR window -- propagates to
+		// (and redraws) every other, exactly the old shared `cursor`/
+		// `range` closure variables' own behavior.
+		var localRenderer = new LocalRenderer(volume, strides, colorAxis);
+		var viewports = [];
 		var panels = [];
 		for (var di = 0; di < displayAxes.length; di++) {
 			for (var dj = di + 1; dj < displayAxes.length; dj++) {
@@ -1645,6 +2182,10 @@
 				grid.appendChild(panel.wrap);
 				makeFocusable(panel.wrap, perAxisPx[i], perAxisPx[j]);
 				panels.push(panel);
+				var w0 = linkGroup.getWindow();
+				var vp = new Viewport(panel, localRenderer, { axisI: i, axisJ: j, cursor: linkGroup.getCursor(), windowMin: w0.min, windowMax: w0.max });
+				linkGroup.addMember(vp);
+				viewports.push(vp);
 			}
 		}
 
@@ -1698,27 +2239,21 @@
 		for (var lr = 1; lr < displayAxes.length; lr++) makeOuterLabel(displayAxes[lr], 1, lr, true);
 		for (var lc = 0; lc < displayAxes.length - 1; lc++) makeOuterLabel(displayAxes[lc], lc + 2, displayAxes.length, false);
 
-		function redrawPanel(panel) {
-			// True color only when this panel's own two axes BOTH differ
-			// from colorAxis -- a panel showing colorAxis itself as one of
-			// its two plotted axes has nothing to composite (see colorAxis's
-			// own comment above) and stays on the plain grayscale path.
-			if (colorAxis >= 0 && panel.axisI !== colorAxis && panel.axisJ !== colorAxis) {
-				var rgb = extractSliceRGB(volume, strides, panel.axisI, panel.axisJ, colorAxis, cursor, range.min, range.max);
-				panel.uploadSliceRGB(rgb, volume.extent[panel.axisI], volume.extent[panel.axisJ]);
-			} else {
-				var pixels = extractSliceU8(volume, strides, panel.axisI, panel.axisJ, cursor, range.min, range.max);
-				panel.uploadSlice(pixels, volume.extent[panel.axisI], volume.extent[panel.axisJ]);
-			}
-			panel.drawCrosshair(volume.extent[panel.axisI], volume.extent[panel.axisJ], cursor[panel.axisI], cursor[panel.axisJ]);
-		}
-
-		// Every panel is re-sliced and redrawn on any cursor change, rather
-		// than only the panels sharing the moved axes -- simpler and, for
-		// the C(DIM,2) panel counts a pairwise-view grid actually has
-		// (e.g. 6 for DIM=4, 10 for DIM=5), cheap enough that the
-		// selective-redraw optimization isn't worth the extra bookkeeping.
-		function redrawAll() { for (var p = 0; p < panels.length; p++) redrawPanel(panels[p]); }
+		// Every panel is re-sliced and redrawn on any cursor OR window
+		// change, rather than only the panels sharing the moved axes --
+		// simpler and, for the C(DIM,2) panel counts a pairwise-view grid
+		// actually has (e.g. 6 for DIM=4, 10 for DIM=5), cheap enough that
+		// the selective-redraw optimization isn't worth the extra
+		// bookkeeping. This is no longer a separate redrawPanel()/
+		// redrawAll() pair: `linkGroup`'s own rebroadcast (Component 8,
+		// module scope -- LinkGroup.prototype.addMember) already calls
+		// every member Viewport's own redraw() -- which calls
+		// LocalRenderer.render(), the exact same extraction+upload+
+		// crosshair code redrawPanel() used to run inline -- whenever
+		// setCursor()/setWindow() changes ANY member (in practice, always
+		// `cursorState`, the group's own hub -- see this function's own
+		// top comment on why). No separate "redraw all" call is needed
+		// anywhere below; every setCursor()/setWindow() call already does.
 
 		// ---- The one 3D volume-render panel (see VolumePanel()'s own
 		// top comment for why exactly one, not one per axis-triple). Placed
@@ -1949,10 +2484,11 @@
 				var vsX = ((evt.clientX - rect.left) / rect.width) * 2 - 1;
 				var vsY = ((evt.clientY - rect.top) / rect.height) * 2 - 1;
 				var R = volumePanel.rotationMatrix();
-				var localCursor = volAxes.map(function (ax) { return ((cursor[ax] + 0.5) / volume.extent[ax]) * 2 - 1; });
+				var sharedCursor = linkGroup.getCursor();
+				var localCursor = volAxes.map(function (ax) { return ((sharedCursor[ax] + 0.5) / volume.extent[ax]) * 2 - 1; });
 				var viewCursor = mat3TransposeMultiplyVec3(R, localCursor);
 				var newLocal = mat3MultiplyVec3(R, [vsX, vsY, viewCursor[2]]); // keep depth (view-space z), only replace the in-plane (x,y)
-				var next = cursor.slice();
+				var next = sharedCursor.slice();
 				volAxes.forEach(function (ax, k) {
 					var idx = Math.round(((newLocal[k] + 1) / 2) * volume.extent[ax] - 0.5);
 					next[ax] = Math.max(0, Math.min(volume.extent[ax] - 1, idx));
@@ -1973,12 +2509,13 @@
 				evt.preventDefault();
 				var direction = evt.deltaY > 0 ? 1 : -1;
 				var R = volumePanel.rotationMatrix();
-				var localCursor = volAxes.map(function (ax) { return ((cursor[ax] + 0.5) / volume.extent[ax]) * 2 - 1; });
+				var sharedCursor = linkGroup.getCursor();
+				var localCursor = volAxes.map(function (ax) { return ((sharedCursor[ax] + 0.5) / volume.extent[ax]) * 2 - 1; });
 				var viewCursor = mat3TransposeMultiplyVec3(R, localCursor);
 				var depthStep = 2 / Math.max(volume.extent[volAxes[0]], volume.extent[volAxes[1]], volume.extent[volAxes[2]]);
 				viewCursor[2] = Math.max(-1, Math.min(1, viewCursor[2] + direction * depthStep));
 				var newLocal = mat3MultiplyVec3(R, viewCursor);
-				var next = cursor.slice();
+				var next = sharedCursor.slice();
 				volAxes.forEach(function (ax, k) {
 					var idx = Math.round(((newLocal[k] + 1) / 2) * volume.extent[ax] - 0.5);
 					next[ax] = Math.max(0, Math.min(volume.extent[ax] - 1, idx));
@@ -2032,7 +2569,7 @@
 					if (key === lastKey) continue;
 					lastKey = key;
 					voxelCount++;
-					var voxel = cursor.slice();
+					var voxel = linkGroup.getCursor().slice();
 					volAxes.forEach(function (ax, k2) { voxel[ax] = idx[k2]; });
 					if (colorAxis >= 0) {
 						// Same "sum each of the 3 native channels separately"
@@ -2107,7 +2644,8 @@
 		// [-1,1] -- the local-space point drawVolumeCrosshair() (and
 		// navigateFromEvent() above) project through the current rotation.
 		function volumeLocalCursor() {
-			return volAxes.map(function (ax) { return ((cursor[ax] + 0.5) / volume.extent[ax]) * 2 - 1; });
+			var sharedCursor = linkGroup.getCursor();
+			return volAxes.map(function (ax) { return ((sharedCursor[ax] + 0.5) / volume.extent[ax]) * 2 - 1; });
 		}
 		function updateVolumeCrosshair() {
 			if (!volumePanel) return;
@@ -2117,9 +2655,10 @@
 
 		function updateVolumeTexture() {
 			if (!volumePanel) return;
+			var sharedCursor = linkGroup.getCursor(), sharedWindow = linkGroup.getWindow();
 			var block = colorAxis >= 0
-				? extractVolumeBlockRGB(volume, strides, volAxes[0], volAxes[1], volAxes[2], colorAxis, cursor, range.min, range.max)
-				: extractVolumeBlock(volume, strides, volAxes[0], volAxes[1], volAxes[2], cursor, range.min, range.max);
+				? extractVolumeBlockRGB(volume, strides, volAxes[0], volAxes[1], volAxes[2], colorAxis, sharedCursor, sharedWindow.min, sharedWindow.max)
+				: extractVolumeBlock(volume, strides, volAxes[0], volAxes[1], volAxes[2], sharedCursor, sharedWindow.min, sharedWindow.max);
 			volumePanel.uploadBlock(block);
 			volumePanel.render();
 			updateVolumeCrosshair();
@@ -2129,6 +2668,21 @@
 			volumePanel.render();
 			updateVolumeCrosshair();
 		}
+		// The volume panel is deliberately NOT part of the Viewport/
+		// LinkGroup abstraction (see this file's own top comment on
+		// Component 8's explicit scope boundary) -- so it needs its own
+		// explicit hook to stay in sync with the shared cursor/window
+		// `linkGroup` owns. One subscription here replaces every
+		// old individual updateVolumeTexture() call this file used to make
+		// inline inside setCursor()/refreshWindow(): linkGroup's own
+		// paramsChanged (see LinkGroup.prototype.addMember) fires exactly
+		// once per linkGroup.setCursor()/setWindow() call, regardless of
+		// which code triggered it (a flat panel click, a reset button, the
+		// volume panel's own navigateFromEvent/scrollVolumeDepth), so this
+		// one listener is the single source of truth for "keep the volume
+		// panel's own texture/crosshair in sync," not a duplicated call at
+		// every mutation site.
+		linkGroup.on('paramsChanged', function () { updateVolumeTexture(); });
 
 		// Reset slices: cursor only, i.e. exactly what a 2D panel click
 		// moves. Reset 3D view (resetVolume(), above): rotation only, i.e.
@@ -2145,11 +2699,18 @@
 			setCursor(defaultCursor);
 		}
 
+		// Clamps into range (every caller below already pre-clamps its own
+		// computed coordinate, but this stays as the same defensive final
+		// check the old code always had -- cheap, and correct for any
+		// FUTURE caller that doesn't happen to pre-clamp), then hands the
+		// clamped array to linkGroup.setCursor() -- which is what actually
+		// redraws every flat panel (via LinkGroup's own rebroadcast) and,
+		// via this function's own subscription above, the volume panel too.
 		function setCursor(newCursor) {
+			var clamped = new Array(volume.dim);
 			for (var k = 0; k < volume.dim; k++)
-				cursor[k] = Math.max(0, Math.min(volume.extent[k] - 1, Math.round(newCursor[k])));
-			redrawAll();
-			updateVolumeTexture();
+				clamped[k] = Math.max(0, Math.min(volume.extent[k] - 1, Math.round(newCursor[k])));
+			linkGroup.setCursor(clamped);
 		}
 
 		// Hovered-voxel data coordinates from a mouse event within panel's
@@ -2171,7 +2732,7 @@
 		// value -- exactly the voxel that panel's slice is showing at that
 		// pixel.
 		function showValue(panel, dataI, dataJ) {
-			var voxel = cursor.slice();
+			var voxel = linkGroup.getCursor().slice();
 			voxel[panel.axisI] = dataI;
 			voxel[panel.axisJ] = dataJ;
 			var valueText;
@@ -2228,7 +2789,7 @@
 			var dragging = false;
 			function moveTo(evt) {
 				var c = dataCoordsFromEvent(panel, evt);
-				var next = cursor.slice();
+				var next = linkGroup.getCursor().slice();
 				next[panel.axisI] = c.i;
 				next[panel.axisJ] = c.j;
 				setCursor(next);
@@ -2247,19 +2808,27 @@
 				panel.overlay.addEventListener('wheel', function (evt) {
 					evt.preventDefault();
 					var direction = evt.deltaY > 0 ? 1 : -1;
-					var next = cursor.slice();
-					next[scrollAxis] = Math.max(0, Math.min(volume.extent[scrollAxis] - 1, cursor[scrollAxis] + direction));
+					var sharedCursor = linkGroup.getCursor();
+					var next = sharedCursor.slice();
+					next[scrollAxis] = Math.max(0, Math.min(volume.extent[scrollAxis] - 1, sharedCursor[scrollAxis] + direction));
 					setCursor(next);
 				}, { passive: false });
 			}
 		}
 		for (var p = 0; p < panels.length; p++) attachInteraction(panels[p]);
 
-		redrawAll();
+		// Initial render: every Viewport already holds correct cursor/
+		// window values (each was constructed from linkGroup's own current
+		// state, right before joining it -- see the panel-creation loop
+		// above), but construction itself never draws anything (Viewport
+		// has no auto-render-on-construct -- see its own comment), so this
+		// is the one explicit "draw everything for the first time" pass,
+		// the direct counterpart to the old redrawAll() call this replaced.
+		viewports.forEach(function (vp) { vp.redraw(); });
 		updateVolumeTexture();
 
 		return {
-			cursor: cursor,
+			get cursor() { return linkGroup.getCursor(); },
 			setCursor: setCursor,
 			destroy: function () { container.removeChild(mainRow); container.removeChild(controls); container.removeChild(readout); }
 		};
@@ -2267,6 +2836,20 @@
 
 	global.NDLViewer = {
 		create: create,
-		parseVolume: parseVolume // exposed for testing/inspection
+		parseVolume: parseVolume, // exposed for testing/inspection
+		// Component 8's own composable framework -- see this file's own
+		// top-of-section comment (right before create()) for the full
+		// design. Exposed so a live page (apps/live_video_stream.html,
+		// apps/bouncing_donut.html) can build its own Viewport(s) on top
+		// of RemoteRenderer/RemoteConnection instead of hand-rolling its
+		// own WebSocket/canvas plumbing.
+		Viewport: Viewport,
+		LinkGroup: LinkGroup,
+		LocalRenderer: LocalRenderer,
+		RemoteRenderer: RemoteRenderer,
+		RemoteConnection: RemoteConnection,
+		Controls: Controls,
+		GridLayout: GridLayout,
+		FreeformLayout: FreeformLayout
 	};
 })(typeof window !== 'undefined' ? window : this);
