@@ -30,10 +30,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Doxygen, Graphviz, and CMake
+      - name: Install Doxygen, Graphviz, CMake, and TBB
+        # libtbb-dev matters here, not just for speed: once any header
+        # pulls in <execution> and something actually instantiates a
+        # std::execution::par call (fft.h's fftn(), used by demo/
+        # convolution among others), libstdc++'s parallel-algorithms
+        # implementation references TBB runtime symbols unconditionally --
+        # omitting libtbb-dev doesn't make that code fall back to running
+        # sequentially the way CMakeLists.txt's own find_package(TBB
+        # QUIET)/else() message optimistically claims, it fails to LINK
+        # (undefined reference to tbb::detail::r1::... symbols). That's
+        # what was actually breaking every docs deployment since apps/
+        # video streaming landed (confirmed by reproducing this exact
+        # link failure locally against a TBB-less configure) -- Doxygen
+        # itself never even got a chance to run, since the 'docs' target
+        # depends on building the demo/app binaries first.
         run: |
           sudo apt-get update
-          sudo apt-get install -y doxygen graphviz cmake
+          sudo apt-get install -y doxygen graphviz cmake libtbb-dev
 
       - name: Configure
         # Tests are skipped here on purpose: the docs job only needs the
